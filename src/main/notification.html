@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+  <head>
+
+    <meta charset="UTF-8" />
+
+    <meta
+
+      http-equiv="Content-Security-Policy"
+
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+
+    />
+
+    <title>Reminder</title>
+
+    <style>
+
+      html,
+
+      body {
+
+        margin: 0;
+
+        height: 100%;
+
+        background: transparent;
+
+        font-family: "Segoe UI", Candara, sans-serif;
+
+        overflow: hidden;
+
+        user-select: none;
+
+      }
+
+      .card {
+
+        margin: 4px;
+
+        height: calc(100% - 8px);
+
+        border-radius: 14px;
+
+        background: rgba(12, 18, 28, 0.92);
+
+        border: 1px solid rgba(57, 255, 106, 0.35);
+
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+        padding: 10px 12px 12px;
+
+        display: flex;
+
+        flex-direction: column;
+
+        gap: 8px;
+
+        color: #fff;
+
+        box-sizing: border-box;
+
+      }
+
+      .chrome {
+
+        display: flex;
+
+        align-items: center;
+
+        justify-content: space-between;
+
+        gap: 8px;
+
+        -webkit-app-region: drag;
+
+      }
+
+      .label {
+
+        font-size: 11px;
+
+        letter-spacing: 0.08em;
+
+        text-transform: uppercase;
+
+        opacity: 0.55;
+
+      }
+
+      .chrome-btns {
+
+        display: flex;
+
+        gap: 4px;
+
+        -webkit-app-region: no-drag;
+
+      }
+
+      .chrome-btns button {
+
+        width: 28px;
+
+        height: 24px;
+
+        padding: 0;
+
+        border-radius: 6px;
+
+        border: 1px solid rgba(255, 255, 255, 0.18);
+
+        background: rgba(255, 255, 255, 0.06);
+
+        color: #ddd;
+
+        font-size: 12px;
+
+        line-height: 1;
+
+        cursor: pointer;
+
+      }
+
+      .chrome-btns button.close:hover {
+
+        background: rgba(255, 92, 92, 0.35);
+
+        border-color: rgba(255, 92, 92, 0.6);
+
+        color: #fff;
+
+      }
+
+      .title {
+
+        flex: 1;
+
+        font-size: 15px;
+
+        font-weight: 600;
+
+        line-height: 1.35;
+
+        overflow: hidden;
+
+      }
+
+      .actions {
+
+        display: flex;
+
+        gap: 8px;
+
+        justify-content: flex-end;
+
+      }
+
+      .actions button {
+
+        border-radius: 8px;
+
+        border: 1px solid rgba(57, 255, 106, 0.5);
+
+        background: rgba(57, 255, 106, 0.15);
+
+        color: #39ff6a;
+
+        padding: 6px 12px;
+
+        font-size: 12px;
+
+        cursor: pointer;
+
+      }
+
+      .actions button.secondary {
+
+        border-color: rgba(255, 255, 255, 0.2);
+
+        background: rgba(255, 255, 255, 0.06);
+
+        color: #ddd;
+
+      }
+
+    </style>
+
+  </head>
+
+  <body>
+
+    <div class="card">
+
+      <div class="chrome">
+
+        <div class="label">Reminder</div>
+
+        <div class="chrome-btns">
+
+          <button type="button" id="btn-min" title="Minimize" aria-label="Minimize">─</button>
+
+          <button type="button" class="close" id="btn-close" title="Close (ignore)" aria-label="Close">
+
+            ✕
+
+          </button>
+
+        </div>
+
+      </div>
+
+      <div class="title" id="title">…</div>
+
+      <div class="actions">
+
+        <button type="button" class="secondary" id="btn-snooze">Snooze</button>
+
+        <button type="button" id="btn-done">Done</button>
+
+      </div>
+
+    </div>
+
+    <script>
+
+      const params = new URLSearchParams(location.search);
+
+      const id = Number(params.get('id'));
+
+      const title = params.get('title') || 'Reminder';
+
+      const textColor = params.get('textColor') || '#ffffff';
+
+      const snoozeMins = Number(params.get('snoozeMins') || 10);
+
+      document.getElementById('title').textContent = title;
+
+      document.querySelector('.card').style.color = textColor;
+
+      document.getElementById('btn-snooze').textContent =
+
+        'Snooze ' + snoozeMins + 'm';
+
+
+
+      document.getElementById('btn-done').onclick = () => {
+
+        window.notifApi.complete(id);
+
+      };
+
+      document.getElementById('btn-snooze').onclick = () => {
+
+        window.notifApi.snooze(id, snoozeMins);
+
+      };
+
+      document.getElementById('btn-min').onclick = () => {
+
+        window.notifApi.minimize(id);
+
+      };
+
+      document.getElementById('btn-close').onclick = () => {
+
+        window.notifApi.ignore(id);
+
+      };
+
+    </script>
+
+  </body>
+
+</html>
+
+

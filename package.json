@@ -1,0 +1,51 @@
+{
+  "name": "personal-dashboard",
+  "version": "0.1.0",
+  "description": "Offline-first personal dashboard — Today pane, tag lifecycle, portable USB build",
+  "main": "src/main/index.js",
+  "author": "Lumo",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "concurrently -k \"vite --port 5173\" \"wait-on tcp:5173 && electron .\"",
+    "build": "vite build",
+    "dist:dir": "npm run build && electron-builder --dir",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "date-fns": "^4.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "vite": "^6.1.0",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.lumo.personal-dashboard",
+    "productName": "Personal Dashboard",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "src/main/**/*",
+      "src/services/**/*",
+      "src/utils/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "src/services/db/schema.sql",
+        "to": "schema.sql"
+      }
+    ],
+    "win": {
+      "target": ["dir"]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+# Portable unpacked folder — copy whole dir to USB (blueprint §16)
+appId: com.lumo.personal-dashboard
+productName: Personal Dashboard
+directories:
+  output: release
+files:
+  - dist/**/*
+  - src/main/**/*
+  - src/services/**/*
+  - src/utils/**/*
+  - package.json
+extraResources:
+  - from: src/services/db/schema.sql
+    to: schema.sql
+win:
+  target:
+    - dir

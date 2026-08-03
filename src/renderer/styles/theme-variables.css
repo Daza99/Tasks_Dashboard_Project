@@ -1,0 +1,32 @@
+/* Default dark-glass tokens — ThemeContext overrides at runtime */
+:root {
+  --bg: transparent;
+  --panel-bg: rgba(12, 18, 28, 0.72);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --text-primary: #f2f5f8;
+  --text-secondary: rgba(242, 245, 248, 0.55);
+  --text-muted: rgba(242, 245, 248, 0.35);
+  --accent: #39ff6a;
+  --accent-dim: rgba(57, 255, 106, 0.25);
+  --sidebar-bg: rgba(10, 14, 22, 0.78);
+  --sidebar-active-bg: rgba(57, 255, 106, 0.12);
+  --sidebar-active-text: #39ff6a;
+  --input-bg: rgba(0, 0, 0, 0.35);
+  --input-border: rgba(255, 255, 255, 0.12);
+  --progress-fill: #39ff6a;
+  --progress-track: rgba(255, 255, 255, 0.1);
+  --topbar-bg: rgba(8, 12, 20, 0.65);
+  --danger: #ff5c5c;
+  /* Module tab brand colors (always-on outlines — equal weight) */
+  --tab-tasks: #39ff6a;
+  --tab-tasks-dim: rgba(57, 255, 106, 0.14);
+  --tab-reminders: #6ec8ff;
+  --tab-reminders-dim: rgba(110, 200, 255, 0.14);
+  --tab-notes: #ff9f4a;
+  --tab-notes-dim: rgba(255, 159, 74, 0.14);
+  --wallpaper-color: #0a1628;
+  --radius-panel: 18px;
+  --radius-chip: 999px;
+  --font-ui: "Segoe UI", "Candara", "Trebuchet MS", sans-serif;
+  --font-clock: "Cascadia Mono", "Consolas", "Courier New", monospace;
+}

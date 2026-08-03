@@ -1,0 +1,37 @@
+# Personal Dashboard Project Rules
+
+## Source of truth
+- Product blueprint: /docs/Master_Dashboard_blueprint_Lumo_v2.md — follow phases and locked decisions unless the user overrides
+
+## Code Style- Use React functional components with hooks
+- Use async/await for all async operations
+- Use ES6+ syntax (arrow functions, template literals, destructuring)
+- Comment public functions explaining purpose and params
+- No console.log() in production code — use a simple logger utility
+
+## File Organization
+- All database logic in /src/main/database.js
+- All IPC handlers in /src/main/ipc-handlers.js
+- All renderer UI in /src/renderer
+- All services in /src/services (business logic)
+- All utilities in /src/utils (pure functions)
+
+## Database Patterns
+- Use better-sqlite3 for all SQLite operations
+- Wrap all DB operations in try/catch blocks
+- Log errors to file (not console) with timestamp
+- Never expose raw SQL to the renderer — all queries through main process
+
+## Theme System
+- All themeable values in CSS custom properties (root element)
+- Theme changes applied via React context + DOM API
+- Persist theme JSON to settings table
+
+## Build Process
+- Target is portable folder (`dir`), not single exe
+- Test build locally with `electron-builder --dir` before publishing
+
+## Layout
+- Compact mode = landing glance (left nav + center brief + right rail)
+- Focus mode = full center panel; Compact button restores
+- No decorative corner brackets around panels

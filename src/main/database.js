@@ -1,0 +1,251 @@
+/**
+ * SQLite access layer (better-sqlite3). Main process only.
+ */
+const fs = require('fs');
+const Database = require('better-sqlite3');
+const { getDbPath, getSchemaPath, ensureDirs } = require('./portable-paths');
+const { logError } = require('./logger');
+
+let db = null;
+
+const DEFAULT_SETTINGS = {
+  wallpaper_mode: 'color',
+  wallpaper_color: '#0a1628',
+  wallpaper_image_path: '',
+  wallpaper_fit: 'fill',
+  wallpaper_dim: '0',
+  notif_position: 'br',
+  notif_timeout_seconds: '15',
+  notif_text_color: '#ffffff',
+  notif_random_bg: 'false',
+  notif_random_sfx: 'false',
+  notif_volume: '50',
+  notif_grace_period_hours: '1',
+  notif_default_snooze_minutes: '10',
+  retention_days_expired: '7',
+  archive_retention_years: '3',
+  auto_delete_archive: 'false',
+  archive_filesize_limit_mb: '500',
+  list_naming_templates: JSON.stringify(['Current Date', 'Project', 'Other']),
+  theme_base: 'dark',
+  active_theme_id: '1',
+  layout_mode: 'compact',
+  display_name: '',
+  Debut_mode: '1',
+  show_tags_always: 'false',
+};
+
+const SYSTEM_TAGS = [
+  'todo_24', 'todo_open', 'todo_completed', 'todo_expired',
+  'rem_today', 'rem_tomorrow', 'rem_dated', 'rem_open',
+  'rem_pending', 'rem_fired', 'rem_grace', 'rem_ignored',
+  'rem_completed', 'rem_snoozed', 'locked', 'archived',
+];
+
+const DEFAULT_DARK_THEME = {
+  name: 'Dark Glass',
+  '--bg': 'transparent',
+  '--panel-bg': 'rgba(12, 18, 28, 0.72)',
+  '--panel-border': 'rgba(255, 255, 255, 0.08)',
+  '--text-primary': '#f2f5f8',
+  '--text-secondary': 'rgba(242, 245, 248, 0.55)',
+  '--text-muted': 'rgba(242, 245, 248, 0.35)',
+  '--accent': '#39ff6a',
+  '--accent-dim': 'rgba(57, 255, 106, 0.25)',
+  '--sidebar-bg': 'rgba(10, 14, 22, 0.78)',
+  '--sidebar-active-bg': 'rgba(57, 255, 106, 0.12)',
+  '--sidebar-active-text': '#39ff6a',
+  '--input-bg': 'rgba(0, 0, 0, 0.35)',
+  '--input-border': 'rgba(255, 255, 255, 0.12)',
+  '--progress-fill': '#39ff6a',
+  '--progress-track': 'rgba(255, 255, 255, 0.1)',
+  '--topbar-bg': 'rgba(8, 12, 20, 0.65)',
+  '--danger': '#ff5c5c',
+};
+
+const DEFAULT_LIGHT_THEME = {
+  name: 'Light Glass',
+  '--bg': 'transparent',
+  '--panel-bg': 'rgba(255, 255, 255, 0.78)',
+  '--panel-border': 'rgba(0, 0, 0, 0.08)',
+  '--text-primary': '#12181f',
+  '--text-secondary': 'rgba(18, 24, 31, 0.6)',
+  '--text-muted': 'rgba(18, 24, 31, 0.4)',
+  '--accent': '#0d9f4a',
+  '--accent-dim': 'rgba(13, 159, 74, 0.18)',
+  '--sidebar-bg': 'rgba(245, 248, 250, 0.85)',
+  '--sidebar-active-bg': 'rgba(13, 159, 74, 0.12)',
+  '--sidebar-active-text': '#0d9f4a',
+  '--input-bg': 'rgba(255, 255, 255, 0.9)',
+  '--input-border': 'rgba(0, 0, 0, 0.12)',
+  '--progress-fill': '#0d9f4a',
+  '--progress-track': 'rgba(0, 0, 0, 0.08)',
+  '--topbar-bg': 'rgba(255, 255, 255, 0.7)',
+  '--danger': '#d93838',
+};
+
+/** Open DB, run schema, seed defaults. Call once on app ready. */
+function initDatabase() {
+  try {
+    ensureDirs();
+    const dbPath = getDbPath();
+    db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+
+    const schemaPath = getSchemaPath();
+    const schema = fs.readFileSync(schemaPath, 'utf8');
+    db.exec(schema);
+
+    seedSettings();
+    seedSystemTags();
+    seedThemes();
+    return db;
+  } catch (err) {
+    logError('initDatabase', err);
+    throw err;
+  }
+}
+
+function seedSettings() {
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
+  );
+  const tx = db.transaction(() => {
+    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+      insert.run(key, value);
+    }
+  });
+  tx();
+}
+
+function seedSystemTags() {
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO tags (name, color, is_system) VALUES (?, ?, 1)'
+  );
+  const tx = db.transaction(() => {
+    for (const name of SYSTEM_TAGS) {
+      insert.run(name, null);
+    }
+  });
+  tx();
+}
+
+function seedThemes() {
+  const count = db.prepare('SELECT COUNT(*) AS c FROM themes').get().c;
+  if (count > 0) return;
+  const insert = db.prepare(
+    'INSERT INTO themes (name, theme_json, is_default) VALUES (?, ?, ?)'
+  );
+  insert.run(DEFAULT_DARK_THEME.name, JSON.stringify(DEFAULT_DARK_THEME), 1);
+  insert.run(DEFAULT_LIGHT_THEME.name, JSON.stringify(DEFAULT_LIGHT_THEME), 0);
+}
+
+function getDb() {
+  if (!db) throw new Error('Database not initialized');
+  return db;
+}
+
+/** Return all settings as a plain object. */
+function getAllSettings() {
+  try {
+    const rows = getDb().prepare('SELECT key, value FROM settings').all();
+    const out = {};
+    for (const row of rows) out[row.key] = row.value;
+    return out;
+  } catch (err) {
+    logError('getAllSettings', err);
+    throw err;
+  }
+}
+
+/** Set a single settings key. */
+function setSetting(key, value) {
+  try {
+    getDb()
+      .prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+      )
+      .run(key, String(value));
+    return true;
+  } catch (err) {
+    logError('setSetting', err);
+    throw err;
+  }
+}
+
+/** Active theme JSON merged with theme_base preference. */
+function getActiveTheme() {
+  try {
+    const settings = getAllSettings();
+    const base = settings.theme_base || 'dark';
+    const id = Number(settings.active_theme_id) || 1;
+    let row = getDb().prepare('SELECT * FROM themes WHERE id = ?').get(id);
+    if (!row) {
+      row = getDb()
+        .prepare('SELECT * FROM themes WHERE is_default = 1 LIMIT 1')
+        .get();
+    }
+    // If light base requested and we have Light Glass, prefer it when active_theme_id still default
+    if (base === 'light') {
+      const light = getDb()
+        .prepare("SELECT * FROM themes WHERE name = 'Light Glass' LIMIT 1")
+        .get();
+      if (light) row = light;
+    } else if (base === 'dark') {
+      const dark = getDb()
+        .prepare("SELECT * FROM themes WHERE name = 'Dark Glass' LIMIT 1")
+        .get();
+      if (dark) row = dark;
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      vars: JSON.parse(row.theme_json),
+      theme_base: base,
+    };
+  } catch (err) {
+    logError('getActiveTheme', err);
+    throw err;
+  }
+}
+
+/** Switch light/dark base and point active_theme_id at matching preset. */
+function setThemeBase(base) {
+  try {
+    if (base !== 'light' && base !== 'dark' && base !== 'custom') {
+      throw new Error('Invalid theme_base');
+    }
+    setSetting('theme_base', base);
+    if (base === 'light' || base === 'dark') {
+      const name = base === 'light' ? 'Light Glass' : 'Dark Glass';
+      const row = getDb()
+        .prepare('SELECT id FROM themes WHERE name = ? LIMIT 1')
+        .get(name);
+      if (row) setSetting('active_theme_id', String(row.id));
+    }
+    return getActiveTheme();
+  } catch (err) {
+    logError('setThemeBase', err);
+    throw err;
+  }
+}
+
+function closeDatabase() {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
+
+module.exports = {
+  initDatabase,
+  getDb,
+  getAllSettings,
+  setSetting,
+  getActiveTheme,
+  setThemeBase,
+  closeDatabase,
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+};

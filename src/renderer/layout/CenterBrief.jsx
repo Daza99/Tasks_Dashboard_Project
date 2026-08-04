@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import { useDatabase } from '../context/DatabaseContext';
+import { useLayout } from '../context/LayoutContext';
 import { shouldShowTags } from '../../utils/feature-flags';
 import QuickAddBar from '../components/QuickAddBar';
+import HabitCheckinStrip from '../components/HabitCheckinStrip';
+import MoneySnapshot from '../components/MoneySnapshot';
 
 function fmtWhen(iso) {
   if (!iso || iso.startsWith('9999')) return 'Open';
@@ -17,14 +20,20 @@ function fmtWhen(iso) {
 }
 
 /**
- * Live Compact brief: due tasks, expired, reminders today/tomorrow.
- * @param {{ onEditRequest?: (type: 'task'|'reminder', id: number) => void }} props
+ * Live Compact brief: tasks, reminders, bills, events, habits, money.
+ * @param {{ onEditRequest?: (type: string, id: number) => void, onNavigate?: (id: string) => void }} props
  */
-export default function CenterBrief({ onEditRequest }) {
+export default function CenterBrief({ onEditRequest, onNavigate }) {
   const { brief, loading, error, refresh } = useBrief();
   const { settings } = useDatabase();
+  const { enterFocus } = useLayout();
   const showTags = shouldShowTags(settings);
   const [expiredOpen, setExpiredOpen] = useState(true);
+
+  function openModule(id) {
+    onNavigate?.(id);
+    enterFocus();
+  }
 
   function tagsLine(item) {
     if (!showTags || !item?.tags?.length) return null;
@@ -48,6 +57,28 @@ export default function CenterBrief({ onEditRequest }) {
 
   async function deleteRem(id) {
     await window.api.deleteReminder(id);
+    await refresh();
+  }
+
+  /** Prompt for actual on estimate/avg bills; fixed logs standing amount. */
+  async function payBill(b) {
+    let opts;
+    if (b.amount_mode === 'estimate' || b.amount_mode === 'average') {
+      const raw = window.prompt(
+        `Actual amount paid for "${b.name}"`,
+        String(b.amount)
+      );
+      if (raw === null) return;
+      const actual = Number(raw);
+      if (!Number.isFinite(actual)) return;
+      opts = { actual_amount: actual };
+    }
+    await window.api.markBillPaid(b.id, opts);
+    await refresh();
+  }
+
+  async function toggleHabit(id) {
+    await window.api.toggleCheckin(id);
     await refresh();
   }
 
@@ -101,6 +132,18 @@ export default function CenterBrief({ onEditRequest }) {
             {error}
           </p>
         )}
+
+        <HabitCheckinStrip
+          habits={brief?.habitsToday || []}
+          onToggle={toggleHabit}
+          onOpen={() => openModule('habits')}
+        />
+
+        <MoneySnapshot
+          today={brief?.moneyToday}
+          mtd={brief?.moneyMtd}
+          onOpen={() => openModule('spending')}
+        />
 
         <div>
           <p className="section-label">Tasks due</p>
@@ -158,6 +201,87 @@ export default function CenterBrief({ onEditRequest }) {
               )}
             </ul>
           )}
+        </div>
+
+        {(brief?.billsOverdue?.length > 0 || brief?.billsDueToday?.length > 0) && (
+          <div>
+            <p className="section-label">Bills</p>
+            <ul className="reminder-list">
+              {(brief?.billsOverdue || []).map((b) => (
+                <li
+                  key={`o-${b.id}`}
+                  className="reminder-item glass-inset item-row item-row--expired"
+                >
+                  <div className="item-row__main">
+                    <span>
+                      {b.name} · ${Number(b.amount).toFixed(2)}
+                      {b.amount_mode === 'estimate' && (
+                        <span className="bill-amount-caption"> Estimate</span>
+                      )}
+                      {b.amount_mode === 'average' && (
+                        <span className="bill-amount-caption"> Avg</span>
+                      )}
+                    </span>
+                    <span className="reminder-item__when">overdue {b.due_date}</span>
+                  </div>
+                  <div className="item-row__actions">
+                    <button type="button" onClick={() => payBill(b)}>
+                      Paid
+                    </button>
+                    <button type="button" onClick={() => onEditRequest?.('bill', b.id)}>
+                      Edit
+                    </button>
+                  </div>
+                </li>
+              ))}
+              {(brief?.billsDueToday || []).map((b) => (
+                <li key={`d-${b.id}`} className="reminder-item glass-inset item-row">
+                  <div className="item-row__main">
+                    <span>
+                      {b.name} · ${Number(b.amount).toFixed(2)}
+                      {b.amount_mode === 'estimate' && (
+                        <span className="bill-amount-caption"> Estimate</span>
+                      )}
+                      {b.amount_mode === 'average' && (
+                        <span className="bill-amount-caption"> Avg</span>
+                      )}
+                    </span>
+                    <span className="reminder-item__when">due today</span>
+                  </div>
+                  <div className="item-row__actions">
+                    <button type="button" onClick={() => payBill(b)}>
+                      Paid
+                    </button>
+                    <button type="button" onClick={() => onEditRequest?.('bill', b.id)}>
+                      Edit
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div>
+          <p className="section-label">Events today</p>
+          <ul className="reminder-list">
+            {(brief?.eventsToday || []).map((ev) => (
+              <li key={ev.id} className="reminder-item glass-inset item-row">
+                <div className="item-row__main">
+                  <span>{ev.title}</span>
+                  <span className="reminder-item__when">{fmtWhen(ev.start_datetime)}</span>
+                </div>
+                <div className="item-row__actions">
+                  <button type="button" onClick={() => onEditRequest?.('event', ev.id)}>
+                    Edit
+                  </button>
+                </div>
+              </li>
+            ))}
+            {!brief?.eventsToday?.length && (
+              <p className="stub-empty">No events today.</p>
+            )}
+          </ul>
         </div>
 
         <div>
@@ -223,11 +347,6 @@ export default function CenterBrief({ onEditRequest }) {
             </ul>
           </div>
         )}
-
-        <div>
-          <p className="section-label">Priority trackers & timers</p>
-          <p className="stub-empty">Timers ship Phase 3.</p>
-        </div>
       </div>
     </section>
   );

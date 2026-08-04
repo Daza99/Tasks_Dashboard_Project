@@ -4,6 +4,10 @@
 const { getDb } = require('../../main/database');
 const { getItemTagNames } = require('./tags');
 const { startOfDay, endOfDay, addDays } = require('./reminders');
+const { listHabitsDueToday } = require('./habits');
+const { listBillsForBrief } = require('./bills');
+const { listEventsToday } = require('./events');
+const { getMoneySnapshot } = require('./transactions');
 
 function enrichTask(row) {
   return { ...row, tags: getItemTagNames('task', row.id), item_type: 'task' };
@@ -55,7 +59,6 @@ function getTodayBrief() {
     seen.add(t.id);
     tasksUnique.push(t);
   }
-  // Stable priority order after merge (dueTasks + todo24 can interleave)
   tasksUnique.sort(
     (a, b) =>
       (a.priority ?? 3) - (b.priority ?? 3) ||
@@ -108,12 +111,21 @@ function getTodayBrief() {
     .all()
     .map(enrichRem);
 
+  const { billsDueToday, billsOverdue } = listBillsForBrief();
+  const { moneyToday, moneyMtd } = getMoneySnapshot();
+
   return {
     tasksDueToday: tasksUnique,
     expiredTasks,
     remindersToday,
     remindersTomorrow,
     ignoredReminders: ignored,
+    habitsToday: listHabitsDueToday(),
+    billsDueToday,
+    billsOverdue,
+    eventsToday: listEventsToday(),
+    moneyToday,
+    moneyMtd,
     generatedAt: new Date().toISOString(),
   };
 }

@@ -5,6 +5,7 @@ const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const {
   addTag,
+  removeTag,
   replaceTags,
   getItemTagNames,
   hasTag,
@@ -109,6 +110,13 @@ function updateTask(id, fields) {
           }
         }
       }
+      // Reschedule due → allow popup again; revive expired to todo_24
+      if (fields.due_datetime !== undefined) {
+        removeTag('task', id, 'todo_alerted');
+        if (hasTag('task', id, 'todo_expired')) {
+          replaceTags('task', id, TASK_LIFECYCLE, 'todo_24');
+        }
+      }
     });
     tx();
     return getTask(id);
@@ -177,6 +185,76 @@ function expireStaleTodo24() {
   }
 }
 
+/**
+ * Active todo_24 tasks whose due time has arrived and not yet alerted.
+ * Polled before expireStaleTodo24 so popup can fire first.
+ */
+function listDueTasksForAlert() {
+  return getDb()
+    .prepare(
+      `SELECT t.* FROM tasks t
+       JOIN item_tags it ON it.item_id = t.id AND it.item_type = 'task'
+       JOIN tags g ON g.id = it.tag_id AND g.name = 'todo_24'
+       WHERE t.completed_at IS NULL AND t.archived = 0
+         AND t.due_datetime IS NOT NULL
+         AND datetime(t.due_datetime) <= datetime('now')
+         AND NOT EXISTS (
+           SELECT 1 FROM item_tags it2
+           JOIN tags g2 ON g2.id = it2.tag_id AND g2.name = 'todo_alerted'
+           WHERE it2.item_type = 'task' AND it2.item_id = t.id
+         )`
+    )
+    .all()
+    .map(enrich);
+}
+
+/** Persist that the due popup was shown (blocks re-fire until due reschedule). */
+function markTaskAlerted(id) {
+  addTag('task', id, 'todo_alerted');
+  return getTask(id);
+}
+
+/** X/close on task popup → expire + keep alerted so it does not re-fire. */
+function ignoreTaskAlert(id) {
+  try {
+    addTag('task', id, 'todo_alerted');
+    replaceTags('task', id, TASK_LIFECYCLE, 'todo_expired');
+    return getTask(id);
+  } catch (err) {
+    logError('ignoreTaskAlert', err);
+    throw err;
+  }
+}
+
+/**
+ * Snooze task alert: push due_datetime forward, clear alerted, stay/revive todo_24.
+ * @param {number} id
+ * @param {number} [minutes]
+ */
+function snoozeTask(id, minutes) {
+  try {
+    const settingsMins = Number(
+      getDb()
+        .prepare(`SELECT value FROM settings WHERE key = 'notif_default_snooze_minutes'`)
+        .get()?.value || 10
+    );
+    const mins = Number(minutes);
+    const useMins = Number.isFinite(mins) && mins > 0 ? mins : settingsMins;
+    const until = new Date(Date.now() + useMins * 60 * 1000).toISOString();
+    const db = getDb();
+    const tx = db.transaction(() => {
+      db.prepare(`UPDATE tasks SET due_datetime = ? WHERE id = ?`).run(until, id);
+      removeTag('task', id, 'todo_alerted');
+      replaceTags('task', id, TASK_LIFECYCLE, 'todo_24');
+    });
+    tx();
+    return getTask(id);
+  } catch (err) {
+    logError('snoozeTask', err);
+    throw err;
+  }
+}
+
 module.exports = {
   createTask,
   getTask,
@@ -185,6 +263,10 @@ module.exports = {
   completeTask,
   deleteTask,
   expireStaleTodo24,
+  listDueTasksForAlert,
+  markTaskAlerted,
+  ignoreTaskAlert,
+  snoozeTask,
   clampPriority,
   TASK_LIFECYCLE,
 };

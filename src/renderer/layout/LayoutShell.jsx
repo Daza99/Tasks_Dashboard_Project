@@ -38,7 +38,7 @@ export default function LayoutShell({
         )}
 
         {isCompact ? (
-          <CenterBrief onEditRequest={handleEditRequest} />
+          <CenterBrief onEditRequest={handleEditRequest} onNavigate={onNavigate} />
         ) : (
           <div className="center-panel glass-panel focus-host">{focusContent}</div>
         )}

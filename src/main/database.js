@@ -36,7 +36,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const SYSTEM_TAGS = [
-  'todo_24', 'todo_open', 'todo_completed', 'todo_expired',
+  'todo_24', 'todo_open', 'todo_completed', 'todo_expired', 'todo_alerted',
   'rem_today', 'rem_tomorrow', 'rem_dated', 'rem_open',
   'rem_pending', 'rem_fired', 'rem_grace', 'rem_ignored',
   'rem_completed', 'rem_snoozed', 'locked', 'archived',
@@ -96,6 +96,7 @@ function initDatabase() {
     const schemaPath = getSchemaPath();
     const schema = fs.readFileSync(schemaPath, 'utf8');
     db.exec(schema);
+    migrateSchema();
 
     seedSettings();
     seedSystemTags();
@@ -105,6 +106,39 @@ function initDatabase() {
     logError('initDatabase', err);
     throw err;
   }
+}
+
+/** Additive columns for DBs created before Phase 3 schema extensions. */
+function migrateSchema() {
+  const habitCols = db.prepare('PRAGMA table_info(habits)').all().map((c) => c.name);
+  const addHabit = (col, ddl) => {
+    if (!habitCols.includes(col)) db.exec(`ALTER TABLE habits ADD COLUMN ${ddl}`);
+  };
+  addHabit('nudge_time', 'nudge_time TEXT');
+  addHabit('snooze_until', 'snooze_until DATETIME');
+  addHabit('last_nudge_date', 'last_nudge_date DATE');
+
+  const billCols = db.prepare('PRAGMA table_info(bills)').all().map((c) => c.name);
+  const addBill = (col, ddl) => {
+    if (!billCols.includes(col)) db.exec(`ALTER TABLE bills ADD COLUMN ${ddl}`);
+  };
+  addBill('snooze_until', 'snooze_until DATETIME');
+  addBill('alerted_before', 'alerted_before INTEGER DEFAULT 0');
+  addBill('alerted_due', 'alerted_due INTEGER DEFAULT 0');
+  addBill('amount_mode', "amount_mode TEXT NOT NULL DEFAULT 'fixed'");
+
+  // Payment history for estimate/average (CREATE IF NOT EXISTS covers older DBs)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bill_payments (
+      id INTEGER PRIMARY KEY,
+      bill_id INTEGER,
+      bill_name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      due_date DATE,
+      paid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(bill_id) REFERENCES bills(id) ON DELETE SET NULL
+    );
+  `);
 }
 
 function seedSettings() {

@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS habits (
     name TEXT NOT NULL,
     frequency TEXT NOT NULL,
     color TEXT,
+    nudge_time TEXT,
+    snooze_until DATETIME,
+    last_nudge_date DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -55,11 +58,26 @@ CREATE TABLE IF NOT EXISTS bills (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     amount REAL NOT NULL,
+    amount_mode TEXT NOT NULL DEFAULT 'fixed', -- fixed | estimate | average
     due_date DATE NOT NULL,
     recurrence TEXT,
     paid_status TEXT DEFAULT 'pending',
     category TEXT,
+    snooze_until DATETIME,
+    alerted_before INTEGER DEFAULT 0,
+    alerted_due INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Actual amounts paid per cycle; average keyed by bill_name
+CREATE TABLE IF NOT EXISTS bill_payments (
+    id INTEGER PRIMARY KEY,
+    bill_id INTEGER,
+    bill_name TEXT NOT NULL,
+    amount REAL NOT NULL,
+    due_date DATE,
+    paid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(bill_id) REFERENCES bills(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS events (

@@ -649,6 +649,30 @@
   margin-top: 4px;
 }
 
+.bill-amount-row {
+  flex-wrap: wrap;
+}
+.bill-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.bill-check--muted {
+  color: var(--text-muted);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.bill-amount-caption {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .edit-form {
   display: flex;
   flex-direction: column;
@@ -669,5 +693,121 @@
   gap: 4px;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* Phase 3: habit strip, money, calendar */
+.habit-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.habit-chip {
+  border: 1px solid var(--panel-border);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-chip);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.habit-chip--done {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--sidebar-active-bg);
+  text-decoration: line-through;
+}
+
+.money-snapshot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.money-snapshot__label {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.money-snapshot strong {
+  font-size: 15px;
+}
+
+.linkish {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.cal-grid__dow {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.cal-grid__day {
+  aspect-ratio: 1;
+  border: 1px solid var(--panel-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  position: relative;
+}
+.cal-grid__day--muted {
+  opacity: 0.35;
+}
+.cal-grid__day--selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--sidebar-active-bg);
+}
+.cal-grid__day--dot::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.cal-day-title {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+.create-form input[type='number'],
+.create-form input[type='datetime-local'],
+.edit-form input[type='number'],
+.edit-form input[type='date'],
+.edit-form input[type='time'],
+.edit-form input[type='datetime-local'] {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text-primary);
 }
 

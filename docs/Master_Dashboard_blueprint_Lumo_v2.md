@@ -608,6 +608,9 @@ Data Storage
 settings table: wallpaper_mode, wallpaper_color, wallpaper_image_path, wallpaper_fit, wallpaper_dim
 wallpaper_library table: id, filename, added_date, eligible_for_random
 10. Popup Notification System
+
+> **Engineering note (debug + extend):** [`docs/notification-popup-system.md`](notification-popup-system.md) — scheduler order, task vs reminder tags, shared `showItemNotification` contract for bills/habits/etc.
+
 Why Custom Windows (Not OS-Native Toasts)
 OS-native notifications are filtered by Windows notification center, styled by the OS, and can't host interactive elements like "remind me in X." These must be custom Electron BrowserWindows.
 
@@ -647,10 +650,11 @@ Volume slider (0–100%)
 If no sounds in library or toggle off → silent notification
 If random toggle is off → user picks a single default sound
 Notification Trigger Sources
-Reminders (time-based)
-Bill due alerts (1 day before, day of)
-Habit nudges (if configured per habit — "remind me to check in at 8am")
-Custom manual triggers from the quick-add bar
+Reminders (time-based) — implemented (`rem_*` + popup)
+Tasks with due_datetime — implemented (`todo_24` alert before expire; `todo_alerted`)
+Bill due alerts (1 day before, day of) — same popup pipeline when added
+Habit nudges (if configured per habit — "remind me to check in at 8am") — same pipeline
+Custom manual triggers from the quick-add bar (`remind` / `!` → reminder; bare text → task)
 Data Storage
 settings table: notif_position, notif_timeout_seconds, notif_text_color, notif_random_bg, notif_random_sfx, notif_volume, notif_grace_period_hours, notif_default_snooze_minutes, notif_default_sound, Debut_mode, show_tags_always
 sound_library table: id, filename, added_date, eligible_for_random

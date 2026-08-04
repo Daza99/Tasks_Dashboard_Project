@@ -19,11 +19,17 @@ export default function QuickAddBar({ compact = false }) {
     try {
       const result = await window.api.quickAdd(text.trim());
       setText('');
-      setStatus(
+      const label =
         result.type === 'task'
-          ? `Task · ${result.item.title}`
-          : `Reminder · ${result.item.title}`
-      );
+          ? result.item.title
+          : result.type === 'reminder'
+            ? result.item.title
+            : result.type === 'habit'
+              ? result.item.name
+              : result.type === 'transaction'
+                ? `$${Number(result.item.amount).toFixed(2)} ${result.item.category}`
+                : result.type;
+      setStatus(`${result.type} · ${label}`);
       await refresh();
     } catch (err) {
       setStatus(err?.message || String(err));
@@ -41,7 +47,7 @@ export default function QuickAddBar({ compact = false }) {
         type="text"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder='Quick add — "buy milk p1" or "remind call mom at 5pm"'
+        placeholder='Quick add — task, remind…, $12.50 coffee, habit stretch'
         aria-label="Quick add"
         disabled={busy}
       />

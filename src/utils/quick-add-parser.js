@@ -1,10 +1,10 @@
 /**
- * Natural-language Quick Add → task or reminder payload.
+ * Natural-language Quick Add → task | reminder | transaction | habit.
  * Examples:
  *   "buy milk" → task todo_24
- *   "todo open read book #later" → todo_open + tag later
- *   "buy milk p1" → task priority 1
- *   "remind call mom tomorrow" / "remind pay bill at 5pm"
+ *   "remind call mom tomorrow"
+ *   "$12.50 coffee" / "spent 12.50 groceries lunch"
+ *   "habit stretch daily"
  */
 
 function stripTags(text) {
@@ -27,15 +27,24 @@ function parseTimeToday(phrase) {
   const ap = (m[3] || '').toLowerCase();
   if (ap === 'pm' && h < 12) h += 12;
   if (ap === 'am' && h === 12) h = 0;
-  if (!ap && h <= 7) h += 12; // bare "5" → 5pm heuristic for evening
+  if (!ap && h <= 7) h += 12;
   const d = new Date();
   d.setHours(h, min, 0, 0);
   return d.toISOString();
 }
 
+/** Local YYYY-MM-DD. */
+function todayKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /**
  * @param {string} input
- * @returns {{ type: 'task'|'reminder', payload: object, tags: string[] }}
+ * @returns {{ type: string, payload: object, tags: string[] }}
  */
 function parseQuickAdd(input) {
   const raw = (input || '').trim();
@@ -43,6 +52,44 @@ function parseQuickAdd(input) {
 
   const { cleaned, tags } = stripTags(raw);
   const lower = cleaned.toLowerCase();
+
+  // Spend: $12.50 coffee  |  spent 12.50 groceries
+  const spendMatch =
+    cleaned.match(/^\$\s*(\d+(?:\.\d{1,2})?)\s+(.+)$/i) ||
+    cleaned.match(/^(?:spent|spend|tx|paid)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+(.+)$/i);
+  if (spendMatch) {
+    const amount = Number(spendMatch[1]);
+    let rest = spendMatch[2].trim();
+    const parts = rest.split(/\s+/);
+    const category = parts[0] || 'misc';
+    const description = parts.slice(1).join(' ') || null;
+    return {
+      type: 'transaction',
+      payload: { amount, category, description, date: todayKey(), tags },
+      tags,
+    };
+  }
+
+  // Habit: habit stretch  |  habit meditate weekdays
+  if (/^habit\b/i.test(cleaned)) {
+    let body = cleaned.replace(/^habit\s+/i, '').trim();
+    let frequency = 'daily';
+    if (/\bweekdays?\b/i.test(body)) {
+      frequency = 'weekdays';
+      body = body.replace(/\bweekdays?\b/i, '').trim();
+    } else if (/\bdaily\b/i.test(body)) {
+      body = body.replace(/\bdaily\b/i, '').trim();
+    } else if (/\bcustom\b/i.test(body)) {
+      frequency = 'custom';
+      body = body.replace(/\bcustom\b/i, '').trim();
+    }
+    if (!body) throw new Error('Habit name required');
+    return {
+      type: 'habit',
+      payload: { name: body, frequency },
+      tags,
+    };
+  }
 
   const isReminder =
     /^(remind(?:er)?|rem)\b/i.test(cleaned) ||
@@ -61,7 +108,7 @@ function parseQuickAdd(input) {
     if (/\btomorrow\b/i.test(body)) {
       scope = 'tomorrow';
       body = body.replace(/\btomorrow\b/i, '').trim();
-      datetime = parseTimeToday(body); // time-of-day applied to tomorrow in service if we pass ISO — fix below
+      datetime = parseTimeToday(body);
       if (datetime) {
         const t = new Date(datetime);
         const tom = new Date();
@@ -100,7 +147,6 @@ function parseQuickAdd(input) {
     body = body.replace(/^(todo|task)\s+/i, '').trim();
   }
 
-  // p1–p5 or priority:1 (avoid leading ! — that means reminder)
   let priority = 3;
   const prioMatch =
     body.match(/\bp([1-5])\b/i) ||

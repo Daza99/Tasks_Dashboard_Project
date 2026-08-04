@@ -7,7 +7,18 @@ import LayoutShell from './layout/LayoutShell';
 import SettingsView from './views/Settings';
 import TasksView from './views/Tasks';
 import RemindersView from './views/Reminders';
+import HabitsView from './views/Habits';
+import BillsView from './views/Bills';
+import CalendarView from './views/Calendar';
+import SpendingView from './views/Spending';
 import StubView from './views/StubView';
+
+const EDIT_VIEW = {
+  task: 'tasks',
+  reminder: 'reminders',
+  bill: 'bills',
+  event: 'calendar',
+};
 
 function AppInner() {
   const { ready, error } = useDatabase();
@@ -39,7 +50,7 @@ function AppInner() {
   /** Brief Edit → Focus on module with item open for edit. */
   function requestEdit(type, id) {
     setEditRequest({ type, id });
-    setActiveView(type === 'task' ? 'tasks' : 'reminders');
+    setActiveView(EDIT_VIEW[type] || type);
   }
 
   let focusContent = <StubView viewId={activeView || 'today'} />;
@@ -58,6 +69,24 @@ function AppInner() {
         onEditConsumed={clearEditRequest}
       />
     );
+  } else if (activeView === 'habits') {
+    focusContent = <HabitsView />;
+  } else if (activeView === 'bills') {
+    focusContent = (
+      <BillsView
+        editId={editRequest?.type === 'bill' ? editRequest.id : null}
+        onEditConsumed={clearEditRequest}
+      />
+    );
+  } else if (activeView === 'calendar') {
+    focusContent = (
+      <CalendarView
+        editId={editRequest?.type === 'event' ? editRequest.id : null}
+        onEditConsumed={clearEditRequest}
+      />
+    );
+  } else if (activeView === 'spending') {
+    focusContent = <SpendingView />;
   } else if (activeView) {
     focusContent = <StubView viewId={activeView} />;
   }

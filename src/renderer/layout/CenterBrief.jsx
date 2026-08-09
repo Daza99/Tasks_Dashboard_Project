@@ -125,9 +125,9 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
   }
 
   return (
-    <section className="center-panel glass-panel" aria-label="Due Today">
+    <section className="center-panel glass-panel" aria-label="TASKS — Due today">
       <div className="center-panel__header">
-        <h2 className="center-panel__title">Due Today</h2>
+        <h2 className="center-panel__title">TASKS — Due today</h2>
         <button type="button" className="btn-compact" onClick={refresh}>
           Refresh
         </button>
@@ -156,7 +156,6 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
         />
 
         <div>
-          <p className="section-label">Tasks due</p>
           {!brief?.tasksDueToday?.length && (
             <p className="stub-empty">No tasks due today — quick-add or open Tasks.</p>
           )}

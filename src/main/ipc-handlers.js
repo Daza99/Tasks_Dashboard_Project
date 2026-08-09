@@ -33,6 +33,8 @@ const {
   getHabit,
   updateHabit,
   deleteHabit,
+  archiveHabit,
+  activateHabit,
   toggleCheckin,
 } = require('../services/db/habits');
 const {
@@ -64,7 +66,7 @@ const {
   deleteTransaction,
 } = require('../services/db/transactions');
 const { getTodayBrief } = require('../services/db/today');
-const { addTag } = require('../services/db/tags');
+const { addTag, listTags } = require('../services/db/tags');
 const { runTagAudit } = require('./scheduler');
 const { registerNotificationIpc } = require('./notification-window');
 const { parseQuickAdd } = require('../utils/quick-add-parser');
@@ -162,7 +164,7 @@ function registerIpcHandlers() {
   ipcMain.handle('reminders:delete', (_e, id) => deleteReminder(id));
 
   // --- Habits ---
-  ipcMain.handle('habits:list', () => listHabits());
+  ipcMain.handle('habits:list', (_e, opts) => listHabits(opts || {}));
   ipcMain.handle('habits:get', (_e, id) => getHabit(id));
   ipcMain.handle('habits:create', (_e, data) => createHabit(data));
   ipcMain.handle('habits:update', (_e, id, fields) => {
@@ -174,6 +176,8 @@ function registerIpcHandlers() {
     return row;
   });
   ipcMain.handle('habits:delete', (_e, id) => deleteHabit(id));
+  ipcMain.handle('habits:archive', (_e, id) => archiveHabit(id));
+  ipcMain.handle('habits:activate', (_e, id) => activateHabit(id));
   ipcMain.handle('habits:toggleCheckin', (_e, id, date) => toggleCheckin(id, date));
 
   // --- Bills ---
@@ -213,6 +217,8 @@ function registerIpcHandlers() {
   ipcMain.handle('tx:update', (_e, id, fields) => updateTransaction(id, fields));
   ipcMain.handle('tx:delete', (_e, id) => deleteTransaction(id));
 
+  ipcMain.handle('tags:list', (_e, opts) => listTags(opts || {}));
+
   // --- Today + Quick Add ---
   ipcMain.handle('today:getBrief', () => getTodayBrief());
   ipcMain.handle('today:runAudit', () => runTagAudit());
@@ -235,7 +241,10 @@ function registerIpcHandlers() {
         return { type: 'transaction', item: tx };
       }
       if (parsed.type === 'habit') {
-        const habit = createHabit(parsed.payload);
+        const habit = createHabit({
+          ...parsed.payload,
+          tags: parsed.tags,
+        });
         return { type: 'habit', item: habit };
       }
       throw new Error(`Unknown quick-add type: ${parsed.type}`);

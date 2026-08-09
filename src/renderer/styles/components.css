@@ -640,6 +640,91 @@
   width: 100%;
 }
 
+/* Module list filter bar (Habits, Spending, etc.) */
+.module-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.module-filter-bar__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 120px;
+}
+.module-filter-bar__field--grow {
+  flex: 1;
+  min-width: 160px;
+}
+.module-filter-bar__field select,
+.module-filter-bar__field input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+}
+/* Windows native option popup is light — force readable black text */
+.module-filter-bar__field select option {
+  color: #000;
+  background: #fff;
+}
+
+/* Ghost tag autocomplete (TagInput / TagSearchInput / Quick Add) */
+.tag-input {
+  position: relative;
+  width: 100%;
+  font: inherit;
+}
+.tag-input__ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  pointer-events: none;
+  white-space: pre;
+  overflow: hidden;
+  border-radius: 8px;
+  font: inherit;
+  line-height: normal;
+}
+.tag-input__ghost-typed {
+  color: transparent;
+}
+.tag-input__ghost-rest {
+  color: var(--text-muted, rgba(242, 245, 248, 0.35));
+}
+.tag-input__field {
+  position: relative;
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+}
+.quick-add__field-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 160px;
+}
+.quick-add__field-wrap .tag-input__ghost {
+  padding: 8px 10px;
+}
+.quick-add__field-wrap .tag-input__field,
+.quick-add .tag-input__field {
+  width: 100%;
+  min-width: 160px;
+}
+
 .module-list {
   list-style: none;
   margin: 0;

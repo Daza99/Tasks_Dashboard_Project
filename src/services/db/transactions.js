@@ -3,7 +3,7 @@
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
-const { getItemTagNames, addTag } = require('./tags');
+const { getItemTagNames, addTag, syncUserTags } = require('./tags');
 const { dateKey } = require('./habits');
 
 function enrich(row) {
@@ -99,6 +99,7 @@ function updateTransaction(id, fields) {
          WHERE id = ?`
       )
       .run(amount, category, description, date, id);
+    if (fields.tags !== undefined) syncUserTags('transaction', id, fields.tags);
     return getTransaction(id);
   } catch (err) {
     logError('updateTransaction', err);

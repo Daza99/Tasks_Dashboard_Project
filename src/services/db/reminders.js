@@ -144,6 +144,10 @@ function updateReminder(id, fields) {
         ).run(id);
         replaceTags('reminder', id, STATE_TAGS, 'rem_pending');
       }
+      if (fields.tags !== undefined) {
+        const { syncUserTags } = require('./tags');
+        syncUserTags('reminder', id, fields.tags);
+      }
     });
     tx();
     return getReminder(id);

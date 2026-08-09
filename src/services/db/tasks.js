@@ -117,6 +117,10 @@ function updateTask(id, fields) {
           replaceTags('task', id, TASK_LIFECYCLE, 'todo_24');
         }
       }
+      if (fields.tags !== undefined) {
+        const { syncUserTags } = require('./tags');
+        syncUserTags('task', id, fields.tags);
+      }
     });
     tx();
     return getTask(id);

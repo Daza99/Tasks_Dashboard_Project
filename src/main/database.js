@@ -40,6 +40,7 @@ const SYSTEM_TAGS = [
   'rem_today', 'rem_tomorrow', 'rem_dated', 'rem_open',
   'rem_pending', 'rem_fired', 'rem_grace', 'rem_ignored',
   'rem_completed', 'rem_snoozed', 'locked', 'archived',
+  'nudge',
 ];
 
 const DEFAULT_DARK_THEME = {
@@ -154,6 +155,43 @@ function migrateSchema() {
     ).run();
     db.prepare(
       `INSERT INTO settings (key, value) VALUES ('bill_payments_exact_deduped_v1', '1')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run();
+  }
+
+  // One-shot: daily|weekdays|custom → daily|weekly|monthly + nudge tags
+  const habitFreqFlag = db
+    .prepare("SELECT value FROM settings WHERE key = 'habits_freq_nudge_v1'")
+    .get();
+  if (!habitFreqFlag || habitFreqFlag.value !== '1') {
+    db.prepare(
+      `UPDATE habits SET frequency = 'weekly' WHERE frequency = 'weekdays'`
+    ).run();
+    db.prepare(
+      `UPDATE habits SET frequency = 'monthly' WHERE frequency = 'custom'`
+    ).run();
+    // Ensure nudge system tag exists, then attach to habits with nudge_time
+    db.prepare(
+      `INSERT OR IGNORE INTO tags (name, color, is_system) VALUES ('nudge', NULL, 1)`
+    ).run();
+    const nudgeTag = db.prepare(`SELECT id FROM tags WHERE name = 'nudge'`).get();
+    if (nudgeTag) {
+      const withNudge = db
+        .prepare(`SELECT id FROM habits WHERE nudge_time IS NOT NULL`)
+        .all();
+      const exists = db.prepare(
+        `SELECT id FROM item_tags
+         WHERE item_type = 'habit' AND item_id = ? AND tag_id = ?`
+      );
+      const link = db.prepare(
+        `INSERT INTO item_tags (item_type, item_id, tag_id) VALUES ('habit', ?, ?)`
+      );
+      for (const h of withNudge) {
+        if (!exists.get(h.id, nudgeTag.id)) link.run(h.id, nudgeTag.id);
+      }
+    }
+    db.prepare(
+      `INSERT INTO settings (key, value) VALUES ('habits_freq_nudge_v1', '1')
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     ).run();
   }

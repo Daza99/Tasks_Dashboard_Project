@@ -73,6 +73,16 @@
         line-height: 1.35;
         overflow: hidden;
       }
+      .notif-tags {
+        font-size: 12px;
+        letter-spacing: 0.02em;
+        opacity: 0.7;
+        color: #39ff6a;
+        margin-top: -4px;
+      }
+      .notif-tags:empty {
+        display: none;
+      }
       .actions {
         display: flex;
         gap: 8px;
@@ -106,6 +116,7 @@
         </div>
       </div>
       <div class="title" id="title">…</div>
+      <div class="notif-tags" id="tags"></div>
       <div class="actions">
         <button type="button" class="secondary" id="btn-snooze">Snooze</button>
         <button type="button" id="btn-done">Done</button>
@@ -126,6 +137,14 @@
 
       document.querySelector('.label').textContent = label;
       document.getElementById('title').textContent = title;
+      // Show #tag chips under title (e.g. #nudge on habit pre-reminders)
+      const rawTags = (params.get('tags') || '')
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      document.getElementById('tags').textContent = rawTags
+        .map((t) => (t.startsWith('#') ? t : '#' + t))
+        .join(' ');
       document.querySelector('.card').style.color = textColor;
       document.getElementById('btn-snooze').textContent = 'Snooze ' + snoozeMins + 'm';
 

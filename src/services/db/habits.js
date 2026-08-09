@@ -1,11 +1,21 @@
 /**
- * Habits CRUD, daily check-ins, streaks, nudge alerts.
+ * Habits CRUD, daily check-ins, streaks, nudge alerts, tags, archive.
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { addDays } = require('./reminders');
+const {
+  addTag,
+  removeTag,
+  getItemTagNames,
+  hasTag,
+  syncUserTags: syncItemUserTags,
+  normalizeTagNames,
+} = require('./tags');
 
-const FREQUENCIES = ['daily', 'weekdays', 'custom'];
+const FREQUENCIES = ['daily', 'weekly', 'monthly'];
+/** System-managed habit tags — UI / exports. */
+const HABIT_SYSTEM_TAGS = new Set(['nudge', 'archived']);
 
 /** Local YYYY-MM-DD for a Date. */
 function dateKey(d = new Date()) {
@@ -16,13 +26,33 @@ function dateKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+/** Sync nudge system tag from nudge_time presence. */
+function syncNudgeTag(habitId, nudgeTime) {
+  if (nudgeTime) addTag('habit', habitId, 'nudge');
+  else removeTag('habit', habitId, 'nudge');
+}
+
+/** Replace user tags; leave system tags (nudge/archived) alone. */
+function syncUserTags(habitId, tags) {
+  syncItemUserTags('habit', habitId, tags);
+}
+
 /** True if habit is due on the given local date. */
 function isDueOn(habit, d = new Date()) {
   const freq = habit.frequency || 'daily';
-  if (freq === 'daily' || freq === 'custom') return true;
-  if (freq === 'weekdays') {
+  if (freq === 'daily') return true;
+  // weekly ≈ former weekdays (Mon–Fri)
+  if (freq === 'weekly' || freq === 'weekdays') {
     const day = d.getDay();
     return day >= 1 && day <= 5;
+  }
+  // monthly: anniversary of created_at day-of-month (clamp short months)
+  if (freq === 'monthly' || freq === 'custom') {
+    const created = habit.created_at ? new Date(habit.created_at) : null;
+    const dom =
+      created && !Number.isNaN(created.getTime()) ? created.getDate() : 1;
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return d.getDate() === Math.min(dom, last);
   }
   return true;
 }
@@ -36,26 +66,40 @@ function enrich(row, { date = dateKey() } = {}) {
     .get(row.id, date);
   return {
     ...row,
+    tags: getItemTagNames('habit', row.id),
     completed_today: Boolean(log?.completed),
     streak: getStreak(row.id),
   };
 }
 
-/** Create habit. frequency: daily | weekdays | custom. */
-function createHabit({ name, frequency = 'daily', color = null, nudge_time = null }) {
+/**
+ * Create habit.
+ * @param {{ name: string, frequency?: string, color?: string|null, nudge_time?: string|null, tags?: string[]|string }} data
+ */
+function createHabit({
+  name,
+  frequency = 'daily',
+  color = null,
+  nudge_time = null,
+  tags = undefined,
+}) {
   try {
     if (!name?.trim()) throw new Error('Name required');
     if (!FREQUENCIES.includes(frequency)) {
-      throw new Error('frequency must be daily, weekdays, or custom');
+      throw new Error('frequency must be daily, weekly, or monthly');
     }
-    const nudge = nudge_time && /^\d{2}:\d{2}$/.test(nudge_time) ? nudge_time : null;
+    const nudge =
+      nudge_time && /^\d{2}:\d{2}$/.test(nudge_time) ? nudge_time : null;
     const info = getDb()
       .prepare(
         `INSERT INTO habits (name, frequency, color, nudge_time)
          VALUES (?, ?, ?, ?)`
       )
       .run(name.trim(), frequency, color, nudge);
-    return getHabit(Number(info.lastInsertRowid));
+    const id = Number(info.lastInsertRowid);
+    syncNudgeTag(id, nudge);
+    if (tags !== undefined) syncUserTags(id, tags);
+    return getHabit(id);
   } catch (err) {
     logError('createHabit', err);
     throw err;
@@ -67,24 +111,32 @@ function getHabit(id) {
   return enrich(row);
 }
 
-/** List habits with today's check-in + streak. */
-function listHabits() {
+/**
+ * List habits with today's check-in + streak + tags.
+ * @param {{ archived?: boolean }} opts — false = active only; true = archived only
+ */
+function listHabits({ archived = false } = {}) {
   try {
     const rows = getDb()
       .prepare('SELECT * FROM habits ORDER BY name COLLATE NOCASE ASC')
       .all();
-    return rows.map((r) => enrich(r));
+    return rows
+      .map((r) => enrich(r))
+      .filter((h) => {
+        const isArch = (h.tags || []).includes('archived');
+        return archived ? isArch : !isArch;
+      });
   } catch (err) {
     logError('listHabits', err);
     throw err;
   }
 }
 
-/** Habits due today (for brief strip). */
+/** Habits due today (for brief strip) — active only. */
 function listHabitsDueToday() {
   try {
     const today = new Date();
-    return listHabits().filter((h) => isDueOn(h, today));
+    return listHabits({ archived: false }).filter((h) => isDueOn(h, today));
   } catch (err) {
     logError('listHabitsDueToday', err);
     throw err;
@@ -95,12 +147,13 @@ function updateHabit(id, fields) {
   try {
     const cur = getDb().prepare('SELECT * FROM habits WHERE id = ?').get(id);
     if (!cur) throw new Error('Habit not found');
-    const name = fields.name !== undefined ? String(fields.name).trim() : cur.name;
+    const name =
+      fields.name !== undefined ? String(fields.name).trim() : cur.name;
     if (!name) throw new Error('Name required');
     const frequency =
       fields.frequency !== undefined ? fields.frequency : cur.frequency;
     if (!FREQUENCIES.includes(frequency)) {
-      throw new Error('frequency must be daily, weekdays, or custom');
+      throw new Error('frequency must be daily, weekly, or monthly');
     }
     const color = fields.color !== undefined ? fields.color : cur.color;
     let nudge = cur.nudge_time;
@@ -124,6 +177,8 @@ function updateHabit(id, fields) {
         )
         .run(id);
     }
+    syncNudgeTag(id, nudge);
+    if (fields.tags !== undefined) syncUserTags(id, fields.tags);
     return getHabit(id);
   } catch (err) {
     logError('updateHabit', err);
@@ -134,11 +189,40 @@ function updateHabit(id, fields) {
 function deleteHabit(id) {
   try {
     const db = getDb();
+    db.prepare(
+      `DELETE FROM item_tags WHERE item_type = 'habit' AND item_id = ?`
+    ).run(id);
     db.prepare('DELETE FROM habit_logs WHERE habit_id = ?').run(id);
     db.prepare('DELETE FROM habits WHERE id = ?').run(id);
     return true;
   } catch (err) {
     logError('deleteHabit', err);
+    throw err;
+  }
+}
+
+/** Shelve habit — adds #archived; excluded from active list / nudges. */
+function archiveHabit(id) {
+  try {
+    const row = getDb().prepare('SELECT id FROM habits WHERE id = ?').get(id);
+    if (!row) throw new Error('Habit not found');
+    addTag('habit', id, 'archived');
+    return getHabit(id);
+  } catch (err) {
+    logError('archiveHabit', err);
+    throw err;
+  }
+}
+
+/** Restore habit — removes #archived. */
+function activateHabit(id) {
+  try {
+    const row = getDb().prepare('SELECT id FROM habits WHERE id = ?').get(id);
+    if (!row) throw new Error('Habit not found');
+    removeTag('habit', id, 'archived');
+    return getHabit(id);
+  } catch (err) {
+    logError('activateHabit', err);
     throw err;
   }
 }
@@ -153,7 +237,9 @@ function toggleCheckin(habitId, date = dateKey()) {
     const habit = db.prepare('SELECT id FROM habits WHERE id = ?').get(habitId);
     if (!habit) throw new Error('Habit not found');
     const existing = db
-      .prepare('SELECT id, completed FROM habit_logs WHERE habit_id = ? AND date = ?')
+      .prepare(
+        'SELECT id, completed FROM habit_logs WHERE habit_id = ? AND date = ?'
+      )
       .get(habitId, date);
     if (existing) {
       const next = existing.completed ? 0 : 1;
@@ -181,7 +267,9 @@ function markCheckin(habitId, date = dateKey()) {
       .prepare('SELECT id FROM habit_logs WHERE habit_id = ? AND date = ?')
       .get(habitId, date);
     if (existing) {
-      db.prepare('UPDATE habit_logs SET completed = 1 WHERE id = ?').run(existing.id);
+      db.prepare('UPDATE habit_logs SET completed = 1 WHERE id = ?').run(
+        existing.id
+      );
     } else {
       db.prepare(
         'INSERT INTO habit_logs (habit_id, date, completed) VALUES (?, ?, 1)'
@@ -242,6 +330,7 @@ function listDueNudges() {
       )
       .all(today);
     return rows
+      .filter((h) => !hasTag('habit', h.id, 'archived'))
       .filter((h) => isDueOn(h, now) && h.nudge_time <= nowHm)
       .filter((h) => {
         const log = getDb()
@@ -251,7 +340,11 @@ function listDueNudges() {
           .get(h.id, today);
         return !log?.completed;
       })
-      .map((h) => ({ ...h, title: h.name }));
+      .map((h) => ({
+        ...h,
+        title: h.name,
+        tags: getItemTagNames('habit', h.id),
+      }));
   } catch (err) {
     logError('listDueNudges', err);
     throw err;
@@ -277,7 +370,9 @@ function dismissHabitNudge(id) {
 
 function snoozeHabit(id, minutes = 10) {
   try {
-    const until = new Date(Date.now() + Number(minutes) * 60 * 1000).toISOString();
+    const until = new Date(
+      Date.now() + Number(minutes) * 60 * 1000
+    ).toISOString();
     // Clear last_nudge so poll can re-fire after snooze
     getDb()
       .prepare(
@@ -298,6 +393,8 @@ module.exports = {
   listHabitsDueToday,
   updateHabit,
   deleteHabit,
+  archiveHabit,
+  activateHabit,
   toggleCheckin,
   markCheckin,
   getStreak,
@@ -307,5 +404,7 @@ module.exports = {
   snoozeHabit,
   dateKey,
   isDueOn,
+  normalizeTagNames,
   FREQUENCIES,
+  HABIT_SYSTEM_TAGS,
 };

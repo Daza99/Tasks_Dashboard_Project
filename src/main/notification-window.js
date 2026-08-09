@@ -156,7 +156,7 @@ const TYPE_LABELS = {
 
 /**
  * Show always-on-top popup with taskbar entry + flash until action.
- * @param {{ id: number, title: string, itemType?: string }} item
+ * @param {{ id: number, title: string, itemType?: string, tags?: string[] }} item
  */
 function showItemNotification(item) {
   const itemType = VALID_TYPES.has(item.itemType) ? item.itemType : 'reminder';
@@ -170,7 +170,10 @@ function showItemNotification(item) {
     const settings = getAllSettings();
     const textColor = settings.notif_text_color || '#ffffff';
     const snoozeMins = settings.notif_default_snooze_minutes || '10';
-    const bounds = cornerBounds(settings.notif_position, 340, 180);
+    const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : [];
+    // Extra height when tags render under the title
+    const height = tags.length ? 200 : 180;
+    const bounds = cornerBounds(settings.notif_position, 340, height);
 
     const win = new BrowserWindow({
       ...bounds,
@@ -202,6 +205,7 @@ function showItemNotification(item) {
         textColor,
         snoozeMins: String(snoozeMins),
         label,
+        tags: tags.join(','),
       },
     });
 

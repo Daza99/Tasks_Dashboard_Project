@@ -1,9 +1,34 @@
-import React, { useEffect, useState } from 'react';
-import { format } from 'date-fns';
+import React, { useEffect, useMemo, useState } from 'react';
+import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
+import TagInput from '../components/TagInput';
+import TagSearchInput from '../components/TagSearchInput';
+import { invalidateTagCatalog } from '../hooks/useTagCatalog';
+import {
+  formatTagsDisplay,
+  normalizeUserTagNames,
+  userTagsDisplay,
+} from '../../utils/tag-helpers.js';
+
+const FILTER_OPTS = [
+  { value: 'all', label: 'All' },
+  { value: 'highest', label: 'Highest' },
+  { value: 'lowest', label: 'Lowest' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+];
+
+/** yyyy-MM-dd bounds for a calendar month containing `ref`. */
+function monthBounds(ref) {
+  return {
+    from: format(startOfMonth(ref), 'yyyy-MM-dd'),
+    to: format(endOfMonth(ref), 'yyyy-MM-dd'),
+  };
+}
 
 /**
  * Focus view: spending / transactions entry + recent list.
+ * Filter bar: amount/month presets + name/#tag/date search + From/To range.
  */
 export default function SpendingView() {
   const { refresh } = useBrief();
@@ -12,19 +37,73 @@ export default function SpendingView() {
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
+  const [tagsInput, setTagsInput] = useState('');
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [edit, setEdit] = useState({});
+  const [listFilter, setListFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   async function load() {
-    setRows(await window.api.listTransactions());
+    // Higher limit so month/range filters are not truncated at default 100
+    setRows(await window.api.listTransactions({ limit: 5000 }));
     setCategories(await window.api.listCategories());
   }
 
   useEffect(() => {
     load();
   }, []);
+
+  /** Dropdown + From/To + text search (AND), then sort. */
+  const filtered = useMemo(() => {
+    const now = new Date();
+    let monthFrom = null;
+    let monthTo = null;
+    if (listFilter === 'this_month') {
+      ({ from: monthFrom, to: monthTo } = monthBounds(now));
+    } else if (listFilter === 'last_month') {
+      ({ from: monthFrom, to: monthTo } = monthBounds(subMonths(now, 1)));
+    }
+
+    const q = search.trim().toLowerCase();
+    const tagQuery = q.startsWith('#') ? q.slice(1) : null;
+    const isFullDate = /^\d{4}-\d{2}-\d{2}$/.test(q);
+    const isMonthPrefix = /^\d{4}-\d{2}$/.test(q);
+
+    const list = rows.filter((tx) => {
+      const d = String(tx.date || '');
+      if (monthFrom && d < monthFrom) return false;
+      if (monthTo && d > monthTo) return false;
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
+
+      if (!q) return true;
+      if (tagQuery != null) {
+        return (tx.tags || []).some((t) => t.toLowerCase() === tagQuery);
+      }
+      if (isFullDate) return d === q;
+      if (isMonthPrefix) return d.startsWith(q);
+      const cat = String(tx.category || '').toLowerCase();
+      const desc = String(tx.description || '').toLowerCase();
+      return cat.includes(q) || desc.includes(q);
+    });
+
+    if (listFilter === 'highest') {
+      list.sort((a, b) => Number(b.amount) - Number(a.amount));
+    } else if (listFilter === 'lowest') {
+      list.sort((a, b) => Number(a.amount) - Number(b.amount));
+    } else {
+      list.sort((a, b) => {
+        const byDate = String(b.date || '').localeCompare(String(a.date || ''));
+        if (byDate !== 0) return byDate;
+        return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+      });
+    }
+    return list;
+  }, [rows, listFilter, search, dateFrom, dateTo]);
 
   async function create(e) {
     e.preventDefault();
@@ -35,9 +114,12 @@ export default function SpendingView() {
         category: category || 'misc',
         description: description || null,
         date,
+        tags: normalizeUserTagNames(tagsInput),
       });
       setAmount('');
       setDescription('');
+      setTagsInput('');
+      invalidateTagCatalog();
       await load();
       await refresh();
     } catch (err) {
@@ -53,8 +135,10 @@ export default function SpendingView() {
         category: edit.category,
         description: edit.description || null,
         date: edit.date,
+        tags: normalizeUserTagNames(edit.tagsInput || ''),
       });
       setEditingId(null);
+      invalidateTagCatalog();
       await load();
       await refresh();
     } catch (err) {
@@ -107,14 +191,67 @@ export default function SpendingView() {
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Description (optional)"
         />
+        <label className="edit-label">
+          Tags (optional)
+          <TagInput
+            value={tagsInput}
+            onChange={setTagsInput}
+            placeholder="#groceries #coffee"
+            aria-label="Transaction tags"
+          />
+        </label>
         <button type="submit" className="btn-primary">
           Add
         </button>
         {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
       </form>
 
+      <div className="module-filter-bar glass-inset">
+        <label className="module-filter-bar__field">
+          Filter
+          <select
+            value={listFilter}
+            onChange={(e) => setListFilter(e.target.value)}
+            aria-label="Spending list filter"
+          >
+            {FILTER_OPTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="module-filter-bar__field module-filter-bar__field--grow">
+          Search
+          <TagSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Category, #tag, or date"
+            aria-label="Search transactions by category, tag, or date"
+          />
+        </label>
+        <label className="module-filter-bar__field">
+          From
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            aria-label="Filter from date"
+          />
+        </label>
+        <label className="module-filter-bar__field">
+          To
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            aria-label="Filter to date"
+          />
+        </label>
+      </div>
+
       <ul className="module-list">
-        {rows.map((tx) => (
+        {filtered.map((tx) => (
           <li key={tx.id} className="module-list__item glass-inset module-list__item--col">
             {editingId === tx.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
@@ -145,6 +282,15 @@ export default function SpendingView() {
                   onChange={(e) => setEdit({ ...edit, description: e.target.value })}
                   placeholder="Description"
                 />
+                <label className="edit-label">
+                  Tags
+                  <TagInput
+                    value={edit.tagsInput || ''}
+                    onChange={(v) => setEdit({ ...edit, tagsInput: v })}
+                    placeholder="#tag"
+                    aria-label="Edit transaction tags"
+                  />
+                </label>
                 <div className="item-row__actions">
                   <button type="submit">Save</button>
                   <button type="button" onClick={() => setEditingId(null)}>
@@ -161,6 +307,7 @@ export default function SpendingView() {
                   <div className="module-list__meta">
                     {tx.date}
                     {tx.description ? ` · ${tx.description}` : ''}
+                    {tx.tags?.length ? ` · ${formatTagsDisplay(tx.tags)}` : ''}
                   </div>
                 </div>
                 <div className="item-row__actions">
@@ -173,6 +320,7 @@ export default function SpendingView() {
                         category: tx.category,
                         description: tx.description || '',
                         date: tx.date,
+                        tagsInput: userTagsDisplay(tx.tags),
                       });
                     }}
                   >
@@ -187,6 +335,9 @@ export default function SpendingView() {
           </li>
         ))}
         {!rows.length && <p className="stub-empty">No transactions yet.</p>}
+        {!!rows.length && !filtered.length && (
+          <p className="stub-empty">No transactions match these filters.</p>
+        )}
       </ul>
     </div>
   );

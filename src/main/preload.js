@@ -26,11 +26,13 @@ contextBridge.exposeInMainWorld('api', {
   dismissReminder: (id) => ipcRenderer.invoke('reminders:dismiss', id),
   deleteReminder: (id) => ipcRenderer.invoke('reminders:delete', id),
 
-  listHabits: () => ipcRenderer.invoke('habits:list'),
+  listHabits: (opts) => ipcRenderer.invoke('habits:list', opts),
   getHabit: (id) => ipcRenderer.invoke('habits:get', id),
   createHabit: (data) => ipcRenderer.invoke('habits:create', data),
   updateHabit: (id, fields) => ipcRenderer.invoke('habits:update', id, fields),
   deleteHabit: (id) => ipcRenderer.invoke('habits:delete', id),
+  archiveHabit: (id) => ipcRenderer.invoke('habits:archive', id),
+  activateHabit: (id) => ipcRenderer.invoke('habits:activate', id),
   toggleCheckin: (id, date) => ipcRenderer.invoke('habits:toggleCheckin', id, date),
 
   listBills: (opts) => ipcRenderer.invoke('bills:list', opts),
@@ -58,6 +60,8 @@ contextBridge.exposeInMainWorld('api', {
   createTransaction: (data) => ipcRenderer.invoke('tx:create', data),
   updateTransaction: (id, fields) => ipcRenderer.invoke('tx:update', id, fields),
   deleteTransaction: (id) => ipcRenderer.invoke('tx:delete', id),
+
+  listTags: (opts) => ipcRenderer.invoke('tags:list', opts),
 
   getTodayBrief: () => ipcRenderer.invoke('today:getBrief'),
   runAudit: () => ipcRenderer.invoke('today:runAudit'),

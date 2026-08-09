@@ -8,10 +8,12 @@
  */
 
 function stripTags(text) {
+  const { normalizeTagName } = require('./tag-helpers.cjs');
   const tags = [];
   const cleaned = text
     .replace(/#([a-zA-Z0-9_-]+)/g, (_, t) => {
-      tags.push(t.toLowerCase());
+      const bare = normalizeTagName(t);
+      if (bare) tags.push(bare);
       return '';
     })
     .replace(/\s+/g, ' ')
@@ -70,18 +72,18 @@ function parseQuickAdd(input) {
     };
   }
 
-  // Habit: habit stretch  |  habit meditate weekdays
+  // Habit: habit stretch  |  habit meditate weekly
   if (/^habit\b/i.test(cleaned)) {
     let body = cleaned.replace(/^habit\s+/i, '').trim();
     let frequency = 'daily';
-    if (/\bweekdays?\b/i.test(body)) {
-      frequency = 'weekdays';
-      body = body.replace(/\bweekdays?\b/i, '').trim();
+    if (/\bweekdays?\b/i.test(body) || /\bweekly\b/i.test(body)) {
+      frequency = 'weekly';
+      body = body.replace(/\bweekdays?\b/i, '').replace(/\bweekly\b/i, '').trim();
+    } else if (/\bmonthly\b/i.test(body) || /\bcustom\b/i.test(body)) {
+      frequency = 'monthly';
+      body = body.replace(/\bmonthly\b/i, '').replace(/\bcustom\b/i, '').trim();
     } else if (/\bdaily\b/i.test(body)) {
       body = body.replace(/\bdaily\b/i, '').trim();
-    } else if (/\bcustom\b/i.test(body)) {
-      frequency = 'custom';
-      body = body.replace(/\bcustom\b/i, '').trim();
     }
     if (!body) throw new Error('Habit name required');
     return {

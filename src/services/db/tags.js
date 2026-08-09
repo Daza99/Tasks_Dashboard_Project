@@ -1,22 +1,29 @@
 /**
  * Tag helpers — system lifecycle tags on items via item_tags.
+ * All writes normalize to bare lower-case names (no leading #).
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
+const {
+  normalizeTagName,
+  normalizeTagNames,
+} = require('../../utils/tag-helpers.cjs');
 
 /** Resolve tag id by name (creates non-system tags if missing). */
 function getOrCreateTagId(name, { systemOnly = false } = {}) {
+  const bare = normalizeTagName(name);
+  if (!bare) throw new Error('Tag name required');
   const db = getDb();
-  let row = db.prepare('SELECT id, is_system FROM tags WHERE name = ?').get(name);
+  let row = db.prepare('SELECT id, is_system FROM tags WHERE name = ?').get(bare);
   if (row) return row.id;
-  if (systemOnly) throw new Error(`Unknown system tag: ${name}`);
+  if (systemOnly) throw new Error(`Unknown system tag: ${bare}`);
   const info = db
     .prepare('INSERT INTO tags (name, is_system) VALUES (?, 0)')
-    .run(name);
+    .run(bare);
   return Number(info.lastInsertRowid);
 }
 
-/** All tag names on an item. */
+/** All tag names on an item (bare). */
 function getItemTagNames(itemType, itemId) {
   return getDb()
     .prepare(
@@ -45,8 +52,10 @@ function addTag(itemType, itemId, tagName) {
 
 /** Remove one tag from an item. */
 function removeTag(itemType, itemId, tagName) {
+  const bare = normalizeTagName(tagName);
+  if (!bare) return;
   const db = getDb();
-  const tag = db.prepare('SELECT id FROM tags WHERE name = ?').get(tagName);
+  const tag = db.prepare('SELECT id FROM tags WHERE name = ?').get(bare);
   if (!tag) return;
   db.prepare(
     'DELETE FROM item_tags WHERE item_type = ? AND item_id = ? AND tag_id = ?'
@@ -76,7 +85,52 @@ function replaceTags(itemType, itemId, fromTags, toTag) {
 
 /** True if item has tag. */
 function hasTag(itemType, itemId, tagName) {
-  return getItemTagNames(itemType, itemId).includes(tagName);
+  const bare = normalizeTagName(tagName);
+  return getItemTagNames(itemType, itemId).includes(bare);
+}
+
+/**
+ * Sync user (non-system) tags on an item; leave is_system tags alone.
+ * @param {string} itemType
+ * @param {number} itemId
+ * @param {string[]|string} tags
+ */
+function syncUserTags(itemType, itemId, tags) {
+  const db = getDb();
+  const isSystem = db.prepare('SELECT is_system FROM tags WHERE name = ?');
+  const desired = new Set(
+    normalizeTagNames(tags).filter((t) => {
+      const row = isSystem.get(t);
+      return !(row && row.is_system);
+    })
+  );
+  const current = getItemTagNames(itemType, itemId);
+  for (const t of current) {
+    const row = isSystem.get(t);
+    if (row && row.is_system) continue;
+    if (!desired.has(t)) removeTag(itemType, itemId, t);
+  }
+  for (const t of desired) addTag(itemType, itemId, t);
+}
+
+/**
+ * List tag names for autocomplete.
+ * @param {{ userOnly?: boolean }} [opts]
+ * @returns {string[]} bare names
+ */
+function listTags({ userOnly = true } = {}) {
+  try {
+    const sql = userOnly
+      ? `SELECT name FROM tags WHERE is_system = 0 ORDER BY name COLLATE NOCASE ASC`
+      : `SELECT name FROM tags ORDER BY name COLLATE NOCASE ASC`;
+    return getDb()
+      .prepare(sql)
+      .all()
+      .map((r) => r.name);
+  } catch (err) {
+    logError('listTags', err);
+    throw err;
+  }
 }
 
 /**
@@ -84,13 +138,14 @@ function hasTag(itemType, itemId, tagName) {
  * Joins back to tasks/reminders for caller convenience — returns ids only.
  */
 function listItemIdsWithTag(itemType, tagName) {
+  const bare = normalizeTagName(tagName);
   return getDb()
     .prepare(
       `SELECT it.item_id AS id FROM item_tags it
        JOIN tags t ON t.id = it.tag_id
        WHERE it.item_type = ? AND t.name = ?`
     )
-    .all(itemType, tagName)
+    .all(itemType, bare)
     .map((r) => r.id);
 }
 
@@ -101,5 +156,9 @@ module.exports = {
   removeTag,
   replaceTags,
   hasTag,
+  syncUserTags,
+  listTags,
   listItemIdsWithTag,
+  normalizeTagName,
+  normalizeTagNames,
 };

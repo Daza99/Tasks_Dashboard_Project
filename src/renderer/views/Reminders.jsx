@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { format, parseISO, isValid, addDays, setHours, setMinutes } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
+import TagInput from '../components/TagInput';
+import { invalidateTagCatalog } from '../hooks/useTagCatalog';
+import {
+  formatTagsDisplay,
+  normalizeUserTagNames,
+  userTagsDisplay,
+  userTagsOnly,
+} from '../../utils/tag-helpers.js';
 
 function fmt(iso) {
   if (!iso || String(iso).startsWith('9999')) return 'Open';
@@ -41,12 +49,14 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
   const [scope, setScope] = useState('today');
   const [time, setTime] = useState('09:00');
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [tagsInput, setTagsInput] = useState('');
   const [error, setError] = useState('');
 
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editScope, setEditScope] = useState('today');
   const [editDue, setEditDue] = useState('');
+  const [editTags, setEditTags] = useState('');
   const [editError, setEditError] = useState('');
 
   async function load() {
@@ -86,8 +96,11 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
         title,
         scope,
         datetime: buildDatetime(),
+        tags: normalizeUserTagNames(tagsInput),
       });
       setTitle('');
+      setTagsInput('');
+      invalidateTagCatalog();
       await load();
       await refresh();
     } catch (err) {
@@ -100,6 +113,7 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
     setEditTitle(r.title);
     setEditScope(scopeFromTags(r.tags));
     setEditDue(toLocalInput(r.datetime));
+    setEditTags(userTagsDisplay(r.tags));
     setEditError('');
   }
 
@@ -117,8 +131,10 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
         title: editTitle,
         datetime,
         scope: editScope,
+        tags: normalizeUserTagNames(editTags),
       });
       setEditingId(null);
+      invalidateTagCatalog();
       await load();
       await refresh();
     } catch (err) {
@@ -173,6 +189,15 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
             <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </div>
         )}
+        <label className="edit-label">
+          Tags (optional)
+          <TagInput
+            value={tagsInput}
+            onChange={setTagsInput}
+            placeholder="#errands"
+            aria-label="Reminder tags"
+          />
+        </label>
         <button type="submit" className="btn-primary">
           Create
         </button>
@@ -213,6 +238,15 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
                     />
                   </label>
                 )}
+                <label className="edit-label">
+                  Tags
+                  <TagInput
+                    value={editTags}
+                    onChange={setEditTags}
+                    placeholder="#tag"
+                    aria-label="Edit reminder tags"
+                  />
+                </label>
                 <div className="item-row__actions">
                   <button type="submit" className="btn-primary">
                     Save
@@ -228,7 +262,11 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
                 <div>
                   <strong>{r.title}</strong>
                   <div className="module-list__meta">
-                    {(r.tags || []).join(', ')} · {fmt(r.datetime)}
+                    {scopeFromTags(r.tags)}
+                    {userTagsOnly(r.tags).length
+                      ? ` · ${formatTagsDisplay(userTagsOnly(r.tags))}`
+                      : ''}{' '}
+                    · {fmt(r.datetime)}
                   </div>
                 </div>
                 <div className="item-row__actions">

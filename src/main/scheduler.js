@@ -124,6 +124,7 @@ function pollHabitNudges() {
         id: habit.id,
         title: habit.name,
         itemType: 'habit',
+        tags: habit.tags || ['nudge'],
       });
     }
   } catch (err) {

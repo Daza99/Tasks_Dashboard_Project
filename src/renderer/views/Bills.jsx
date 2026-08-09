@@ -1,12 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
+import BillPayConfirm from '../components/BillPayConfirm';
 
 const RECUR = [
   { id: '', label: 'once' },
   { id: 'monthly', label: 'monthly' },
   { id: 'quarterly', label: 'quarterly' },
   { id: 'yearly', label: 'yearly' },
+];
+
+const MONTHS = [
+  { id: 'ALL', label: 'ALL' },
+  { id: '1', label: 'January' },
+  { id: '2', label: 'February' },
+  { id: '3', label: 'March' },
+  { id: '4', label: 'April' },
+  { id: '5', label: 'May' },
+  { id: '6', label: 'June' },
+  { id: '7', label: 'July' },
+  { id: '8', label: 'August' },
+  { id: '9', label: 'September' },
+  { id: '10', label: 'October' },
+  { id: '11', label: 'November' },
+  { id: '12', label: 'December' },
 ];
 
 /** Caption under amount when not a fixed bill. */
@@ -16,12 +33,21 @@ function amountModeLabel(mode) {
   return null;
 }
 
+/** Short paid_at for list meta (SQLite ISO / datetime). */
+function formatPaidAt(paidAt) {
+  if (!paidAt) return '';
+  const s = String(paidAt);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
 /**
  * Focus view: bills CRUD + mark paid (advances recurrence).
+ * History mode lists bill_payments with year/month/name/sort filters.
  * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
  */
 export default function BillsView({ editId = null, onEditConsumed }) {
   const { refresh } = useBrief();
+  const [mode, setMode] = useState('edit'); // edit | history
   const [rows, setRows] = useState([]);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
@@ -33,11 +59,22 @@ export default function BillsView({ editId = null, onEditConsumed }) {
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [edit, setEdit] = useState({});
+  const [payingId, setPayingId] = useState(null);
+  const [payActual, setPayActual] = useState('');
   const [editStats, setEditStats] = useState({
     count: 0,
     average: null,
     canAverage: false,
   });
+
+  // History filters — bill name is the payment tag key
+  const [histYear, setHistYear] = useState(() => new Date().getFullYear());
+  const [histMonth, setHistMonth] = useState('ALL');
+  const [histName, setHistName] = useState('ALL');
+  const [histSort, setHistSort] = useState('dateDesc');
+  const [filterYears, setFilterYears] = useState([new Date().getFullYear()]);
+  const [filterNames, setFilterNames] = useState([]);
+  const [payments, setPayments] = useState([]);
 
   async function load() {
     setRows(await window.api.listBills());
@@ -47,8 +84,44 @@ export default function BillsView({ editId = null, onEditConsumed }) {
     load();
   }, []);
 
+  // Load filter option lists once when entering history
+  useEffect(() => {
+    if (mode !== 'history') return;
+    let cancelled = false;
+    (async () => {
+      const opts = await window.api.listBillPaymentFilterOptions();
+      if (cancelled) return;
+      const years = opts.years?.length ? opts.years : [new Date().getFullYear()];
+      setFilterYears(years);
+      setFilterNames(opts.names || []);
+      if (!years.includes(histYear)) setHistYear(years[0]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
+  // Reload payments whenever history filters change
+  useEffect(() => {
+    if (mode !== 'history') return;
+    let cancelled = false;
+    (async () => {
+      const list = await window.api.listBillPayments({
+        year: histYear,
+        month: histMonth,
+        billName: histName,
+        sort: histSort,
+      });
+      if (!cancelled) setPayments(list);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, histYear, histMonth, histName, histSort]);
+
   useEffect(() => {
     if (editId == null) return;
+    setMode('edit');
     const b = rows.find((x) => x.id === editId);
     if (!b) return;
     beginEdit(b);
@@ -159,32 +232,55 @@ export default function BillsView({ editId = null, onEditConsumed }) {
     }
   }
 
-  /** Prompt for actual when amount is estimate/avg; fixed uses standing amount. */
-  async function paid(b) {
+  /** Mark paid — Electron has no window.prompt; estimate/avg uses inline actual. */
+  async function paid(b, actualOverride) {
     setError('');
+    const needsActual =
+      b.amount_mode === 'estimate' || b.amount_mode === 'average';
+    if (needsActual && actualOverride === undefined) {
+      setPayingId(b.id);
+      setPayActual(String(b.amount));
+      return;
+    }
     let opts;
-    if (b.amount_mode === 'estimate' || b.amount_mode === 'average') {
-      const raw = window.prompt(
-        `Actual amount paid for "${b.name}"`,
-        String(b.amount)
-      );
-      if (raw === null) return;
-      const actual = Number(raw);
+    if (needsActual) {
+      const actual = Number(actualOverride);
       if (!Number.isFinite(actual)) {
         setError('Invalid actual amount');
         return;
       }
       opts = { actual_amount: actual };
     }
-    await window.api.markBillPaid(b.id, opts);
-    await load();
-    await refresh();
+    try {
+      await window.api.markBillPaid(b.id, opts);
+      setPayingId(null);
+      await load();
+      await refresh();
+    } catch (err) {
+      setError(err?.message || String(err));
+    }
   }
 
   async function remove(id) {
     await window.api.deleteBill(id);
     await load();
     await refresh();
+  }
+
+  async function removePayment(id) {
+    setError('');
+    try {
+      await window.api.deleteBillPayment(id);
+      const list = await window.api.listBillPayments({
+        year: histYear,
+        month: histMonth,
+        billName: histName,
+        sort: histSort,
+      });
+      setPayments(list);
+    } catch (err) {
+      setError(err?.message || String(err));
+    }
   }
 
   function setCreateEstimate(checked) {
@@ -226,203 +322,330 @@ export default function BillsView({ editId = null, onEditConsumed }) {
     }
   }
 
+  const isHistory = mode === 'history';
+
   return (
     <div className="module-view">
-      <h1>Bills</h1>
+      <h1>{isHistory ? 'Bills (History)' : 'Bills (Edit mode)'}</h1>
       <p className="module-view__hint">
-        Due dates + recurrence. Estimate or Calc Average for variable bills. Paid
-        advances recurring bills and logs actuals.
+        {isHistory
+          ? 'Filter paid history by year, month, and bill name. Highest/Lowest sort by amount.'
+          : 'Due dates + recurrence. Estimate or Calc Average for variable bills. Paid advances recurring bills and logs actuals (date method: yyyy-mm-dd).'}
       </p>
 
-      <form className="create-form glass-inset" onSubmit={create}>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Bill name"
-          required
-        />
-        <div className="settings-row bill-amount-row">
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="Amount"
-            required
-            disabled={amountMode === 'average'}
-          />
-          <label
-            className={`bill-check ${amountMode === 'average' ? 'bill-check--muted' : ''}`}
-          >
-            <input
-              type="checkbox"
-              checked={amountMode === 'estimate'}
-              disabled={amountMode === 'average'}
-              onChange={(e) => setCreateEstimate(e.target.checked)}
-            />
-            Estimate
-          </label>
-          <label
-            className={`bill-check ${!stats.canAverage ? 'bill-check--muted' : ''}`}
-            title={
-              stats.canAverage
-                ? `Average of ${stats.count} payments`
-                : `Needs ${6 - stats.count} more payment(s) for this name`
-            }
-          >
-            <input
-              type="checkbox"
-              checked={amountMode === 'average'}
-              disabled={!stats.canAverage}
-              onChange={(e) => setCreateAverage(e.target.checked)}
-            />
-            Calc Average
-          </label>
-          <input type="date" value={due} onChange={(e) => setDue(e.target.value)} required />
-        </div>
-        <input
-          type="text"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          placeholder="Category (optional)"
-        />
-        <div className="kind-toggle" role="group" aria-label="Recurrence">
-          {RECUR.map((r) => (
+      {isHistory ? (
+        <div className="create-form glass-inset bills-history-filters">
+          <div className="bills-history-filters__row">
+            <label className="bills-history-filters__field">
+              <span>Year</span>
+              <select
+                value={histYear}
+                onChange={(e) => setHistYear(Number(e.target.value))}
+                aria-label="Filter year"
+              >
+                {filterYears.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="bills-history-filters__field">
+              <span>Month</span>
+              <select
+                value={histMonth}
+                onChange={(e) => setHistMonth(e.target.value)}
+                aria-label="Filter month"
+              >
+                {MONTHS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="bills-history-filters__field bills-history-filters__field--grow">
+              <span>Bill name</span>
+              <select
+                value={histName}
+                onChange={(e) => setHistName(e.target.value)}
+                aria-label="Filter bill name"
+              >
+                <option value="ALL">ALL</option>
+                {filterNames.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="kind-toggle" role="group" aria-label="Sort order">
             <button
-              key={r.id || 'once'}
               type="button"
-              className={recurrence === r.id ? 'active' : ''}
-              onClick={() => setRecurrence(r.id)}
+              className={histSort === 'dateAsc' ? 'active' : ''}
+              onClick={() => setHistSort('dateAsc')}
             >
-              {r.label}
+              Ascending
             </button>
-          ))}
+            <button
+              type="button"
+              className={histSort === 'dateDesc' ? 'active' : ''}
+              onClick={() => setHistSort('dateDesc')}
+            >
+              Descending
+            </button>
+            <button
+              type="button"
+              className={histSort === 'amountHigh' ? 'active' : ''}
+              onClick={() => setHistSort('amountHigh')}
+            >
+              Highest
+            </button>
+            <button
+              type="button"
+              className={histSort === 'amountLow' ? 'active' : ''}
+              onClick={() => setHistSort('amountLow')}
+            >
+              Lowest
+            </button>
+          </div>
+          <button type="button" className="btn-primary" onClick={() => setMode('edit')}>
+            Create
+          </button>
+          {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
         </div>
-        <button type="submit" className="btn-primary">
-          Create
-        </button>
-        {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
-      </form>
+      ) : (
+        <form className="create-form glass-inset" onSubmit={create}>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Bill name"
+            required
+          />
+          <div className="settings-row bill-amount-row">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Amount"
+              required
+              disabled={amountMode === 'average'}
+            />
+            <label
+              className={`bill-check ${amountMode === 'average' ? 'bill-check--muted' : ''}`}
+            >
+              <input
+                type="checkbox"
+                checked={amountMode === 'estimate'}
+                disabled={amountMode === 'average'}
+                onChange={(e) => setCreateEstimate(e.target.checked)}
+              />
+              Estimate
+            </label>
+            <label
+              className={`bill-check ${!stats.canAverage ? 'bill-check--muted' : ''}`}
+              title={
+                stats.canAverage
+                  ? `Average of ${stats.count} payments`
+                  : `Needs ${6 - stats.count} more payment(s) for this name`
+              }
+            >
+              <input
+                type="checkbox"
+                checked={amountMode === 'average'}
+                disabled={!stats.canAverage}
+                onChange={(e) => setCreateAverage(e.target.checked)}
+              />
+              Calc Average
+            </label>
+            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} required />
+          </div>
+          <input
+            type="text"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="Category (optional)"
+          />
+          <div className="kind-toggle" role="group" aria-label="Recurrence">
+            {RECUR.map((r) => (
+              <button
+                key={r.id || 'once'}
+                type="button"
+                className={recurrence === r.id ? 'active' : ''}
+                onClick={() => setRecurrence(r.id)}
+              >
+                {r.label}
+              </button>
+            ))}
+            <button type="button" onClick={() => setMode('history')}>
+              HISTORY
+            </button>
+          </div>
+          <button type="submit" className="btn-primary">
+            Create
+          </button>
+          {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
+        </form>
+      )}
 
-      <ul className="module-list">
-        {rows.map((b) => (
-          <li key={b.id} className="module-list__item glass-inset module-list__item--col">
-            {editingId === b.id ? (
-              <form className="edit-form" onSubmit={saveEdit}>
-                <input
-                  type="text"
-                  value={edit.name}
-                  onChange={(e) => setEdit({ ...edit, name: e.target.value })}
-                  required
-                />
-                <div className="settings-row bill-amount-row">
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={edit.amount}
-                    onChange={(e) => setEdit({ ...edit, amount: e.target.value })}
-                    required
-                    disabled={edit.amount_mode === 'average'}
-                  />
-                  <label
-                    className={`bill-check ${
-                      edit.amount_mode === 'average' ? 'bill-check--muted' : ''
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={edit.amount_mode === 'estimate'}
-                      disabled={edit.amount_mode === 'average'}
-                      onChange={(e) => setEditEstimate(e.target.checked)}
-                    />
-                    Estimate
-                  </label>
-                  <label
-                    className={`bill-check ${!editStats.canAverage ? 'bill-check--muted' : ''}`}
-                    title={
-                      editStats.canAverage
-                        ? `Average of ${editStats.count} payments`
-                        : `Needs ${6 - editStats.count} more payment(s) for this name`
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={edit.amount_mode === 'average'}
-                      disabled={!editStats.canAverage}
-                      onChange={(e) => setEditAverage(e.target.checked)}
-                    />
-                    Calc Average
-                  </label>
-                  <input
-                    type="date"
-                    value={edit.due_date}
-                    onChange={(e) => setEdit({ ...edit, due_date: e.target.value })}
-                    required
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={edit.category}
-                  onChange={(e) => setEdit({ ...edit, category: e.target.value })}
-                  placeholder="Category"
-                />
-                <div className="kind-toggle">
-                  {RECUR.map((r) => (
-                    <button
-                      key={r.id || 'once'}
-                      type="button"
-                      className={edit.recurrence === r.id ? 'active' : ''}
-                      onClick={() => setEdit({ ...edit, recurrence: r.id })}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="item-row__actions">
-                  <button type="submit">Save</button>
-                  <button type="button" onClick={() => setEditingId(null)}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
+      {isHistory ? (
+        <ul className="module-list">
+          {payments.map((p) => (
+            <li key={p.id} className="module-list__item glass-inset">
               <div className="module-list__row">
                 <div>
-                  <strong>{b.name}</strong>
+                  <strong>{p.bill_name}</strong>
                   <div className="module-list__meta">
-                    ${Number(b.amount).toFixed(2)}
-                    {amountModeLabel(b.amount_mode) && (
-                      <span className="bill-amount-caption">
-                        {' '}
-                        {amountModeLabel(b.amount_mode)}
-                      </span>
-                    )}
-                    {' · '}due {b.due_date} · {b.paid_status}
-                    {b.recurrence ? ` · ${b.recurrence}` : ''}
-                    {b.category ? ` · ${b.category}` : ''}
+                    ${Number(p.amount).toFixed(2)}
+                    {p.due_date ? ` · due ${p.due_date}` : ''}
+                    {' · '}paid {formatPaidAt(p.paid_at)}
                   </div>
                 </div>
                 <div className="item-row__actions">
-                  {b.paid_status !== 'paid' && (
-                    <button type="button" onClick={() => paid(b)}>
-                      Paid
-                    </button>
-                  )}
-                  <button type="button" onClick={() => beginEdit(b)}>
-                    Edit
-                  </button>
-                  <button type="button" className="danger" onClick={() => remove(b.id)}>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => removePayment(p.id)}
+                  >
                     Del
                   </button>
                 </div>
               </div>
-            )}
-          </li>
-        ))}
-        {!rows.length && <p className="stub-empty">No bills yet.</p>}
-      </ul>
+            </li>
+          ))}
+          {!payments.length && <p className="stub-empty">No paid bills for these filters.</p>}
+        </ul>
+      ) : (
+        <ul className="module-list">
+          {rows.map((b) => (
+            <li key={b.id} className="module-list__item glass-inset module-list__item--col">
+              {editingId === b.id ? (
+                <form className="edit-form" onSubmit={saveEdit}>
+                  <input
+                    type="text"
+                    value={edit.name}
+                    onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+                    required
+                  />
+                  <div className="settings-row bill-amount-row">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={edit.amount}
+                      onChange={(e) => setEdit({ ...edit, amount: e.target.value })}
+                      required
+                      disabled={edit.amount_mode === 'average'}
+                    />
+                    <label
+                      className={`bill-check ${
+                        edit.amount_mode === 'average' ? 'bill-check--muted' : ''
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={edit.amount_mode === 'estimate'}
+                        disabled={edit.amount_mode === 'average'}
+                        onChange={(e) => setEditEstimate(e.target.checked)}
+                      />
+                      Estimate
+                    </label>
+                    <label
+                      className={`bill-check ${!editStats.canAverage ? 'bill-check--muted' : ''}`}
+                      title={
+                        editStats.canAverage
+                          ? `Average of ${editStats.count} payments`
+                          : `Needs ${6 - editStats.count} more payment(s) for this name`
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={edit.amount_mode === 'average'}
+                        disabled={!editStats.canAverage}
+                        onChange={(e) => setEditAverage(e.target.checked)}
+                      />
+                      Calc Average
+                    </label>
+                    <input
+                      type="date"
+                      value={edit.due_date}
+                      onChange={(e) => setEdit({ ...edit, due_date: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={edit.category}
+                    onChange={(e) => setEdit({ ...edit, category: e.target.value })}
+                    placeholder="Category"
+                  />
+                  <div className="kind-toggle">
+                    {RECUR.map((r) => (
+                      <button
+                        key={r.id || 'once'}
+                        type="button"
+                        className={edit.recurrence === r.id ? 'active' : ''}
+                        onClick={() => setEdit({ ...edit, recurrence: r.id })}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="item-row__actions">
+                    <button type="submit">Save</button>
+                    <button type="button" onClick={() => setEditingId(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="module-list__row">
+                  <div>
+                    <strong>{b.name}</strong>
+                    <div className="module-list__meta">
+                      ${Number(b.amount).toFixed(2)}
+                      {amountModeLabel(b.amount_mode) && (
+                        <span className="bill-amount-caption">
+                          {' '}
+                          {amountModeLabel(b.amount_mode)}
+                        </span>
+                      )}
+                      {' · '}due {b.due_date} · {b.paid_status}
+                      {b.recurrence ? ` · ${b.recurrence}` : ''}
+                      {b.category ? ` · ${b.category}` : ''}
+                    </div>
+                  </div>
+                  <div className="item-row__actions">
+                    {b.paid_status !== 'paid' && payingId === b.id && (
+                      <BillPayConfirm
+                        value={payActual}
+                        onChange={setPayActual}
+                        onConfirm={() => paid(b, payActual)}
+                        onCancel={() => setPayingId(null)}
+                      />
+                    )}
+                    {b.paid_status !== 'paid' && payingId !== b.id && (
+                      <button type="button" onClick={() => paid(b)}>
+                        Paid
+                      </button>
+                    )}
+                    <button type="button" onClick={() => beginEdit(b)}>
+                      Edit
+                    </button>
+                    <button type="button" className="danger" onClick={() => remove(b.id)}>
+                      Del
+                    </button>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+          {!rows.length && <p className="stub-empty">No bills yet.</p>}
+        </ul>
+      )}
     </div>
   );
 }

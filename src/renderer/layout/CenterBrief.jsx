@@ -7,6 +7,7 @@ import { shouldShowTags } from '../../utils/feature-flags';
 import QuickAddBar from '../components/QuickAddBar';
 import HabitCheckinStrip from '../components/HabitCheckinStrip';
 import MoneySnapshot from '../components/MoneySnapshot';
+import BillPayConfirm from '../components/BillPayConfirm';
 
 function fmtWhen(iso) {
   if (!iso || iso.startsWith('9999')) return 'Open';
@@ -29,6 +30,8 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
   const { enterFocus } = useLayout();
   const showTags = shouldShowTags(settings);
   const [expiredOpen, setExpiredOpen] = useState(true);
+  const [payingId, setPayingId] = useState(null);
+  const [payActual, setPayActual] = useState('');
 
   function openModule(id) {
     onNavigate?.(id);
@@ -60,21 +63,28 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
     await refresh();
   }
 
-  /** Prompt for actual on estimate/avg bills; fixed logs standing amount. */
-  async function payBill(b) {
+  /** Mark paid — no window.prompt (unsupported in Electron); inline actual for estimate/avg. */
+  async function payBill(b, actualOverride) {
+    const needsActual =
+      b.amount_mode === 'estimate' || b.amount_mode === 'average';
+    if (needsActual && actualOverride === undefined) {
+      setPayingId(b.id);
+      setPayActual(String(b.amount));
+      return;
+    }
     let opts;
-    if (b.amount_mode === 'estimate' || b.amount_mode === 'average') {
-      const raw = window.prompt(
-        `Actual amount paid for "${b.name}"`,
-        String(b.amount)
-      );
-      if (raw === null) return;
-      const actual = Number(raw);
+    if (needsActual) {
+      const actual = Number(actualOverride);
       if (!Number.isFinite(actual)) return;
       opts = { actual_amount: actual };
     }
-    await window.api.markBillPaid(b.id, opts);
-    await refresh();
+    try {
+      await window.api.markBillPaid(b.id, opts);
+      setPayingId(null);
+      await refresh();
+    } catch (_err) {
+      /* brief has no error surface; markPaid logs in main */
+    }
   }
 
   async function toggleHabit(id) {
@@ -225,9 +235,18 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
                     <span className="reminder-item__when">overdue {b.due_date}</span>
                   </div>
                   <div className="item-row__actions">
-                    <button type="button" onClick={() => payBill(b)}>
-                      Paid
-                    </button>
+                    {payingId === b.id ? (
+                      <BillPayConfirm
+                        value={payActual}
+                        onChange={setPayActual}
+                        onConfirm={() => payBill(b, payActual)}
+                        onCancel={() => setPayingId(null)}
+                      />
+                    ) : (
+                      <button type="button" onClick={() => payBill(b)}>
+                        Paid
+                      </button>
+                    )}
                     <button type="button" onClick={() => onEditRequest?.('bill', b.id)}>
                       Edit
                     </button>
@@ -249,9 +268,18 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
                     <span className="reminder-item__when">due today</span>
                   </div>
                   <div className="item-row__actions">
-                    <button type="button" onClick={() => payBill(b)}>
-                      Paid
-                    </button>
+                    {payingId === b.id ? (
+                      <BillPayConfirm
+                        value={payActual}
+                        onChange={setPayActual}
+                        onConfirm={() => payBill(b, payActual)}
+                        onCancel={() => setPayingId(null)}
+                      />
+                    ) : (
+                      <button type="button" onClick={() => payBill(b)}>
+                        Paid
+                      </button>
+                    )}
                     <button type="button" onClick={() => onEditRequest?.('bill', b.id)}>
                       Edit
                     </button>

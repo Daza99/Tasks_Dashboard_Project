@@ -42,7 +42,10 @@ const {
   updateBill,
   markPaid,
   getBillAmountStats,
+  listBillPayments,
+  listBillPaymentFilterOptions,
   deleteBill,
+  deleteBillPayment,
 } = require('../services/db/bills');
 const {
   createEvent,
@@ -187,7 +190,10 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('bills:markPaid', (_e, id, opts) => markPaid(id, opts || {}));
   ipcMain.handle('bills:amountStats', (_e, name) => getBillAmountStats(name));
+  ipcMain.handle('bills:listPayments', (_e, opts) => listBillPayments(opts || {}));
+  ipcMain.handle('bills:paymentFilterOptions', () => listBillPaymentFilterOptions());
   ipcMain.handle('bills:delete', (_e, id) => deleteBill(id));
+  ipcMain.handle('bills:deletePayment', (_e, id) => deleteBillPayment(id));
 
   // --- Events / Calendar ---
   ipcMain.handle('events:get', (_e, id) => getEvent(id));

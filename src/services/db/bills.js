@@ -151,10 +151,23 @@ function markPaid(id, opts = {}) {
 
     const db = getDb();
     const tx = db.transaction(() => {
-      db.prepare(
-        `INSERT INTO bill_payments (bill_id, bill_name, amount, due_date)
-         VALUES (?, ?, ?, ?)`
-      ).run(id, cur.name, actual, cur.due_date);
+      // Exact dup = same bill name + amount + due_date (fortnightly differs by due_date)
+      const exactDup = db
+        .prepare(
+          `SELECT id FROM bill_payments
+           WHERE lower(trim(bill_name)) = lower(trim(?))
+             AND amount = ?
+             AND due_date = ?
+           LIMIT 1`
+        )
+        .get(cur.name, actual, cur.due_date);
+
+      if (!exactDup) {
+        db.prepare(
+          `INSERT INTO bill_payments (bill_id, bill_name, amount, due_date)
+           VALUES (?, ?, ?, ?)`
+        ).run(id, cur.name, actual, cur.due_date);
+      }
 
       const next = advanceDue(cur.due_date, cur.recurrence);
       if (next) {
@@ -210,12 +223,112 @@ function getBillAmountStats(name) {
   }
 }
 
+const PAYMENT_SORTS = {
+  dateAsc: 'paid_at ASC',
+  dateDesc: 'paid_at DESC',
+  amountHigh: 'amount DESC',
+  amountLow: 'amount ASC',
+};
+
+/**
+ * Paid history from bill_payments (recurring pays live here, not paid_status).
+ * @param {{ year: number, month?: string|number, billName?: string, sort?: string }} opts
+ *   month: 'ALL' or 1–12; billName: 'ALL' or exact display name; sort: dateAsc|dateDesc|amountHigh|amountLow
+ */
+function listBillPayments(opts = {}) {
+  try {
+    const year = Number(opts.year);
+    if (!Number.isFinite(year)) throw new Error('year required');
+    const monthRaw = opts.month;
+    const month =
+      monthRaw === undefined || monthRaw === null || monthRaw === '' || monthRaw === 'ALL'
+        ? null
+        : Number(monthRaw);
+    const billName = opts.billName;
+    const nameKey =
+      !billName || billName === 'ALL'
+        ? null
+        : String(billName).trim().toLowerCase();
+    const orderBy = PAYMENT_SORTS[opts.sort] || PAYMENT_SORTS.dateDesc;
+
+    const where = [`strftime('%Y', paid_at) = ?`];
+    const params = [String(year)];
+    if (month != null && Number.isFinite(month) && month >= 1 && month <= 12) {
+      where.push(`strftime('%m', paid_at) = ?`);
+      params.push(String(month).padStart(2, '0'));
+    }
+    if (nameKey) {
+      where.push(`lower(trim(bill_name)) = ?`);
+      params.push(nameKey);
+    }
+
+    return getDb()
+      .prepare(
+        `SELECT id, bill_id, bill_name, amount, due_date, paid_at
+         FROM bill_payments
+         WHERE ${where.join(' AND ')}
+         ORDER BY ${orderBy}`
+      )
+      .all(...params);
+  } catch (err) {
+    logError('listBillPayments', err);
+    throw err;
+  }
+}
+
+/**
+ * Distinct years + bill names for history filter dropdowns.
+ * Always includes the current calendar year.
+ * @returns {{ years: number[], names: string[] }}
+ */
+function listBillPaymentFilterOptions() {
+  try {
+    const db = getDb();
+    const yearRows = db
+      .prepare(
+        `SELECT DISTINCT CAST(strftime('%Y', paid_at) AS INTEGER) AS y
+         FROM bill_payments
+         WHERE paid_at IS NOT NULL
+         ORDER BY y DESC`
+      )
+      .all();
+    const years = yearRows.map((r) => Number(r.y)).filter(Number.isFinite);
+    const currentYear = new Date().getFullYear();
+    if (!years.includes(currentYear)) years.unshift(currentYear);
+
+    const nameRows = db
+      .prepare(
+        `SELECT bill_name FROM bill_payments
+         GROUP BY lower(trim(bill_name))
+         ORDER BY lower(trim(bill_name)) COLLATE NOCASE`
+      )
+      .all();
+    const names = nameRows.map((r) => r.bill_name).filter(Boolean);
+
+    return { years, names };
+  } catch (err) {
+    logError('listBillPaymentFilterOptions', err);
+    throw err;
+  }
+}
+
 function deleteBill(id) {
   try {
     getDb().prepare('DELETE FROM bills WHERE id = ?').run(id);
     return true;
   } catch (err) {
     logError('deleteBill', err);
+    throw err;
+  }
+}
+
+/** Delete one payment history row (user correction in History). */
+function deleteBillPayment(id) {
+  try {
+    const info = getDb().prepare('DELETE FROM bill_payments WHERE id = ?').run(id);
+    return info.changes > 0;
+  } catch (err) {
+    logError('deleteBillPayment', err);
     throw err;
   }
 }
@@ -354,7 +467,10 @@ module.exports = {
   updateBill,
   markPaid,
   getBillAmountStats,
+  listBillPayments,
+  listBillPaymentFilterOptions,
   deleteBill,
+  deleteBillPayment,
   markOverdueBills,
   listBillsForBrief,
   listDueBillAlerts,

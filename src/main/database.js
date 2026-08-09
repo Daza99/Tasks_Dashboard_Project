@@ -139,6 +139,24 @@ function migrateSchema() {
       FOREIGN KEY(bill_id) REFERENCES bills(id) ON DELETE SET NULL
     );
   `);
+
+  // One-shot: remove exact payment dupes (same name + amount + due_date), keep oldest id
+  const dedupeFlag = db
+    .prepare("SELECT value FROM settings WHERE key = 'bill_payments_exact_deduped_v1'")
+    .get();
+  if (!dedupeFlag || dedupeFlag.value !== '1') {
+    db.prepare(
+      `DELETE FROM bill_payments
+       WHERE id NOT IN (
+         SELECT MIN(id) FROM bill_payments
+         GROUP BY lower(trim(bill_name)), amount, due_date
+       )`
+    ).run();
+    db.prepare(
+      `INSERT INTO settings (key, value) VALUES ('bill_payments_exact_deduped_v1', '1')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run();
+  }
 }
 
 function seedSettings() {

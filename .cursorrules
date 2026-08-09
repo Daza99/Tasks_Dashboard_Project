@@ -35,3 +35,7 @@
 - Compact mode = landing glance (left nav + center brief + right rail)
 - Focus mode = full center panel; Compact button restores
 - No decorative corner brackets around panels
+
+## Dates
+- Canonical storage/display string: `yyyy-mm-dd` (ISO), never ambiguous slash formats
+- Where a module hint/intro mentions dates, append `(date method: yyyy-mm-dd)` so users know order (Bills done; apply same pattern to other date-using views when touching them)

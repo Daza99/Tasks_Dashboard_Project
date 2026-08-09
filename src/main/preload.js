@@ -39,7 +39,11 @@ contextBridge.exposeInMainWorld('api', {
   updateBill: (id, fields) => ipcRenderer.invoke('bills:update', id, fields),
   markBillPaid: (id, opts) => ipcRenderer.invoke('bills:markPaid', id, opts),
   getBillAmountStats: (name) => ipcRenderer.invoke('bills:amountStats', name),
+  listBillPayments: (opts) => ipcRenderer.invoke('bills:listPayments', opts),
+  listBillPaymentFilterOptions: () =>
+    ipcRenderer.invoke('bills:paymentFilterOptions'),
   deleteBill: (id) => ipcRenderer.invoke('bills:delete', id),
+  deleteBillPayment: (id) => ipcRenderer.invoke('bills:deletePayment', id),
 
   getEvent: (id) => ipcRenderer.invoke('events:get', id),
   listEventsDay: (day) => ipcRenderer.invoke('events:listDay', day),

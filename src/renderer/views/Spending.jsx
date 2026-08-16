@@ -3,6 +3,7 @@ import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
 import TagSearchInput from '../components/TagSearchInput';
+import DetailsInline from '../components/DetailsInline';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import {
   formatTagsDisplay,
@@ -36,7 +37,7 @@ export default function SpendingView() {
   const [categories, setCategories] = useState([]);
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
-  const [description, setDescription] = useState('');
+  const [details, setDetails] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [error, setError] = useState('');
@@ -112,12 +113,12 @@ export default function SpendingView() {
       await window.api.createTransaction({
         amount: Number(amount),
         category: category || 'misc',
-        description: description || null,
+        description: details.trim() || null,
         date,
         tags: normalizeUserTagNames(tagsInput),
       });
       setAmount('');
-      setDescription('');
+      setDetails('');
       setTagsInput('');
       invalidateTagCatalog();
       await load();
@@ -133,7 +134,7 @@ export default function SpendingView() {
       await window.api.updateTransaction(editingId, {
         amount: Number(edit.amount),
         category: edit.category,
-        description: edit.description || null,
+        description: (edit.description || '').trim() || null,
         date: edit.date,
         tags: normalizeUserTagNames(edit.tagsInput || ''),
       });
@@ -172,25 +173,29 @@ export default function SpendingView() {
           />
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
         </div>
-        <input
-          type="text"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          placeholder="Category"
-          list="tx-categories"
-          required
-        />
-        <datalist id="tx-categories">
-          {categories.map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
-        <input
-          type="text"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Description (optional)"
-        />
+        <div className="reminder-meta-row reminder-meta-row--third">
+          <div className="reminder-meta-row__left">
+            <input
+              type="text"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="Category"
+              list="tx-categories"
+              required
+            />
+            <datalist id="tx-categories">
+              {categories.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <DetailsInline
+            value={details}
+            onChange={setDetails}
+            placeholder="Optional details"
+            ariaLabel="Optional details"
+          />
+        </div>
         <label className="edit-label">
           Tags (optional)
           <TagInput
@@ -270,18 +275,23 @@ export default function SpendingView() {
                     required
                   />
                 </div>
-                <input
-                  type="text"
-                  value={edit.category}
-                  onChange={(e) => setEdit({ ...edit, category: e.target.value })}
-                  required
-                />
-                <input
-                  type="text"
-                  value={edit.description || ''}
-                  onChange={(e) => setEdit({ ...edit, description: e.target.value })}
-                  placeholder="Description"
-                />
+                <div className="reminder-meta-row reminder-meta-row--third">
+                  <div className="reminder-meta-row__left">
+                    <input
+                      type="text"
+                      value={edit.category}
+                      onChange={(e) => setEdit({ ...edit, category: e.target.value })}
+                      placeholder="Category"
+                      required
+                    />
+                  </div>
+                  <DetailsInline
+                    value={edit.description || ''}
+                    onChange={(v) => setEdit({ ...edit, description: v })}
+                    placeholder="Optional details"
+                    ariaLabel="Optional details"
+                  />
+                </div>
                 <label className="edit-label">
                   Tags
                   <TagInput
@@ -303,10 +313,14 @@ export default function SpendingView() {
                 <div>
                   <strong>
                     ${Number(tx.amount).toFixed(2)} · {tx.category}
+                    {tx.description?.trim() ? (
+                      <span className="details-mark" title="Has details">
+                        details
+                      </span>
+                    ) : null}
                   </strong>
                   <div className="module-list__meta">
                     {tx.date}
-                    {tx.description ? ` · ${tx.description}` : ''}
                     {tx.tags?.length ? ` · ${formatTagsDisplay(tx.tags)}` : ''}
                   </div>
                 </div>

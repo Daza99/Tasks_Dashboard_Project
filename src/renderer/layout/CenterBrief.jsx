@@ -8,6 +8,7 @@ import QuickAddBar from '../components/QuickAddBar';
 import HabitCheckinStrip from '../components/HabitCheckinStrip';
 import MoneySnapshot from '../components/MoneySnapshot';
 import BillPayConfirm from '../components/BillPayConfirm';
+import LockButton from '../components/LockButton';
 
 function fmtWhen(iso) {
   if (!iso || iso.startsWith('9999')) return 'Open';
@@ -95,15 +96,18 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
   function taskActions(t) {
     return (
       <div className="item-row__actions">
+        <LockButton itemType="task" id={t.id} locked={t.locked} onChanged={refresh} />
         <button type="button" onClick={() => completeTask(t.id)}>
           Done
         </button>
         <button type="button" onClick={() => onEditRequest?.('task', t.id)}>
           Edit
         </button>
-        <button type="button" className="danger" onClick={() => deleteTask(t.id)}>
-          Del
-        </button>
+        {!t.locked && (
+          <button type="button" className="danger" onClick={() => deleteTask(t.id)}>
+            Del
+          </button>
+        )}
       </div>
     );
   }
@@ -111,15 +115,18 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
   function remActions(r) {
     return (
       <div className="item-row__actions">
+        <LockButton itemType="reminder" id={r.id} locked={r.locked} onChanged={refresh} />
         <button type="button" onClick={() => completeRem(r.id)}>
           Done
         </button>
         <button type="button" onClick={() => onEditRequest?.('reminder', r.id)}>
           Edit
         </button>
-        <button type="button" className="danger" onClick={() => deleteRem(r.id)}>
-          Del
-        </button>
+        {!r.locked && (
+          <button type="button" className="danger" onClick={() => deleteRem(r.id)}>
+            Del
+          </button>
+        )}
       </div>
     );
   }
@@ -299,7 +306,15 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
                   <span className="reminder-item__when">{fmtWhen(ev.start_datetime)}</span>
                 </div>
                 <div className="item-row__actions">
-                  <button type="button" onClick={() => onEditRequest?.('event', ev.id)}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onEditRequest?.(
+                        ev.source_type && ev.source_id != null ? ev.source_type : 'event',
+                        ev.source_type && ev.source_id != null ? ev.source_id : ev.id
+                      )
+                    }
+                  >
                     Edit
                   </button>
                 </div>
@@ -361,14 +376,7 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
                     {tagsLine(r)}
                     <span className="reminder-item__when">ignored</span>
                   </div>
-                  <div className="item-row__actions">
-                    <button type="button" onClick={() => completeRem(r.id)}>
-                      Done
-                    </button>
-                    <button type="button" onClick={() => onEditRequest?.('reminder', r.id)}>
-                      Edit
-                    </button>
-                  </div>
+                  {remActions(r)}
                 </li>
               ))}
             </ul>

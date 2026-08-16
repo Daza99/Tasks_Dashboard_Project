@@ -5,6 +5,7 @@ import './styles/theme-variables.css';
 import './styles/base.css';
 import './styles/glass.css';
 import './styles/components.css';
+import './styles/today.css';
 
 const root = createRoot(document.getElementById('root'));
 root.render(

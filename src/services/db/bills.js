@@ -5,6 +5,7 @@
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { dateKey } = require('./habits');
+const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
 
 const STATUSES = ['pending', 'paid', 'overdue'];
 const AMOUNT_MODES = ['fixed', 'estimate', 'average'];
@@ -46,6 +47,8 @@ function createBill({
   recurrence = null,
   category = null,
   amount_mode = 'fixed',
+  priority = DEFAULT_PRIORITY,
+  description = null,
 }) {
   try {
     if (!name?.trim()) throw new Error('Name required');
@@ -57,13 +60,17 @@ function createBill({
       throw new Error('recurrence must be monthly, quarterly, yearly, or null');
     }
     const mode = normalizeAmountMode(amount_mode);
+    const prio = clampPriority(priority);
+    const details = description != null ? String(description).trim() || null : null;
     const info = getDb()
       .prepare(
-        `INSERT INTO bills (name, amount, amount_mode, due_date, recurrence, paid_status, category)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?)`
+        `INSERT INTO bills (name, amount, amount_mode, due_date, recurrence, paid_status, category, priority, description)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
       )
-      .run(name.trim(), amt, mode, due_date, rec, category || null);
-    return getBill(Number(info.lastInsertRowid));
+      .run(name.trim(), amt, mode, due_date, rec, category || null, prio, details);
+    const row = getBill(Number(info.lastInsertRowid));
+    require('./calendar-sync').syncBill(row);
+    return row;
   } catch (err) {
     logError('createBill', err);
     throw err;
@@ -81,7 +88,7 @@ function listBills({ includePaid = true } = {}) {
       .prepare(
         `SELECT * FROM bills
          ${includePaid ? '' : "WHERE paid_status != 'paid'"}
-         ORDER BY due_date ASC, name COLLATE NOCASE ASC`
+         ORDER BY COALESCE(priority, 3) ASC, due_date ASC, name COLLATE NOCASE ASC`
       )
       .all();
     return rows.map(enrich);
@@ -112,15 +119,34 @@ function updateBill(id, fields) {
     let paid_status =
       fields.paid_status !== undefined ? fields.paid_status : cur.paid_status;
     if (!STATUSES.includes(paid_status)) paid_status = cur.paid_status;
+    const priority =
+      fields.priority !== undefined
+        ? clampPriority(fields.priority)
+        : clampPriority(cur.priority);
+    const description =
+      fields.description !== undefined
+        ? String(fields.description || '').trim() || null
+        : cur.description;
 
     const dueChanged = fields.due_date !== undefined && fields.due_date !== cur.due_date;
     const db = getDb();
     db.prepare(
       `UPDATE bills SET name = ?, amount = ?, amount_mode = ?, due_date = ?, recurrence = ?,
-       category = ?, paid_status = ?
+       category = ?, paid_status = ?, priority = ?, description = ?
        ${dueChanged ? ', alerted_before = 0, alerted_due = 0, snooze_until = NULL' : ''}
        WHERE id = ?`
-    ).run(name, amount, amount_mode, due_date, recurrence, category, paid_status, id);
+    ).run(
+      name,
+      amount,
+      amount_mode,
+      due_date,
+      recurrence,
+      category,
+      paid_status,
+      priority,
+      description,
+      id
+    );
 
     // Keep denormalized payment names in sync for name-based averages
     if (name !== cur.name) {
@@ -129,7 +155,11 @@ function updateBill(id, fields) {
         id
       );
     }
-    return getBill(id);
+    const row = getBill(id);
+    require('./calendar-sync').syncBill(row, {
+      prevDueDate: dueChanged ? cur.due_date : undefined,
+    });
+    return row;
   } catch (err) {
     logError('updateBill', err);
     throw err;
@@ -185,7 +215,10 @@ function markPaid(id, opts = {}) {
       }
     });
     tx();
-    return getBill(id);
+    const row = getBill(id);
+    // Leave the paid occurrence; upsert the new due_date
+    require('./calendar-sync').syncBill(row);
+    return row;
   } catch (err) {
     logError('markPaid', err);
     throw err;
@@ -314,6 +347,7 @@ function listBillPaymentFilterOptions() {
 
 function deleteBill(id) {
   try {
+    require('./calendar-sync').deleteEventsForSource('bill', id);
     getDb().prepare('DELETE FROM bills WHERE id = ?').run(id);
     return true;
   } catch (err) {

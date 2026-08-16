@@ -151,13 +151,13 @@ function parseQuickAdd(input) {
 
   let priority = 3;
   const prioMatch =
-    body.match(/\bp([1-5])\b/i) ||
-    body.match(/\bprio(?:rity)?\s*[:=]?\s*([1-5])\b/i);
+    body.match(/\bp([1-3])\b/i) ||
+    body.match(/\bprio(?:rity)?\s*[:=]?\s*([1-3])\b/i);
   if (prioMatch) {
     priority = Number(prioMatch[1]);
     body = body
-      .replace(/\bp[1-5]\b/i, '')
-      .replace(/\bprio(?:rity)?\s*[:=]?\s*[1-5]\b/i, '')
+      .replace(/\bp[1-3]\b/i, '')
+      .replace(/\bprio(?:rity)?\s*[:=]?\s*[1-3]\b/i, '')
       .replace(/\s+/g, ' ')
       .trim();
   }

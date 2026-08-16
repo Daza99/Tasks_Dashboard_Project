@@ -8,6 +8,9 @@ import {
   normalizeUserTagNames,
   userTagsDisplay,
 } from '../../utils/tag-helpers.js';
+import DetailsInline from '../components/DetailsInline';
+import PrioritySelect from '../components/PrioritySelect';
+import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 
 const FREQS = ['daily', 'weekly', 'monthly'];
 const FILTER_OPTS = ['all', 'daily', 'weekly', 'monthly'];
@@ -19,8 +22,9 @@ function parseTagsInput(raw) {
 
 /**
  * Focus view: habits CRUD + check-in + streak + nudge + tags + archive mode.
+ * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
  */
-export default function HabitsView() {
+export default function HabitsView({ editId = null, onEditConsumed }) {
   const { refresh } = useBrief();
   const [mode, setMode] = useState('edit'); // edit | archive
   const [rows, setRows] = useState([]);
@@ -28,12 +32,16 @@ export default function HabitsView() {
   const [frequency, setFrequency] = useState('daily');
   const [nudge, setNudge] = useState('');
   const [tagsInput, setTagsInput] = useState('');
+  const [priority, setPriority] = useState(DEFAULT_PRIORITY);
+  const [details, setDetails] = useState('');
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
   const [editFreq, setEditFreq] = useState('daily');
   const [editNudge, setEditNudge] = useState('');
   const [editTags, setEditTags] = useState('');
+  const [editPriority, setEditPriority] = useState(DEFAULT_PRIORITY);
+  const [editDetails, setEditDetails] = useState('');
   const [freqFilter, setFreqFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -48,6 +56,14 @@ export default function HabitsView() {
     setEditingId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when archive mode flips
   }, [mode]);
+
+  useEffect(() => {
+    if (editId == null) return;
+    const h = rows.find((x) => x.id === editId);
+    if (!h) return;
+    beginEdit(h);
+    onEditConsumed?.();
+  }, [editId, rows]);
 
   /** Frequency dropdown + name/#tag search (AND). */
   const filtered = useMemo(() => {
@@ -74,10 +90,14 @@ export default function HabitsView() {
         frequency,
         nudge_time: nudge || null,
         tags: parseTagsInput(tagsInput),
+        priority,
+        description: details.trim() || null,
       });
       setName('');
       setNudge('');
       setTagsInput('');
+      setPriority(DEFAULT_PRIORITY);
+      setDetails('');
       invalidateTagCatalog();
       await load();
       await refresh();
@@ -92,6 +112,8 @@ export default function HabitsView() {
     setEditFreq(h.frequency);
     setEditNudge(h.nudge_time || '');
     setEditTags(userTagsDisplay(h.tags));
+    setEditPriority(h.priority ?? DEFAULT_PRIORITY);
+    setEditDetails(h.description || '');
   }
 
   async function saveEdit(e) {
@@ -102,6 +124,8 @@ export default function HabitsView() {
         frequency: editFreq,
         nudge_time: editNudge || null,
         tags: parseTagsInput(editTags),
+        priority: editPriority,
+        description: editDetails.trim() || null,
       });
       setEditingId(null);
       invalidateTagCatalog();
@@ -224,6 +248,17 @@ export default function HabitsView() {
               aria-label="Habit tags"
             />
           </label>
+          <div className="reminder-meta-row">
+            <div className="reminder-meta-row__left">
+              <PrioritySelect id="habit-priority" value={priority} onChange={setPriority} />
+            </div>
+            <DetailsInline
+              value={details}
+              onChange={setDetails}
+              placeholder="Details (optional)"
+              ariaLabel="Details"
+            />
+          </div>
           <button type="submit" className="btn-primary">
             Create
           </button>
@@ -276,6 +311,21 @@ export default function HabitsView() {
                     aria-label="Edit habit tags"
                   />
                 </label>
+                <div className="reminder-meta-row">
+                  <div className="reminder-meta-row__left">
+                    <PrioritySelect
+                      id={`edit-habit-priority-${h.id}`}
+                      value={editPriority}
+                      onChange={setEditPriority}
+                    />
+                  </div>
+                  <DetailsInline
+                    value={editDetails}
+                    onChange={setEditDetails}
+                    placeholder="Details (optional)"
+                    ariaLabel="Details"
+                  />
+                </div>
                 <div className="item-row__actions">
                   <button type="submit">Save</button>
                   <button type="button" onClick={() => setEditingId(null)}>
@@ -287,7 +337,17 @@ export default function HabitsView() {
               <>
                 <div className="module-list__row">
                   <div>
-                    <strong>{h.name}</strong>
+                    <strong>
+                      <span className="priority-badge" data-p={h.priority ?? DEFAULT_PRIORITY}>
+                        P{h.priority ?? DEFAULT_PRIORITY}
+                      </span>{' '}
+                      {h.name}
+                      {h.description?.trim() ? (
+                        <span className="details-mark" title="Has details">
+                          details
+                        </span>
+                      ) : null}
+                    </strong>
                     <div className="module-list__meta">
                       {h.frequency}
                       {h.nudge_time ? ` · nudge ${h.nudge_time}` : ''}

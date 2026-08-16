@@ -19,6 +19,12 @@ const NAV_ITEMS = [
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
+const CLEANUP_ITEMS = [
+  { id: 'expired', label: '7+ Days Expired', icon: '⌛' },
+  { id: 'completed', label: 'Completed', icon: '✓' },
+  { id: 'archive', label: 'Archive', icon: '🗑' },
+];
+
 /**
  * Left navigation — clicking a topic enters Focus with that view.
  * Module tabs always show brand colors; fill only when that view is current.
@@ -60,8 +66,42 @@ export default function LeftNav({ activeView, onNavigate }) {
         <span aria-hidden>✉</span> Inbox
       </button>
 
+      <button
+        type="button"
+        className={`nav-item${activeView === 'today' ? ' nav-item--active' : ''}`}
+        onClick={() => open('today')}
+      >
+        <span className="nav-item__label">
+          <span aria-hidden>●</span>
+          Today
+        </span>
+        <span className="nav-item__chevron" aria-hidden>
+          ▾
+        </span>
+      </button>
+
       <div className="nav-list">
         {NAV_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`nav-item${activeView === item.id ? ' nav-item--active' : ''}`}
+            onClick={() => open(item.id)}
+          >
+            <span className="nav-item__label">
+              <span aria-hidden>{item.icon}</span>
+              {item.label}
+            </span>
+            <span className="nav-item__chevron" aria-hidden>
+              ▾
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <p className="nav-list__label">Cleanup</p>
+      <div className="nav-list">
+        {CLEANUP_ITEMS.map((item) => (
           <button
             key={item.id}
             type="button"

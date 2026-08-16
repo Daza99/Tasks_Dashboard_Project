@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { format, parseISO, isValid, addDays, setHours, setMinutes } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
+import LockButton from '../components/LockButton';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import {
   formatTagsDisplay,
@@ -9,6 +10,7 @@ import {
   userTagsDisplay,
   userTagsOnly,
 } from '../../utils/tag-helpers.js';
+import DetailsInline from '../components/DetailsInline';
 
 function fmt(iso) {
   if (!iso || String(iso).startsWith('9999')) return 'Open';
@@ -50,6 +52,9 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
   const [time, setTime] = useState('09:00');
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [tagsInput, setTagsInput] = useState('');
+  const [appointment, setAppointment] = useState(false);
+  const [daily, setDaily] = useState(false);
+  const [details, setDetails] = useState('');
   const [error, setError] = useState('');
 
   const [editingId, setEditingId] = useState(null);
@@ -57,6 +62,9 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
   const [editScope, setEditScope] = useState('today');
   const [editDue, setEditDue] = useState('');
   const [editTags, setEditTags] = useState('');
+  const [editAppointment, setEditAppointment] = useState(false);
+  const [editDaily, setEditDaily] = useState(false);
+  const [editDetails, setEditDetails] = useState('');
   const [editError, setEditError] = useState('');
 
   async function load() {
@@ -97,9 +105,15 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
         scope,
         datetime: buildDatetime(),
         tags: normalizeUserTagNames(tagsInput),
+        is_appointment: scope !== 'open' && appointment,
+        recurrence: scope !== 'open' && daily ? 'daily' : null,
+        description: details.trim() || null,
       });
       setTitle('');
       setTagsInput('');
+      setAppointment(false);
+      setDaily(false);
+      setDetails('');
       invalidateTagCatalog();
       await load();
       await refresh();
@@ -114,6 +128,9 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
     setEditScope(scopeFromTags(r.tags));
     setEditDue(toLocalInput(r.datetime));
     setEditTags(userTagsDisplay(r.tags));
+    setEditAppointment(Number(r.is_appointment) === 1);
+    setEditDaily(r.recurrence === 'daily');
+    setEditDetails(r.description || '');
     setEditError('');
   }
 
@@ -132,6 +149,9 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
         datetime,
         scope: editScope,
         tags: normalizeUserTagNames(editTags),
+        is_appointment: editScope !== 'open' && editAppointment,
+        recurrence: editScope !== 'open' && editDaily ? 'daily' : null,
+        description: editDetails.trim() || null,
       });
       setEditingId(null);
       invalidateTagCatalog();
@@ -158,7 +178,7 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
     <div className="module-view">
       <h1>Reminders</h1>
       <p className="module-view__hint">
-        Scope required: Today / Tomorrow / Date / Open.
+        Scope required: Today / Tomorrow / Date / Open. Tick Appointment to put it on the calendar.
       </p>
 
       <form className="create-form glass-inset" onSubmit={create}>
@@ -175,20 +195,46 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
               key={s}
               type="button"
               className={scope === s ? 'active' : ''}
-              onClick={() => setScope(s)}
+              onClick={() => {
+                setScope(s);
+                if (s === 'open') setDaily(false);
+              }}
             >
               {s}
             </button>
           ))}
         </div>
-        {scope !== 'open' && (
-          <div className="settings-row">
-            {scope === 'dated' && (
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            )}
-            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-          </div>
-        )}
+        <div
+          className={`reminder-meta-row${scope === 'open' ? ' reminder-meta-row--open' : ''}`}
+        >
+          {scope !== 'open' && (
+            <div className="reminder-meta-row__left">
+              <div className="settings-row">
+                {scope === 'dated' && (
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                )}
+                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+              </div>
+              <label className="cal-appt-check">
+                <input
+                  type="checkbox"
+                  checked={appointment}
+                  onChange={(e) => setAppointment(e.target.checked)}
+                />
+                Appointment (add to calendar)
+              </label>
+              <label className="cal-appt-check">
+                <input
+                  type="checkbox"
+                  checked={daily}
+                  onChange={(e) => setDaily(e.target.checked)}
+                />
+                Daily
+              </label>
+            </div>
+          )}
+          <DetailsInline value={details} onChange={setDetails} />
+        </div>
         <label className="edit-label">
           Tags (optional)
           <TagInput
@@ -221,23 +267,49 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
                       key={s}
                       type="button"
                       className={editScope === s ? 'active' : ''}
-                      onClick={() => setEditScope(s)}
+                      onClick={() => {
+                        setEditScope(s);
+                        if (s === 'open') setEditDaily(false);
+                      }}
                     >
                       {s}
                     </button>
                   ))}
                 </div>
-                {editScope !== 'open' && (
-                  <label className="edit-label">
-                    When
-                    <input
-                      type="datetime-local"
-                      value={editDue}
-                      onChange={(e) => setEditDue(e.target.value)}
-                      required
-                    />
-                  </label>
-                )}
+                <div
+                  className={`reminder-meta-row${editScope === 'open' ? ' reminder-meta-row--open' : ''}`}
+                >
+                  {editScope !== 'open' && (
+                    <div className="reminder-meta-row__left">
+                      <label className="edit-label">
+                        When
+                        <input
+                          type="datetime-local"
+                          value={editDue}
+                          onChange={(e) => setEditDue(e.target.value)}
+                          required
+                        />
+                      </label>
+                      <label className="cal-appt-check">
+                        <input
+                          type="checkbox"
+                          checked={editAppointment}
+                          onChange={(e) => setEditAppointment(e.target.checked)}
+                        />
+                        Appointment (add to calendar)
+                      </label>
+                      <label className="cal-appt-check">
+                        <input
+                          type="checkbox"
+                          checked={editDaily}
+                          onChange={(e) => setEditDaily(e.target.checked)}
+                        />
+                        Daily
+                      </label>
+                    </div>
+                  )}
+                  <DetailsInline value={editDetails} onChange={setEditDetails} />
+                </div>
                 <label className="edit-label">
                   Tags
                   <TagInput
@@ -260,25 +332,45 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
             ) : (
               <div className="module-list__row">
                 <div>
-                  <strong>{r.title}</strong>
+                  <strong>
+                    {r.title}
+                    {r.description?.trim() ? (
+                      <span className="details-mark" title="Has details">
+                        details
+                      </span>
+                    ) : null}
+                  </strong>
                   <div className="module-list__meta">
                     {scopeFromTags(r.tags)}
+                    {r.locked ? ' · locked' : ''}
                     {userTagsOnly(r.tags).length
                       ? ` · ${formatTagsDisplay(userTagsOnly(r.tags))}`
-                      : ''}{' '}
+                      : ''}
+                    {r.recurrence === 'daily' ? ' · daily' : ''}{' '}
                     · {fmt(r.datetime)}
                   </div>
                 </div>
                 <div className="item-row__actions">
+                  <LockButton
+                    itemType="reminder"
+                    id={r.id}
+                    locked={r.locked}
+                    onChanged={async () => {
+                      await load();
+                      await refresh();
+                    }}
+                  />
                   <button type="button" onClick={() => complete(r.id)}>
                     Done
                   </button>
                   <button type="button" onClick={() => beginEdit(r)}>
                     Edit
                   </button>
-                  <button type="button" className="danger" onClick={() => remove(r.id)}>
-                    Del
-                  </button>
+                  {!r.locked && (
+                    <button type="button" className="danger" onClick={() => remove(r.id)}>
+                      Del
+                    </button>
+                  )}
                 </div>
               </div>
             )}

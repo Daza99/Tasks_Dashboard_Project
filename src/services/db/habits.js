@@ -12,6 +12,7 @@ const {
   syncUserTags: syncItemUserTags,
   normalizeTagNames,
 } = require('./tags');
+const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
 
 const FREQUENCIES = ['daily', 'weekly', 'monthly'];
 /** System-managed habit tags — UI / exports. */
@@ -74,7 +75,7 @@ function enrich(row, { date = dateKey() } = {}) {
 
 /**
  * Create habit.
- * @param {{ name: string, frequency?: string, color?: string|null, nudge_time?: string|null, tags?: string[]|string }} data
+ * @param {{ name: string, frequency?: string, color?: string|null, nudge_time?: string|null, tags?: string[]|string, description?: string|null, priority?: number }} data
  */
 function createHabit({
   name,
@@ -82,6 +83,8 @@ function createHabit({
   color = null,
   nudge_time = null,
   tags = undefined,
+  description = null,
+  priority = DEFAULT_PRIORITY,
 }) {
   try {
     if (!name?.trim()) throw new Error('Name required');
@@ -90,16 +93,20 @@ function createHabit({
     }
     const nudge =
       nudge_time && /^\d{2}:\d{2}$/.test(nudge_time) ? nudge_time : null;
+    const details = description != null ? String(description).trim() || null : null;
+    const prio = clampPriority(priority);
     const info = getDb()
       .prepare(
-        `INSERT INTO habits (name, frequency, color, nudge_time)
-         VALUES (?, ?, ?, ?)`
+        `INSERT INTO habits (name, frequency, color, nudge_time, description, priority)
+         VALUES (?, ?, ?, ?, ?, ?)`
       )
-      .run(name.trim(), frequency, color, nudge);
+      .run(name.trim(), frequency, color, nudge, details, prio);
     const id = Number(info.lastInsertRowid);
     syncNudgeTag(id, nudge);
     if (tags !== undefined) syncUserTags(id, tags);
-    return getHabit(id);
+    const row = getHabit(id);
+    require('./calendar-sync').syncHabit(row);
+    return row;
   } catch (err) {
     logError('createHabit', err);
     throw err;
@@ -118,7 +125,10 @@ function getHabit(id) {
 function listHabits({ archived = false } = {}) {
   try {
     const rows = getDb()
-      .prepare('SELECT * FROM habits ORDER BY name COLLATE NOCASE ASC')
+      .prepare(
+        `SELECT * FROM habits
+         ORDER BY COALESCE(priority, 3) ASC, name COLLATE NOCASE ASC`
+      )
       .all();
     return rows
       .map((r) => enrich(r))
@@ -163,12 +173,21 @@ function updateHabit(id, fields) {
           ? fields.nudge_time
           : null;
     }
+    const description =
+      fields.description !== undefined
+        ? String(fields.description || '').trim() || null
+        : cur.description;
+    const priority =
+      fields.priority !== undefined
+        ? clampPriority(fields.priority)
+        : clampPriority(cur.priority);
     getDb()
       .prepare(
-        `UPDATE habits SET name = ?, frequency = ?, color = ?, nudge_time = ?
+        `UPDATE habits SET name = ?, frequency = ?, color = ?, nudge_time = ?,
+         description = ?, priority = ?
          WHERE id = ?`
       )
-      .run(name, frequency, color, nudge, id);
+      .run(name, frequency, color, nudge, description, priority, id);
     // Reschedule nudge if time changed
     if (fields.nudge_time !== undefined) {
       getDb()
@@ -179,7 +198,9 @@ function updateHabit(id, fields) {
     }
     syncNudgeTag(id, nudge);
     if (fields.tags !== undefined) syncUserTags(id, fields.tags);
-    return getHabit(id);
+    const row = getHabit(id);
+    require('./calendar-sync').syncHabit(row);
+    return row;
   } catch (err) {
     logError('updateHabit', err);
     throw err;
@@ -188,6 +209,7 @@ function updateHabit(id, fields) {
 
 function deleteHabit(id) {
   try {
+    require('./calendar-sync').deleteEventsForSource('habit', id);
     const db = getDb();
     db.prepare(
       `DELETE FROM item_tags WHERE item_type = 'habit' AND item_id = ?`
@@ -204,10 +226,12 @@ function deleteHabit(id) {
 /** Shelve habit — adds #archived; excluded from active list / nudges. */
 function archiveHabit(id) {
   try {
-    const row = getDb().prepare('SELECT id FROM habits WHERE id = ?').get(id);
-    if (!row) throw new Error('Habit not found');
+    const found = getDb().prepare('SELECT id FROM habits WHERE id = ?').get(id);
+    if (!found) throw new Error('Habit not found');
     addTag('habit', id, 'archived');
-    return getHabit(id);
+    const row = getHabit(id);
+    require('./calendar-sync').syncHabit(row);
+    return row;
   } catch (err) {
     logError('archiveHabit', err);
     throw err;
@@ -217,10 +241,12 @@ function archiveHabit(id) {
 /** Restore habit — removes #archived. */
 function activateHabit(id) {
   try {
-    const row = getDb().prepare('SELECT id FROM habits WHERE id = ?').get(id);
-    if (!row) throw new Error('Habit not found');
+    const found = getDb().prepare('SELECT id FROM habits WHERE id = ?').get(id);
+    if (!found) throw new Error('Habit not found');
     removeTag('habit', id, 'archived');
-    return getHabit(id);
+    const row = getHabit(id);
+    require('./calendar-sync').syncHabit(row);
+    return row;
   } catch (err) {
     logError('activateHabit', err);
     throw err;

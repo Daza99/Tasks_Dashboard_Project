@@ -40,6 +40,16 @@ function addDays(d, n) {
   return x;
 }
 
+/** Local YYYY-MM-DD from ISO (for calendar occurrence moves). */
+function dateKeyFromIso(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /** Resolve datetime + scope tag from creation choice. */
 function resolveScope(scope, datetime) {
   const now = new Date();
@@ -71,24 +81,42 @@ function resolveScope(scope, datetime) {
 
 function enrich(row) {
   if (!row) return null;
-  return { ...row, tags: getItemTagNames('reminder', row.id) };
+  const tags = getItemTagNames('reminder', row.id);
+  return {
+    ...row,
+    tags,
+    item_type: 'reminder',
+    locked: Number(row.locked) === 1 || tags.includes('locked'),
+  };
 }
 
-function createReminder({ title, scope, datetime = null, recurrence = null }) {
+function createReminder({
+  title,
+  scope,
+  datetime = null,
+  recurrence = null,
+  is_appointment = 0,
+  description = null,
+}) {
   try {
     if (!title?.trim()) throw new Error('Title required');
     const resolved = resolveScope(scope, datetime);
+    const appointment = scope === 'open' ? 0 : is_appointment ? 1 : 0;
+    const rec = scope === 'open' ? null : recurrence || null;
+    const details = description != null ? String(description).trim() || null : null;
     const db = getDb();
     const info = db
       .prepare(
-        `INSERT INTO reminders (title, datetime, recurrence)
-         VALUES (?, ?, ?)`
+        `INSERT INTO reminders (title, datetime, recurrence, is_appointment, description)
+         VALUES (?, ?, ?, ?, ?)`
       )
-      .run(title.trim(), resolved.datetime, recurrence);
+      .run(title.trim(), resolved.datetime, rec, appointment, details);
     const id = Number(info.lastInsertRowid);
     addTag('reminder', id, resolved.scopeTag);
     addTag('reminder', id, 'rem_pending');
-    return getReminder(id);
+    const row = getReminder(id);
+    require('./calendar-sync').syncReminder(row);
+    return row;
   } catch (err) {
     logError('createReminder', err);
     throw err;
@@ -106,6 +134,7 @@ function listReminders({ includeCompleted = false } = {}) {
       .prepare(
         `SELECT * FROM reminders
          WHERE archived = 0
+           AND (container IS NULL OR container = 'active')
          ${includeCompleted ? '' : 'AND completed_at IS NULL'}
          ORDER BY datetime ASC`
       )
@@ -119,13 +148,29 @@ function listReminders({ includeCompleted = false } = {}) {
 
 function updateReminder(id, fields) {
   try {
-    const allowed = ['title', 'datetime', 'recurrence', 'snooze_until'];
+    const cur = getDb().prepare('SELECT * FROM reminders WHERE id = ?').get(id);
+    const prevDate = cur?.datetime && !String(cur.datetime).startsWith('9999')
+      ? dateKeyFromIso(cur.datetime)
+      : null;
+    const allowed = ['title', 'datetime', 'recurrence', 'snooze_until', 'is_appointment', 'description'];
     const sets = [];
     const vals = [];
+    const nextFields = { ...fields };
+    if (nextFields.scope === 'open') {
+      nextFields.is_appointment = 0;
+      nextFields.recurrence = null;
+    }
+    if (nextFields.is_appointment !== undefined) {
+      nextFields.is_appointment = nextFields.is_appointment ? 1 : 0;
+    }
     for (const key of allowed) {
-      if (fields[key] !== undefined) {
+      if (nextFields[key] !== undefined) {
         sets.push(`${key} = ?`);
-        vals.push(fields[key]);
+        const val =
+          key === 'description'
+            ? String(nextFields[key] || '').trim() || null
+            : nextFields[key];
+        vals.push(val);
       }
     }
     const db = getDb();
@@ -134,23 +179,25 @@ function updateReminder(id, fields) {
         vals.push(id);
         db.prepare(`UPDATE reminders SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
       }
-      if (['today', 'tomorrow', 'dated', 'open'].includes(fields.scope)) {
-        replaceTags('reminder', id, SCOPE_TAGS, `rem_${fields.scope}`);
+      if (['today', 'tomorrow', 'dated', 'open'].includes(nextFields.scope)) {
+        replaceTags('reminder', id, SCOPE_TAGS, `rem_${nextFields.scope}`);
       }
       // Re-schedule: datetime change returns item to pending so scheduler can re-fire
-      if (fields.datetime !== undefined) {
+      if (nextFields.datetime !== undefined) {
         db.prepare(
           `UPDATE reminders SET dismissed = 0, snooze_until = NULL, completed_at = NULL WHERE id = ?`
         ).run(id);
         replaceTags('reminder', id, STATE_TAGS, 'rem_pending');
       }
-      if (fields.tags !== undefined) {
+      if (nextFields.tags !== undefined) {
         const { syncUserTags } = require('./tags');
-        syncUserTags('reminder', id, fields.tags);
+        syncUserTags('reminder', id, nextFields.tags);
       }
     });
     tx();
-    return getReminder(id);
+    const row = getReminder(id);
+    require('./calendar-sync').syncReminder(row, { prevDate });
+    return row;
   } catch (err) {
     logError('updateReminder', err);
     throw err;
@@ -159,13 +206,35 @@ function updateReminder(id, fields) {
 
 function completeReminder(id) {
   try {
+    const cur = getDb().prepare('SELECT * FROM reminders WHERE id = ?').get(id);
+    const isDaily = cur?.recurrence === 'daily';
+    const isOpen = !cur?.datetime || String(cur.datetime).startsWith('9999');
+    if (isDaily && !isOpen) {
+      const prevDate = dateKeyFromIso(cur.datetime);
+      const next = addDays(new Date(cur.datetime), 1).toISOString();
+      getDb()
+        .prepare(
+          `UPDATE reminders SET datetime = ?, completed_at = NULL, dismissed = 0,
+             snooze_until = NULL, container = 'active', archived = 0
+           WHERE id = ?`
+        )
+        .run(next, id);
+      replaceTags('reminder', id, STATE_TAGS, 'rem_pending');
+      replaceTags('reminder', id, SCOPE_TAGS, 'rem_dated');
+      removeTag('reminder', id, 'archived');
+      const row = getReminder(id);
+      require('./calendar-sync').syncReminder(row, { prevDate });
+      return row;
+    }
     getDb()
       .prepare(
-        `UPDATE reminders SET completed_at = CURRENT_TIMESTAMP, dismissed = 1
+        `UPDATE reminders SET completed_at = CURRENT_TIMESTAMP, dismissed = 1,
+           container = 'active', archived = 0
          WHERE id = ?`
       )
       .run(id);
     replaceTags('reminder', id, STATE_TAGS, 'rem_completed');
+    removeTag('reminder', id, 'archived');
     return getReminder(id);
   } catch (err) {
     logError('completeReminder', err);
@@ -245,13 +314,33 @@ function markFired(id) {
   return getReminder(id);
 }
 
+/** Un-complete → rem_pending (restore from Completed). */
+function uncompleteReminder(id) {
+  try {
+    getDb()
+      .prepare(
+        `UPDATE reminders SET completed_at = NULL, dismissed = 0, container = 'active'
+         WHERE id = ?`
+      )
+      .run(id);
+    replaceTags('reminder', id, STATE_TAGS, 'rem_pending');
+    return getReminder(id);
+  } catch (err) {
+    logError('uncompleteReminder', err);
+    throw err;
+  }
+}
+
 function deleteReminder(id) {
   try {
+    const row = getDb().prepare('SELECT locked FROM reminders WHERE id = ?').get(id);
+    if (row && Number(row.locked) === 1) throw new Error('Reminder is locked');
     if (hasTag('reminder', id, 'locked')) {
       throw new Error('Reminder is locked');
     }
     const db = getDb();
     const tx = db.transaction(() => {
+      require('./calendar-sync').deleteEventsForSource('reminder', id);
       db.prepare(
         `DELETE FROM item_tags WHERE item_type = 'reminder' AND item_id = ?`
       ).run(id);
@@ -273,6 +362,7 @@ function listDuePending() {
        JOIN item_tags it ON it.item_id = r.id AND it.item_type = 'reminder'
        JOIN tags t ON t.id = it.tag_id AND t.name = 'rem_pending'
        WHERE r.completed_at IS NULL AND r.archived = 0
+         AND (r.container IS NULL OR r.container = 'active')
          AND datetime(r.datetime) <= datetime('now')
          AND r.datetime < '9999-01-01'`
     )
@@ -288,6 +378,7 @@ function listDueSnoozed() {
        JOIN item_tags it ON it.item_id = r.id AND it.item_type = 'reminder'
        JOIN tags t ON t.id = it.tag_id AND t.name = 'rem_snoozed'
        WHERE r.completed_at IS NULL AND r.archived = 0
+         AND (r.container IS NULL OR r.container = 'active')
          AND r.snooze_until IS NOT NULL
          AND datetime(r.snooze_until) <= datetime('now')`
     )
@@ -304,6 +395,7 @@ function expireGraceReminders() {
          JOIN item_tags it ON it.item_id = r.id AND it.item_type = 'reminder'
          JOIN tags t ON t.id = it.tag_id AND t.name = 'rem_grace'
          WHERE r.completed_at IS NULL
+           AND (r.container IS NULL OR r.container = 'active')
            AND r.snooze_until IS NOT NULL
            AND datetime(r.snooze_until) <= datetime('now')`
       )
@@ -324,6 +416,7 @@ module.exports = {
   listReminders,
   updateReminder,
   completeReminder,
+  uncompleteReminder,
   dismissReminder,
   ignoreReminder,
   snoozeReminder,

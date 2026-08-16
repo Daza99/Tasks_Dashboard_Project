@@ -29,6 +29,7 @@ function getTodayBrief() {
     .prepare(
       `SELECT * FROM tasks
        WHERE archived = 0 AND completed_at IS NULL
+         AND (container IS NULL OR container = 'active')
          AND due_datetime IS NOT NULL
          AND datetime(due_datetime) >= datetime(?)
          AND datetime(due_datetime) <= datetime(?)
@@ -44,6 +45,7 @@ function getTodayBrief() {
        JOIN item_tags it ON it.item_id = t.id AND it.item_type = 'task'
        JOIN tags g ON g.id = it.tag_id AND g.name = 'todo_24'
        WHERE t.archived = 0 AND t.completed_at IS NULL
+         AND (t.container IS NULL OR t.container = 'active')
        ORDER BY COALESCE(t.priority, 3) ASC, t.due_datetime IS NULL, t.due_datetime ASC`
     )
     .all()
@@ -71,6 +73,7 @@ function getTodayBrief() {
        JOIN item_tags it ON it.item_id = t.id AND it.item_type = 'task'
        JOIN tags g ON g.id = it.tag_id AND g.name = 'todo_expired'
        WHERE t.archived = 0 AND t.completed_at IS NULL
+         AND (t.container IS NULL OR t.container = 'active')
        ORDER BY t.due_datetime ASC`
     )
     .all()
@@ -80,6 +83,7 @@ function getTodayBrief() {
     .prepare(
       `SELECT * FROM reminders
        WHERE archived = 0 AND completed_at IS NULL
+         AND (container IS NULL OR container = 'active')
          AND datetime < '9999-01-01'
          AND datetime(datetime) >= datetime(?)
          AND datetime(datetime) <= datetime(?)
@@ -92,6 +96,7 @@ function getTodayBrief() {
     .prepare(
       `SELECT * FROM reminders
        WHERE archived = 0 AND completed_at IS NULL
+         AND (container IS NULL OR container = 'active')
          AND datetime < '9999-01-01'
          AND datetime(datetime) >= datetime(?)
          AND datetime(datetime) <= datetime(?)
@@ -106,6 +111,7 @@ function getTodayBrief() {
        JOIN item_tags it ON it.item_id = r.id AND it.item_type = 'reminder'
        JOIN tags g ON g.id = it.tag_id AND g.name = 'rem_ignored'
        WHERE r.archived = 0 AND r.completed_at IS NULL
+         AND (r.container IS NULL OR r.container = 'active')
        ORDER BY r.datetime ASC`
     )
     .all()

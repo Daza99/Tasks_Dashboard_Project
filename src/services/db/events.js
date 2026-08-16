@@ -8,20 +8,45 @@ const { dateKey } = require('./habits');
 
 function enrich(row) {
   if (!row) return null;
-  return { ...row };
+  return {
+    ...row,
+    hidden: Number(row.hidden) === 1,
+    source_id: row.source_id != null ? Number(row.source_id) : null,
+  };
 }
 
-/** Create event. */
-function createEvent({ title, start_datetime, end_datetime = null, description = null }) {
+const VISIBLE = 'AND COALESCE(hidden, 0) = 0';
+
+/** Create event (manual or linked). */
+function createEvent({
+  title,
+  start_datetime,
+  end_datetime = null,
+  description = null,
+  source_type = null,
+  source_id = null,
+  occurrence_date = null,
+  hidden = 0,
+}) {
   try {
     if (!title?.trim()) throw new Error('Title required');
     if (!start_datetime) throw new Error('start_datetime required');
     const info = getDb()
       .prepare(
-        `INSERT INTO events (title, start_datetime, end_datetime, description)
-         VALUES (?, ?, ?, ?)`
+        `INSERT INTO events (title, start_datetime, end_datetime, description,
+           source_type, source_id, occurrence_date, hidden)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(title.trim(), start_datetime, end_datetime, description);
+      .run(
+        title.trim(),
+        start_datetime,
+        end_datetime,
+        description,
+        source_type || null,
+        source_id ?? null,
+        occurrence_date || null,
+        hidden ? 1 : 0
+      );
     return getEvent(Number(info.lastInsertRowid));
   } catch (err) {
     logError('createEvent', err);
@@ -44,6 +69,7 @@ function listEventsForDay(dayKey) {
         `SELECT * FROM events
          WHERE datetime(start_datetime) <= datetime(?)
            AND datetime(COALESCE(end_datetime, start_datetime)) >= datetime(?)
+           ${VISIBLE}
          ORDER BY start_datetime ASC`
       )
       .all(end, start)
@@ -62,6 +88,7 @@ function listEventsInRange(rangeStartIso, rangeEndIso) {
         `SELECT * FROM events
          WHERE datetime(start_datetime) <= datetime(?)
            AND datetime(COALESCE(end_datetime, start_datetime)) >= datetime(?)
+           ${VISIBLE}
          ORDER BY start_datetime ASC`
       )
       .all(rangeEndIso, rangeStartIso)

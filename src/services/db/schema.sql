@@ -7,10 +7,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     due_datetime DATETIME,
     completed_at DATETIME,
-    priority INTEGER,
+    priority INTEGER, -- 1 High, 2 Medium, 3 Low
     list_locked BOOLEAN DEFAULT 0,
     archived BOOLEAN DEFAULT 0,
-    archived_date DATETIME
+    archived_date DATETIME,
+    locked INTEGER DEFAULT 0,
+    container TEXT NOT NULL DEFAULT 'active'
 );
 
 CREATE TABLE IF NOT EXISTS reminders (
@@ -23,7 +25,11 @@ CREATE TABLE IF NOT EXISTS reminders (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     completed_at DATETIME,
     archived BOOLEAN DEFAULT 0,
-    archived_date DATETIME
+    archived_date DATETIME,
+    locked INTEGER DEFAULT 0,
+    container TEXT NOT NULL DEFAULT 'active',
+    is_appointment INTEGER DEFAULT 0,
+    description TEXT
 );
 
 CREATE TABLE IF NOT EXISTS habits (
@@ -34,7 +40,9 @@ CREATE TABLE IF NOT EXISTS habits (
     nudge_time TEXT,
     snooze_until DATETIME,
     last_nudge_date DATE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    description TEXT,
+    priority INTEGER DEFAULT 3
 );
 
 CREATE TABLE IF NOT EXISTS habit_logs (
@@ -66,7 +74,9 @@ CREATE TABLE IF NOT EXISTS bills (
     snooze_until DATETIME,
     alerted_before INTEGER DEFAULT 0,
     alerted_due INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    priority INTEGER DEFAULT 3,
+    description TEXT
 );
 
 -- Actual amounts paid per cycle; average keyed by bill_name
@@ -86,7 +96,11 @@ CREATE TABLE IF NOT EXISTS events (
     start_datetime DATETIME NOT NULL,
     end_datetime DATETIME,
     description TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    source_type TEXT,
+    source_id INTEGER,
+    occurrence_date DATE,
+    hidden INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS notes (

@@ -14,6 +14,9 @@ import {
   isValid,
 } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
+import ConfirmDialog from '../components/ConfirmDialog';
+
+const CHIP_CAP = 3;
 
 function toLocalInput(iso) {
   if (!iso) return '';
@@ -25,11 +28,33 @@ function toLocalInput(iso) {
   }
 }
 
+function eventDayKey(ev) {
+  try {
+    const d = parseISO(ev.start_datetime);
+    return isValid(d) ? format(d, 'yyyy-MM-dd') : null;
+  } catch {
+    return null;
+  }
+}
+
+function isLinked(ev) {
+  return Boolean(ev?.source_type && ev.source_id != null);
+}
+
 /**
  * Focus view: month grid + day event list/create.
- * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
+ * Linked chips jump to the source item; Ctrl+click multi-selects.
+ * @param {{
+ *   editId?: number|null,
+ *   onEditConsumed?: () => void,
+ *   onEditRequest?: (type: string, id: number) => void,
+ * }} props
  */
-export default function CalendarView({ editId = null, onEditConsumed }) {
+export default function CalendarView({
+  editId = null,
+  onEditConsumed,
+  onEditRequest,
+}) {
   const { refresh } = useBrief();
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
@@ -41,15 +66,17 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editStart, setEditStart] = useState('');
+  const [picked, setPicked] = useState(() => new Set());
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
 
   const days = useMemo(() => {
-    const start = startOfWeek(monthStart, { weekStartsOn: 1 });
+    const startD = startOfWeek(monthStart, { weekStartsOn: 1 });
     const end = endOfWeek(monthEnd, { weekStartsOn: 1 });
     const out = [];
-    let d = start;
+    let d = startD;
     while (d <= end) {
       out.push(d);
       d = addDays(d, 1);
@@ -57,18 +84,22 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
     return out;
   }, [monthStart.getTime(), monthEnd.getTime()]);
 
-  const eventDays = useMemo(() => {
-    const set = new Set();
+  const eventsByDay = useMemo(() => {
+    const map = new Map();
     for (const ev of monthEvents) {
-      try {
-        const d = parseISO(ev.start_datetime);
-        if (isValid(d)) set.add(format(d, 'yyyy-MM-dd'));
-      } catch {
-        /* skip */
-      }
+      const key = eventDayKey(ev);
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(ev);
     }
-    return set;
+    return map;
   }, [monthEvents]);
+
+  const pickedEvents = useMemo(
+    () => monthEvents.filter((ev) => picked.has(ev.id)),
+    [monthEvents, picked]
+  );
+  const pickedHasLinked = pickedEvents.some(isLinked);
 
   async function loadMonth() {
     const startIso = startOfWeek(monthStart, { weekStartsOn: 1 }).toISOString();
@@ -81,8 +112,17 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
     setDayEvents(await window.api.listEventsDay(key));
   }
 
+  async function reload() {
+    await loadMonth();
+    await loadDay();
+    await refresh();
+  }
+
   useEffect(() => {
-    loadMonth();
+    (async () => {
+      await window.api.syncCalendarMonth(cursor.getFullYear(), cursor.getMonth());
+      await loadMonth();
+    })();
   }, [cursor.getMonth(), cursor.getFullYear()]);
 
   useEffect(() => {
@@ -107,6 +147,45 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
     })();
   }, [editId]);
 
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (!picked.size) return;
+      e.preventDefault();
+      requestDelete();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [picked, pickedHasLinked]);
+
+  function togglePick(id, additive) {
+    setPicked((prev) => {
+      const next = additive ? new Set(prev) : new Set();
+      if (additive && prev.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function onChipClick(e, ev, day) {
+    e.stopPropagation();
+    if (e.ctrlKey || e.metaKey) {
+      togglePick(ev.id, true);
+      return;
+    }
+    setPicked(new Set());
+    setSelected(day);
+    if (isLinked(ev) && onEditRequest) {
+      onEditRequest(ev.source_type, ev.source_id);
+      return;
+    }
+    setEditingId(ev.id);
+    setEditTitle(ev.title);
+    setEditStart(toLocalInput(ev.start_datetime));
+  }
+
   async function create(e) {
     e.preventDefault();
     setError('');
@@ -116,9 +195,7 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
         start_datetime: new Date(start).toISOString(),
       });
       setTitle('');
-      await loadMonth();
-      await loadDay();
-      await refresh();
+      await reload();
     } catch (err) {
       setError(err?.message || String(err));
     }
@@ -132,25 +209,76 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
         start_datetime: new Date(editStart).toISOString(),
       });
       setEditingId(null);
-      await loadMonth();
-      await loadDay();
-      await refresh();
+      await reload();
     } catch (err) {
       setError(err?.message || String(err));
     }
   }
 
-  async function remove(id) {
-    await window.api.deleteEvent(id);
-    await loadMonth();
-    await loadDay();
-    await refresh();
+  function requestDelete(ids) {
+    const set = ids ? new Set(ids) : picked;
+    if (!set.size) return;
+    setPicked(set);
+    const seen = new Set();
+    const all = [...monthEvents, ...dayEvents].filter((ev) => {
+      if (!set.has(ev.id) || seen.has(ev.id)) return false;
+      seen.add(ev.id);
+      return true;
+    });
+    if (all.some(isLinked)) setDeleteOpen(true);
+    else applyDelete(false, [...set]);
+  }
+
+  async function applyDelete(deleteSources, idsArg) {
+    setDeleteOpen(false);
+    const ids = idsArg || [...picked];
+    if (!ids.length) return;
+    try {
+      const result = await window.api.removeCalendarSelection(ids, { deleteSources });
+      setPicked(new Set());
+      setEditingId(null);
+      await reload();
+      if (result?.skippedLocked?.length) {
+        setError(`Locked, skipped: ${result.skippedLocked.join(', ')}`);
+      }
+    } catch (err) {
+      setError(err?.message || String(err));
+    }
+  }
+
+  function renderChips(day) {
+    const key = format(day, 'yyyy-MM-dd');
+    const list = eventsByDay.get(key) || [];
+    const shown = list.slice(0, CHIP_CAP);
+    const extra = list.length - shown.length;
+    return (
+      <>
+        {shown.map((ev) => (
+          <button
+            key={ev.id}
+            type="button"
+            className={`cal-chip${picked.has(ev.id) ? ' cal-chip--selected' : ''}${
+              isLinked(ev) ? ' cal-chip--linked' : ''
+            }`}
+            title={ev.title}
+            onClick={(e) => onChipClick(e, ev, day)}
+          >
+            {ev.title}
+          </button>
+        ))}
+        {extra > 0 && (
+          <span className="cal-chip-more">+{extra}</span>
+        )}
+      </>
+    );
   }
 
   return (
     <div className="module-view">
       <h1>Calendar</h1>
-      <p className="module-view__hint">Month grid · click a day to add events.</p>
+      <p className="module-view__hint">
+        Month grid · click a linked entry to open it · Ctrl+click to select.
+      </p>
 
       <div className="cal-nav">
         <button type="button" className="btn-compact" onClick={() => setCursor(subMonths(cursor, 1))}>
@@ -162,6 +290,18 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
         </button>
       </div>
 
+      {picked.size > 0 && (
+        <div className="cal-select-bar">
+          <span>{picked.size} selected</span>
+          <button type="button" className="danger" onClick={() => requestDelete()}>
+            Delete
+          </button>
+          <button type="button" onClick={() => setPicked(new Set())}>
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="cal-grid" role="grid" aria-label="Month">
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
           <div key={d} className="cal-grid__dow">
@@ -172,18 +312,18 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
           const key = format(d, 'yyyy-MM-dd');
           const inMonth = isSameMonth(d, cursor);
           const sel = isSameDay(d, selected);
-          const has = eventDays.has(key);
           return (
-            <button
+            <div
               key={key}
-              type="button"
+              role="gridcell"
               className={`cal-grid__day${inMonth ? '' : ' cal-grid__day--muted'}${
                 sel ? ' cal-grid__day--selected' : ''
-              }${has ? ' cal-grid__day--dot' : ''}`}
+              }`}
               onClick={() => setSelected(d)}
             >
-              {format(d, 'd')}
-            </button>
+              <span className="cal-grid__day-num">{format(d, 'd')}</span>
+              {renderChips(d)}
+            </div>
           );
         })}
       </div>
@@ -212,7 +352,12 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
 
       <ul className="module-list">
         {dayEvents.map((ev) => (
-          <li key={ev.id} className="module-list__item glass-inset module-list__item--col">
+          <li
+            key={ev.id}
+            className={`module-list__item glass-inset module-list__item--col${
+              picked.has(ev.id) ? ' cal-row--selected' : ''
+            }`}
+          >
             {editingId === ev.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
                 <input
@@ -236,12 +381,17 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
               </form>
             ) : (
               <div className="module-list__row">
-                <div>
+                <button
+                  type="button"
+                  className="cal-row-title"
+                  onClick={(e) => onChipClick(e, ev, selected)}
+                >
                   <strong>{ev.title}</strong>
                   <div className="module-list__meta">
                     {format(parseISO(ev.start_datetime), 'h:mm a')}
+                    {isLinked(ev) ? ` · ${ev.source_type}` : ''}
                   </div>
-                </div>
+                </button>
                 <div className="item-row__actions">
                   <button
                     type="button"
@@ -253,7 +403,11 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
                   >
                     Edit
                   </button>
-                  <button type="button" className="danger" onClick={() => remove(ev.id)}>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => requestDelete([ev.id])}
+                  >
                     Del
                   </button>
                 </div>
@@ -263,6 +417,18 @@ export default function CalendarView({ editId = null, onEditConsumed }) {
         ))}
         {!dayEvents.length && <p className="stub-empty">No events this day.</p>}
       </ul>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Remove from calendar?"
+        message="Also delete the linked item? Calendar-only keeps the bill, habit, or reminder."
+        confirmLabel="Delete linked item too"
+        secondaryLabel="Calendar only"
+        danger
+        onConfirm={() => applyDelete(true)}
+        onSecondary={() => applyDelete(false)}
+        onCancel={() => setDeleteOpen(false)}
+      />
     </div>
   );
 }

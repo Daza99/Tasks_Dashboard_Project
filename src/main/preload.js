@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('api', {
   createEvent: (data) => ipcRenderer.invoke('events:create', data),
   updateEvent: (id, fields) => ipcRenderer.invoke('events:update', id, fields),
   deleteEvent: (id) => ipcRenderer.invoke('events:delete', id),
+  syncCalendarMonth: (year, monthIndex) =>
+    ipcRenderer.invoke('events:syncMonth', year, monthIndex),
+  removeCalendarSelection: (ids, opts) =>
+    ipcRenderer.invoke('events:removeSelection', ids, opts),
 
   listTransactions: (opts) => ipcRenderer.invoke('tx:list', opts),
   getTransaction: (id) => ipcRenderer.invoke('tx:get', id),
@@ -62,6 +66,39 @@ contextBridge.exposeInMainWorld('api', {
   deleteTransaction: (id) => ipcRenderer.invoke('tx:delete', id),
 
   listTags: (opts) => ipcRenderer.invoke('tags:list', opts),
+
+  listExpired7: () => ipcRenderer.invoke('containers:listExpired7'),
+  listCompleted: (opts) => ipcRenderer.invoke('containers:listCompleted', opts),
+  listArchive: () => ipcRenderer.invoke('containers:listArchive'),
+  containerCounts: () => ipcRenderer.invoke('containers:counts'),
+  archiveItem: (itemType, id) => ipcRenderer.invoke('containers:archive', itemType, id),
+  restoreItem: (itemType, id, from) =>
+    ipcRenderer.invoke('containers:restore', itemType, id, from),
+  deleteContainerItem: (itemType, id) =>
+    ipcRenderer.invoke('containers:delete', itemType, id),
+  bulkArchive: (payload) => ipcRenderer.invoke('containers:bulkArchive', payload),
+  bulkRestore: (payload) => ipcRenderer.invoke('containers:bulkRestore', payload),
+  bulkDelete: (payload) => ipcRenderer.invoke('containers:bulkDelete', payload),
+  moveToList: (payload) => ipcRenderer.invoke('containers:moveToList', payload),
+  sweepContainers: () => ipcRenderer.invoke('containers:sweep'),
+  setLocked: (itemType, id, locked) =>
+    ipcRenderer.invoke('items:setLocked', itemType, id, locked),
+
+  listLists: (opts) => ipcRenderer.invoke('lists:list', opts),
+  getList: (id) => ipcRenderer.invoke('lists:get', id),
+  createList: (data) => ipcRenderer.invoke('lists:create', data),
+  renameList: (id, name) => ipcRenderer.invoke('lists:rename', id, name),
+  deleteList: (id) => ipcRenderer.invoke('lists:delete', id),
+  mergeLists: (sourceId, targetId) => ipcRenderer.invoke('lists:merge', sourceId, targetId),
+  listListItems: (id) => ipcRenderer.invoke('lists:items', id),
+  addListItem: (listId, itemType, itemId) =>
+    ipcRenderer.invoke('lists:addItem', listId, itemType, itemId),
+  removeListItem: (membershipId) => ipcRenderer.invoke('lists:removeItem', membershipId),
+  exportList: (id) => ipcRenderer.invoke('lists:export', id),
+
+  search: (opts) => ipcRenderer.invoke('search:query', opts),
+  searchFilterOptions: (scope) =>
+    ipcRenderer.invoke('search:filterOptions', scope),
 
   getTodayBrief: () => ipcRenderer.invoke('today:getBrief'),
   runAudit: () => ipcRenderer.invoke('today:runAudit'),

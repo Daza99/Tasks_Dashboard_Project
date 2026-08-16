@@ -22,6 +22,7 @@ const {
   markBillAlerted,
 } = require('../services/db/bills');
 const { showItemNotification } = require('./notification-window');
+const { sweepContainers } = require('../services/db/containers');
 const { logError } = require('./logger');
 
 let intervalId = null;
@@ -49,7 +50,8 @@ function runTagAudit() {
     const expired = expireStaleTodo24();
     const ignored = expireGraceReminders();
     const overdue = markOverdueBills();
-    return { expired, ignored, overdue };
+    const containers = sweepContainers();
+    return { expired, ignored, overdue, containers };
   } catch (err) {
     logError('runTagAudit', err);
     return { expired: 0, ignored: 0, overdue: 0, error: String(err) };

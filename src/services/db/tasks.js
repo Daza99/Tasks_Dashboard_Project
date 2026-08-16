@@ -10,6 +10,7 @@ const {
   getItemTagNames,
   hasTag,
 } = require('./tags');
+const { clampPriority } = require('../../utils/priority.cjs');
 
 const TASK_LIFECYCLE = [
   'todo_24',
@@ -18,16 +19,15 @@ const TASK_LIFECYCLE = [
   'todo_expired',
 ];
 
-/** Clamp priority to blueprint range 1–5 (1 = highest). */
-function clampPriority(value, fallback = 3) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(5, Math.max(1, Math.round(n)));
-}
-
 function enrich(row) {
   if (!row) return null;
-  return { ...row, tags: getItemTagNames('task', row.id) };
+  const tags = getItemTagNames('task', row.id);
+  return {
+    ...row,
+    tags,
+    item_type: 'task',
+    locked: Number(row.locked) === 1 || tags.includes('locked'),
+  };
 }
 
 /** Create task. kind must be todo_24 | todo_open. */
@@ -70,6 +70,7 @@ function listTasks({ includeCompleted = false } = {}) {
       .prepare(
         `SELECT * FROM tasks
          WHERE archived = 0
+           AND (container IS NULL OR container = 'active')
          ${includeCompleted ? '' : 'AND completed_at IS NULL'}
          ORDER BY COALESCE(priority, 3) ASC,
                   due_datetime IS NULL, due_datetime ASC, created_at DESC`
@@ -134,10 +135,12 @@ function completeTask(id) {
   try {
     getDb()
       .prepare(
-        `UPDATE tasks SET completed_at = CURRENT_TIMESTAMP WHERE id = ?`
+        `UPDATE tasks SET completed_at = CURRENT_TIMESTAMP, container = 'active', archived = 0
+         WHERE id = ?`
       )
       .run(id);
     replaceTags('task', id, TASK_LIFECYCLE, 'todo_completed');
+    removeTag('task', id, 'archived');
     return getTask(id);
   } catch (err) {
     logError('completeTask', err);
@@ -145,8 +148,24 @@ function completeTask(id) {
   }
 }
 
+/** Un-complete → active todo_open (restore from Completed). */
+function uncompleteTask(id) {
+  try {
+    getDb()
+      .prepare(`UPDATE tasks SET completed_at = NULL, container = 'active' WHERE id = ?`)
+      .run(id);
+    replaceTags('task', id, TASK_LIFECYCLE, 'todo_open');
+    return getTask(id);
+  } catch (err) {
+    logError('uncompleteTask', err);
+    throw err;
+  }
+}
+
 function deleteTask(id) {
   try {
+    const row = getDb().prepare('SELECT locked FROM tasks WHERE id = ?').get(id);
+    if (row && Number(row.locked) === 1) throw new Error('Task is locked');
     if (hasTag('task', id, 'locked')) {
       throw new Error('Task is locked');
     }
@@ -175,6 +194,7 @@ function expireStaleTodo24() {
          JOIN item_tags it ON it.item_id = t.id AND it.item_type = 'task'
          JOIN tags g ON g.id = it.tag_id AND g.name = 'todo_24'
          WHERE t.completed_at IS NULL AND t.archived = 0
+           AND (t.container IS NULL OR t.container = 'active')
            AND t.due_datetime IS NOT NULL
            AND datetime(t.due_datetime) <= datetime('now')`
       )
@@ -200,6 +220,7 @@ function listDueTasksForAlert() {
        JOIN item_tags it ON it.item_id = t.id AND it.item_type = 'task'
        JOIN tags g ON g.id = it.tag_id AND g.name = 'todo_24'
        WHERE t.completed_at IS NULL AND t.archived = 0
+         AND (t.container IS NULL OR t.container = 'active')
          AND t.due_datetime IS NOT NULL
          AND datetime(t.due_datetime) <= datetime('now')
          AND NOT EXISTS (
@@ -265,6 +286,7 @@ module.exports = {
   listTasks,
   updateTask,
   completeTask,
+  uncompleteTask,
   deleteTask,
   expireStaleTodo24,
   listDueTasksForAlert,

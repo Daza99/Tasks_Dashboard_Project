@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
+import LockButton from '../components/LockButton';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import {
   formatTagsDisplay,
@@ -9,6 +10,9 @@ import {
   userTagsDisplay,
   userTagsOnly,
 } from '../../utils/tag-helpers.js';
+import PrioritySelect from '../components/PrioritySelect';
+import DetailsInline from '../components/DetailsInline';
+import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 
 function fmt(iso) {
   if (!iso) return '—';
@@ -32,26 +36,8 @@ function toLocalInput(iso) {
   }
 }
 
-const PRIORITIES = [1, 2, 3, 4, 5];
-
-function PrioritySelect({ id, value, onChange }) {
-  return (
-    <label className="edit-label priority-select" htmlFor={id}>
-      Priority
-      <select id={id} value={value} onChange={(e) => onChange(Number(e.target.value))}>
-        {PRIORITIES.map((p) => (
-          <option key={p} value={p}>
-            P{p}
-            {p === 1 ? ' · highest' : p === 5 ? ' · lowest' : ''}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 /**
- * Focus view: list + create/edit with mandatory todo_24 | todo_open + priority 1–5.
+ * Focus view: list + create/edit with mandatory todo_24 | todo_open + P1–P3.
  * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
  */
 export default function TasksView({ editId = null, onEditConsumed }) {
@@ -59,15 +45,17 @@ export default function TasksView({ editId = null, onEditConsumed }) {
   const [tasks, setTasks] = useState([]);
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState('todo_24');
-  const [priority, setPriority] = useState(3);
+  const [priority, setPriority] = useState(DEFAULT_PRIORITY);
   const [tagsInput, setTagsInput] = useState('');
+  const [details, setDetails] = useState('');
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editKind, setEditKind] = useState('todo_24');
   const [editDue, setEditDue] = useState('');
-  const [editPriority, setEditPriority] = useState(3);
+  const [editPriority, setEditPriority] = useState(DEFAULT_PRIORITY);
   const [editTags, setEditTags] = useState('');
+  const [editDetails, setEditDetails] = useState('');
   const [editError, setEditError] = useState('');
 
   async function load() {
@@ -96,10 +84,12 @@ export default function TasksView({ editId = null, onEditConsumed }) {
         kind,
         priority,
         tags: normalizeUserTagNames(tagsInput),
+        description: details.trim() || null,
       });
       setTitle('');
-      setPriority(3);
+      setPriority(DEFAULT_PRIORITY);
       setTagsInput('');
+      setDetails('');
       invalidateTagCatalog();
       await load();
       await refresh();
@@ -113,8 +103,9 @@ export default function TasksView({ editId = null, onEditConsumed }) {
     setEditTitle(t.title);
     setEditKind(t.tags?.includes('todo_open') ? 'todo_open' : 'todo_24');
     setEditDue(toLocalInput(t.due_datetime));
-    setEditPriority(t.priority ?? 3);
+    setEditPriority(t.priority ?? DEFAULT_PRIORITY);
     setEditTags(userTagsDisplay(t.tags));
+    setEditDetails(t.description || '');
     setEditError('');
   }
 
@@ -129,6 +120,7 @@ export default function TasksView({ editId = null, onEditConsumed }) {
         kind: editKind,
         priority: editPriority,
         tags: normalizeUserTagNames(editTags),
+        description: editDetails.trim() || null,
       });
       setEditingId(null);
       invalidateTagCatalog();
@@ -166,32 +158,42 @@ export default function TasksView({ editId = null, onEditConsumed }) {
           placeholder="Task title"
           required
         />
-        <div className="kind-toggle" role="group" aria-label="Task kind">
-          <button
-            type="button"
-            className={kind === 'todo_24' ? 'active' : ''}
-            onClick={() => setKind('todo_24')}
-          >
-            24hr
-          </button>
-          <button
-            type="button"
-            className={kind === 'todo_open' ? 'active' : ''}
-            onClick={() => setKind('todo_open')}
-          >
-            Open
-          </button>
-        </div>
-        <PrioritySelect id="create-priority" value={priority} onChange={setPriority} />
-        <label className="edit-label">
-          Tags (optional)
-          <TagInput
-            value={tagsInput}
-            onChange={setTagsInput}
-            placeholder="#work #home"
-            aria-label="Task tags"
+        <div className="reminder-meta-row">
+          <div className="reminder-meta-row__left">
+            <div className="kind-toggle" role="group" aria-label="Task kind">
+              <button
+                type="button"
+                className={kind === 'todo_24' ? 'active' : ''}
+                onClick={() => setKind('todo_24')}
+              >
+                24hr
+              </button>
+              <button
+                type="button"
+                className={kind === 'todo_open' ? 'active' : ''}
+                onClick={() => setKind('todo_open')}
+              >
+                Open
+              </button>
+            </div>
+            <PrioritySelect id="create-priority" value={priority} onChange={setPriority} />
+            <label className="edit-label">
+              Tags (optional)
+              <TagInput
+                value={tagsInput}
+                onChange={setTagsInput}
+                placeholder="#work #home"
+                aria-label="Task tags"
+              />
+            </label>
+          </div>
+          <DetailsInline
+            value={details}
+            onChange={setDetails}
+            placeholder="Optional task details"
+            ariaLabel="Optional task details"
           />
-        </label>
+        </div>
         <button type="submit" className="btn-primary">
           Create
         </button>
@@ -209,44 +211,54 @@ export default function TasksView({ editId = null, onEditConsumed }) {
                   onChange={(e) => setEditTitle(e.target.value)}
                   required
                 />
-                <label className="edit-label">
-                  Due
-                  <input
-                    type="datetime-local"
-                    value={editDue}
-                    onChange={(e) => setEditDue(e.target.value)}
+                <div className="reminder-meta-row">
+                  <div className="reminder-meta-row__left">
+                    <label className="edit-label">
+                      Due
+                      <input
+                        type="datetime-local"
+                        value={editDue}
+                        onChange={(e) => setEditDue(e.target.value)}
+                      />
+                    </label>
+                    <div className="kind-toggle" role="group" aria-label="Edit kind">
+                      <button
+                        type="button"
+                        className={editKind === 'todo_24' ? 'active' : ''}
+                        onClick={() => setEditKind('todo_24')}
+                      >
+                        24hr
+                      </button>
+                      <button
+                        type="button"
+                        className={editKind === 'todo_open' ? 'active' : ''}
+                        onClick={() => setEditKind('todo_open')}
+                      >
+                        Open
+                      </button>
+                    </div>
+                    <PrioritySelect
+                      id={`edit-priority-${t.id}`}
+                      value={editPriority}
+                      onChange={setEditPriority}
+                    />
+                    <label className="edit-label">
+                      Tags
+                      <TagInput
+                        value={editTags}
+                        onChange={setEditTags}
+                        placeholder="#tag"
+                        aria-label="Edit task tags"
+                      />
+                    </label>
+                  </div>
+                  <DetailsInline
+                    value={editDetails}
+                    onChange={setEditDetails}
+                    placeholder="Optional task details"
+                    ariaLabel="Optional task details"
                   />
-                </label>
-                <PrioritySelect
-                  id={`edit-priority-${t.id}`}
-                  value={editPriority}
-                  onChange={setEditPriority}
-                />
-                <div className="kind-toggle" role="group" aria-label="Edit kind">
-                  <button
-                    type="button"
-                    className={editKind === 'todo_24' ? 'active' : ''}
-                    onClick={() => setEditKind('todo_24')}
-                  >
-                    24hr
-                  </button>
-                  <button
-                    type="button"
-                    className={editKind === 'todo_open' ? 'active' : ''}
-                    onClick={() => setEditKind('todo_open')}
-                  >
-                    Open
-                  </button>
                 </div>
-                <label className="edit-label">
-                  Tags
-                  <TagInput
-                    value={editTags}
-                    onChange={setEditTags}
-                    placeholder="#tag"
-                    aria-label="Edit task tags"
-                  />
-                </label>
                 <div className="item-row__actions">
                   <button type="submit" className="btn-primary">
                     Save
@@ -265,9 +277,15 @@ export default function TasksView({ editId = null, onEditConsumed }) {
                       P{t.priority ?? 3}
                     </span>{' '}
                     {t.title}
+                    {t.description?.trim() ? (
+                      <span className="details-mark" title="Has details">
+                        details
+                      </span>
+                    ) : null}
                   </strong>
                   <div className="module-list__meta">
                     {t.tags?.includes('todo_open') ? 'open' : '24hr'}
+                    {t.locked ? ' · locked' : ''}
                     {userTagsOnly(t.tags).length
                       ? ` · ${formatTagsDisplay(userTagsOnly(t.tags))}`
                       : ''}{' '}
@@ -275,15 +293,26 @@ export default function TasksView({ editId = null, onEditConsumed }) {
                   </div>
                 </div>
                 <div className="item-row__actions">
+                  <LockButton
+                    itemType="task"
+                    id={t.id}
+                    locked={t.locked}
+                    onChanged={async () => {
+                      await load();
+                      await refresh();
+                    }}
+                  />
                   <button type="button" onClick={() => complete(t.id)}>
                     Done
                   </button>
                   <button type="button" onClick={() => beginEdit(t)}>
                     Edit
                   </button>
-                  <button type="button" className="danger" onClick={() => remove(t.id)}>
-                    Del
-                  </button>
+                  {!t.locked && (
+                    <button type="button" className="danger" onClick={() => remove(t.id)}>
+                      Del
+                    </button>
+                  )}
                 </div>
               </div>
             )}

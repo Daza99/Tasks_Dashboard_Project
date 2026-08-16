@@ -7,13 +7,14 @@ Offline-first desktop dashboard (Electron + React + SQLite). Portable USB folder
 Full product blueprint (phases, schema, lifecycle, UI):  
 [`docs/Master_Dashboard_blueprint_Lumo_v2.md`](docs/Master_Dashboard_blueprint_Lumo_v2.md)
 
-## Phase 3 (current)
+## Phase 4 (current)
 
-- Habits — create, check-in, streak, optional nudge popup
-- Bills — due dates, recurrence, paid/overdue, day-before/day-of popups
-- Calendar — month grid + event CRUD
-- Spending — manual transactions + Money snapshot on Today brief
-- Today brief integrates all four modules
+- Cleanup containers — 7+ Days Expired, Completed, Archive (restore / archive / delete, bulk + confirm)
+- Padlock — per-item lock, `#locked`, excluded from bulk/auto-delete
+- Lists — todo/reminder folders, date filter, rename/merge, add items, export stub
+- Settings → General: retention days (1–30), archive years, auto-delete toggles (off), filesize warning
+
+Phase 3 tracking modules remain (Habits, Bills, Calendar, Spending, Today brief).
 
 ## Dev
 

@@ -15,6 +15,11 @@ export default function TagSearchInput({
   onChange,
   placeholder = 'Name or #tag',
   disabled = false,
+  onFocus,
+  onBlur,
+  onKeyDown: onKeyDownProp,
+  inputRef,
+  className,
   'aria-label': ariaLabel = 'Search',
 }) {
   const { catalog, refresh } = useTagCatalog();
@@ -42,14 +47,16 @@ export default function TagSearchInput({
       if (e.key === 'Enter') {
         e.preventDefault();
         acceptPrediction();
+        onKeyDownProp?.(e);
         return;
       }
       acceptPrediction();
     }
+    onKeyDownProp?.(e);
   }
 
   return (
-    <div className="tag-input tag-input--search">
+    <div className={`tag-input tag-input--search${className ? ` ${className}` : ''}`}>
       <div className="tag-input__ghost" aria-hidden="true">
         <span className="tag-input__ghost-typed">{q}</span>
         {ghostSuffix ? (
@@ -57,12 +64,17 @@ export default function TagSearchInput({
         ) : null}
       </div>
       <input
+        ref={inputRef}
         type="search"
         className="tag-input__field"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        onFocus={() => refresh()}
+        onFocus={(e) => {
+          refresh();
+          onFocus?.(e);
+        }}
+        onBlur={onBlur}
         placeholder={placeholder}
         disabled={disabled}
         aria-label={ariaLabel}

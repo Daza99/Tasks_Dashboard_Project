@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import BillPayConfirm from '../components/BillPayConfirm';
+import PrioritySelect from '../components/PrioritySelect';
+import DetailsInline from '../components/DetailsInline';
+import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 
 const RECUR = [
   { id: '', label: 'once' },
@@ -55,6 +58,8 @@ export default function BillsView({ editId = null, onEditConsumed }) {
   const [recurrence, setRecurrence] = useState('');
   const [category, setCategory] = useState('');
   const [amountMode, setAmountMode] = useState('fixed');
+  const [priority, setPriority] = useState(DEFAULT_PRIORITY);
+  const [details, setDetails] = useState('');
   const [stats, setStats] = useState({ count: 0, average: null, canAverage: false });
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -189,11 +194,15 @@ export default function BillsView({ editId = null, onEditConsumed }) {
         recurrence: recurrence || null,
         category: category || null,
         amount_mode: amountMode,
+        priority,
+        description: details.trim() || null,
       });
       setName('');
       setAmount('');
       setCategory('');
       setAmountMode('fixed');
+      setPriority(DEFAULT_PRIORITY);
+      setDetails('');
       await load();
       await refresh();
     } catch (err) {
@@ -210,6 +219,8 @@ export default function BillsView({ editId = null, onEditConsumed }) {
       recurrence: b.recurrence || '',
       category: b.category || '',
       amount_mode: b.amount_mode || 'fixed',
+      priority: b.priority ?? DEFAULT_PRIORITY,
+      description: b.description || '',
     });
   }
 
@@ -223,6 +234,8 @@ export default function BillsView({ editId = null, onEditConsumed }) {
         recurrence: edit.recurrence || null,
         category: edit.category || null,
         amount_mode: edit.amount_mode || 'fixed',
+        priority: edit.priority ?? DEFAULT_PRIORITY,
+        description: (edit.description || '').trim() || null,
       });
       setEditingId(null);
       await load();
@@ -470,20 +483,31 @@ export default function BillsView({ editId = null, onEditConsumed }) {
             onChange={(e) => setCategory(e.target.value)}
             placeholder="Category (optional)"
           />
-          <div className="kind-toggle" role="group" aria-label="Recurrence">
-            {RECUR.map((r) => (
-              <button
-                key={r.id || 'once'}
-                type="button"
-                className={recurrence === r.id ? 'active' : ''}
-                onClick={() => setRecurrence(r.id)}
-              >
-                {r.label}
-              </button>
-            ))}
-            <button type="button" onClick={() => setMode('history')}>
-              HISTORY
-            </button>
+          <div className="reminder-meta-row">
+            <div className="reminder-meta-row__left">
+              <div className="kind-toggle" role="group" aria-label="Recurrence">
+                {RECUR.map((r) => (
+                  <button
+                    key={r.id || 'once'}
+                    type="button"
+                    className={recurrence === r.id ? 'active' : ''}
+                    onClick={() => setRecurrence(r.id)}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setMode('history')}>
+                  HISTORY
+                </button>
+              </div>
+              <PrioritySelect id="bill-priority" value={priority} onChange={setPriority} />
+            </div>
+            <DetailsInline
+              value={details}
+              onChange={setDetails}
+              placeholder="Optional notes"
+              ariaLabel="Optional notes"
+            />
           </div>
           <button type="submit" className="btn-primary">
             Create
@@ -582,17 +606,32 @@ export default function BillsView({ editId = null, onEditConsumed }) {
                     onChange={(e) => setEdit({ ...edit, category: e.target.value })}
                     placeholder="Category"
                   />
-                  <div className="kind-toggle">
-                    {RECUR.map((r) => (
-                      <button
-                        key={r.id || 'once'}
-                        type="button"
-                        className={edit.recurrence === r.id ? 'active' : ''}
-                        onClick={() => setEdit({ ...edit, recurrence: r.id })}
-                      >
-                        {r.label}
-                      </button>
-                    ))}
+                  <div className="reminder-meta-row">
+                    <div className="reminder-meta-row__left">
+                      <div className="kind-toggle">
+                        {RECUR.map((r) => (
+                          <button
+                            key={r.id || 'once'}
+                            type="button"
+                            className={edit.recurrence === r.id ? 'active' : ''}
+                            onClick={() => setEdit({ ...edit, recurrence: r.id })}
+                          >
+                            {r.label}
+                          </button>
+                        ))}
+                      </div>
+                      <PrioritySelect
+                        id={`edit-bill-priority-${b.id}`}
+                        value={edit.priority ?? DEFAULT_PRIORITY}
+                        onChange={(n) => setEdit({ ...edit, priority: n })}
+                      />
+                    </div>
+                    <DetailsInline
+                      value={edit.description || ''}
+                      onChange={(text) => setEdit({ ...edit, description: text })}
+                      placeholder="Optional notes"
+                      ariaLabel="Optional notes"
+                    />
                   </div>
                   <div className="item-row__actions">
                     <button type="submit">Save</button>
@@ -604,7 +643,17 @@ export default function BillsView({ editId = null, onEditConsumed }) {
               ) : (
                 <div className="module-list__row">
                   <div>
-                    <strong>{b.name}</strong>
+                    <strong>
+                      <span className="priority-badge" data-p={b.priority ?? DEFAULT_PRIORITY}>
+                        P{b.priority ?? DEFAULT_PRIORITY}
+                      </span>{' '}
+                      {b.name}
+                      {b.description?.trim() ? (
+                        <span className="details-mark" title="Has details">
+                          details
+                        </span>
+                      ) : null}
+                    </strong>
                     <div className="module-list__meta">
                       ${Number(b.amount).toFixed(2)}
                       {amountModeLabel(b.amount_mode) && (

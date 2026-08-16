@@ -57,6 +57,7 @@ const {
   updateEvent,
   deleteEvent,
 } = require('../services/db/events');
+const { syncMonth, removeSelection } = require('../services/db/calendar-sync');
 const {
   createTransaction,
   listTransactions,
@@ -67,9 +68,37 @@ const {
 } = require('../services/db/transactions');
 const { getTodayBrief } = require('../services/db/today');
 const { addTag, listTags } = require('../services/db/tags');
+const {
+  setLocked,
+  listExpired7,
+  listCompleted,
+  listArchive,
+  getContainerCounts,
+  archiveItem,
+  restoreItem,
+  deleteItem,
+  bulkArchive,
+  bulkRestore,
+  bulkDelete,
+  moveToList,
+  sweepContainers,
+} = require('../services/db/containers');
+const {
+  createList,
+  getList,
+  listLists,
+  renameList,
+  deleteList,
+  mergeLists,
+  listItems,
+  addListItem,
+  removeListItem,
+  exportList,
+} = require('../services/db/lists');
 const { runTagAudit } = require('./scheduler');
 const { registerNotificationIpc } = require('./notification-window');
 const { parseQuickAdd } = require('../utils/quick-add-parser');
+const { runSearch, searchFilterOptions } = require('../services/db/search');
 
 function registerIpcHandlers() {
   registerNotificationIpc();
@@ -208,6 +237,12 @@ function registerIpcHandlers() {
   ipcMain.handle('events:create', (_e, data) => createEvent(data));
   ipcMain.handle('events:update', (_e, id, fields) => updateEvent(id, fields));
   ipcMain.handle('events:delete', (_e, id) => deleteEvent(id));
+  ipcMain.handle('events:syncMonth', (_e, year, monthIndex) =>
+    syncMonth(year, monthIndex)
+  );
+  ipcMain.handle('events:removeSelection', (_e, ids, opts) =>
+    removeSelection(ids, opts || {})
+  );
 
   // --- Transactions / Spending ---
   ipcMain.handle('tx:list', (_e, opts) => listTransactions(opts || {}));
@@ -218,6 +253,46 @@ function registerIpcHandlers() {
   ipcMain.handle('tx:delete', (_e, id) => deleteTransaction(id));
 
   ipcMain.handle('tags:list', (_e, opts) => listTags(opts || {}));
+
+  // --- Cleanup containers + padlock ---
+  ipcMain.handle('containers:listExpired7', () => listExpired7());
+  ipcMain.handle('containers:listCompleted', (_e, opts) => listCompleted(opts || {}));
+  ipcMain.handle('containers:listArchive', () => listArchive());
+  ipcMain.handle('containers:counts', () => getContainerCounts());
+  ipcMain.handle('containers:archive', (_e, itemType, id) => archiveItem(itemType, id));
+  ipcMain.handle('containers:restore', (_e, itemType, id, from) =>
+    restoreItem(itemType, id, from)
+  );
+  ipcMain.handle('containers:delete', (_e, itemType, id) => deleteItem(itemType, id));
+  ipcMain.handle('containers:bulkArchive', (_e, payload) => bulkArchive(payload || {}));
+  ipcMain.handle('containers:bulkRestore', (_e, payload) => bulkRestore(payload || {}));
+  ipcMain.handle('containers:bulkDelete', (_e, payload) => bulkDelete(payload || {}));
+  ipcMain.handle('containers:moveToList', (_e, payload) => moveToList(payload || {}));
+  ipcMain.handle('containers:sweep', () => sweepContainers());
+  ipcMain.handle('items:setLocked', (_e, itemType, id, locked) =>
+    setLocked(itemType, id, locked)
+  );
+
+  // --- Lists ---
+  ipcMain.handle('lists:list', (_e, opts) => listLists(opts || {}));
+  ipcMain.handle('lists:get', (_e, id) => getList(id));
+  ipcMain.handle('lists:create', (_e, data) => createList(data));
+  ipcMain.handle('lists:rename', (_e, id, name) => renameList(id, name));
+  ipcMain.handle('lists:delete', (_e, id) => deleteList(id));
+  ipcMain.handle('lists:merge', (_e, sourceId, targetId) =>
+    mergeLists(sourceId, targetId)
+  );
+  ipcMain.handle('lists:items', (_e, id) => listItems(id));
+  ipcMain.handle('lists:addItem', (_e, listId, itemType, itemId) =>
+    addListItem(listId, itemType, itemId)
+  );
+  ipcMain.handle('lists:removeItem', (_e, membershipId) => removeListItem(membershipId));
+  ipcMain.handle('lists:export', (_e, id) => exportList(id));
+
+  ipcMain.handle('search:query', (_e, opts) => runSearch(opts || {}));
+  ipcMain.handle('search:filterOptions', (_e, scope) =>
+    searchFilterOptions(scope || {})
+  );
 
   // --- Today + Quick Add ---
   ipcMain.handle('today:getBrief', () => getTodayBrief());

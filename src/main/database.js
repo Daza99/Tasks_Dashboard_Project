@@ -26,6 +26,8 @@ const DEFAULT_SETTINGS = {
   archive_retention_years: '3',
   auto_delete_archive: 'false',
   archive_filesize_limit_mb: '500',
+  auto_delete_expired7: 'false',
+  auto_delete_expired7_days: '30',
   list_naming_templates: JSON.stringify(['Current Date', 'Project', 'Other']),
   theme_base: 'dark',
   active_theme_id: '1',
@@ -33,6 +35,12 @@ const DEFAULT_SETTINGS = {
   display_name: '',
   Debut_mode: '1',
   show_tags_always: 'false',
+  hotkeys: JSON.stringify({
+    calendar: 'Ctrl+C',
+    projects: 'Ctrl+P',
+    habits: 'Ctrl+H',
+    bills: 'Ctrl+B',
+  }),
 };
 
 const SYSTEM_TAGS = [
@@ -102,6 +110,11 @@ function initDatabase() {
     seedSettings();
     seedSystemTags();
     seedThemes();
+    try {
+      require('../services/db/calendar-sync').syncOnAppStart();
+    } catch (syncErr) {
+      logError('syncOnAppStart', syncErr);
+    }
     return db;
   } catch (err) {
     logError('initDatabase', err);
@@ -118,6 +131,8 @@ function migrateSchema() {
   addHabit('nudge_time', 'nudge_time TEXT');
   addHabit('snooze_until', 'snooze_until DATETIME');
   addHabit('last_nudge_date', 'last_nudge_date DATE');
+  addHabit('description', 'description TEXT');
+  addHabit('priority', 'priority INTEGER DEFAULT 3');
 
   const billCols = db.prepare('PRAGMA table_info(bills)').all().map((c) => c.name);
   const addBill = (col, ddl) => {
@@ -127,6 +142,26 @@ function migrateSchema() {
   addBill('alerted_before', 'alerted_before INTEGER DEFAULT 0');
   addBill('alerted_due', 'alerted_due INTEGER DEFAULT 0');
   addBill('amount_mode', "amount_mode TEXT NOT NULL DEFAULT 'fixed'");
+  addBill('priority', 'priority INTEGER DEFAULT 3');
+  addBill('description', 'description TEXT');
+
+  const remCols = db.prepare('PRAGMA table_info(reminders)').all().map((c) => c.name);
+  if (!remCols.includes('description')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN description TEXT');
+  }
+
+  // One-shot: clamp legacy task 4–5 down to P3 Low
+  const prioFlag = db
+    .prepare("SELECT value FROM settings WHERE key = 'priority_3level_v1'")
+    .get();
+  if (!prioFlag || prioFlag.value !== '1') {
+    db.prepare('UPDATE tasks SET priority = 3 WHERE priority IS NOT NULL AND priority > 3').run();
+    db.prepare('UPDATE tasks SET priority = 1 WHERE priority IS NOT NULL AND priority < 1').run();
+    db.prepare(
+      `INSERT INTO settings (key, value) VALUES ('priority_3level_v1', '1')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run();
+  }
 
   // Payment history for estimate/average (CREATE IF NOT EXISTS covers older DBs)
   db.exec(`
@@ -195,6 +230,87 @@ function migrateSchema() {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     ).run();
   }
+
+  migrateContainerColumns();
+  migrateCalendarLinks();
+}
+
+/** Linked calendar events + reminder appointment flag (existing DBs). */
+function migrateCalendarLinks() {
+  const eventCols = db.prepare('PRAGMA table_info(events)').all().map((c) => c.name);
+  const addEvent = (col, ddl) => {
+    if (!eventCols.includes(col)) db.exec(`ALTER TABLE events ADD COLUMN ${ddl}`);
+  };
+  addEvent('source_type', 'source_type TEXT');
+  addEvent('source_id', 'source_id INTEGER');
+  addEvent('occurrence_date', 'occurrence_date DATE');
+  addEvent('hidden', 'hidden INTEGER DEFAULT 0');
+
+  const remCols = db.prepare('PRAGMA table_info(reminders)').all().map((c) => c.name);
+  if (!remCols.includes('is_appointment')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN is_appointment INTEGER DEFAULT 0');
+  }
+
+  // Collapse pre-index dupes so the unique index can be created
+  db.prepare(
+    `DELETE FROM events
+     WHERE source_type IS NOT NULL
+       AND occurrence_date IS NOT NULL
+       AND id NOT IN (
+         SELECT MIN(id) FROM events
+         WHERE source_type IS NOT NULL AND occurrence_date IS NOT NULL
+         GROUP BY source_type, source_id, occurrence_date
+       )`
+  ).run();
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_events_source_occ
+      ON events(source_type, source_id, occurrence_date)
+      WHERE source_type IS NOT NULL AND occurrence_date IS NOT NULL
+  `);
+}
+
+/** Padlock + cleanup container columns; backfill locked from #locked tag. */
+function migrateContainerColumns() {
+  const addCols = (table) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!cols.includes('locked')) db.exec(`ALTER TABLE ${table} ADD COLUMN locked INTEGER DEFAULT 0`);
+    if (!cols.includes('container')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN container TEXT NOT NULL DEFAULT 'active'`);
+    }
+  };
+  addCols('tasks');
+  addCols('reminders');
+
+  const flag = db
+    .prepare("SELECT value FROM settings WHERE key = 'containers_locked_backfill_v1'")
+    .get();
+  if (flag && flag.value === '1') return;
+
+  db.prepare(
+    `UPDATE tasks SET locked = 1 WHERE id IN (
+       SELECT it.item_id FROM item_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.item_type = 'task' AND t.name = 'locked'
+     )`
+  ).run();
+  db.prepare(
+    `UPDATE reminders SET locked = 1 WHERE id IN (
+       SELECT it.item_id FROM item_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.item_type = 'reminder' AND t.name = 'locked'
+     )`
+  ).run();
+  db.prepare(
+    `UPDATE tasks SET container = 'archive' WHERE archived = 1 AND (container IS NULL OR container = 'active')`
+  ).run();
+  db.prepare(
+    `UPDATE reminders SET container = 'archive' WHERE archived = 1 AND (container IS NULL OR container = 'active')`
+  ).run();
+  db.prepare(
+    `INSERT INTO settings (key, value) VALUES ('containers_locked_backfill_v1', '1')
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run();
 }
 
 function seedSettings() {

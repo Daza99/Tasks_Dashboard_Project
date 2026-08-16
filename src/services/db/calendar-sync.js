@@ -1,6 +1,10 @@
 /**
  * Upsert / hide / cascade linked calendar events for bills, monthly habits,
  * and appointment reminders. Dedupes on (source_type, source_id, occurrence_date).
+ *
+ * Future sources (e.g. tasks): pass description into upsertLinkedEvent so
+ * calendar hover notes work automatically. Date-only sources (bill, habit)
+ * use dateAtNine — do not add task/reminder/event to that date-only set.
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
@@ -56,9 +60,14 @@ function isArchivedHabit(id) {
   );
 }
 
+function normDesc(text) {
+  const t = text != null ? String(text).trim() : '';
+  return t || null;
+}
+
 /**
  * Insert or update a linked event. Hidden rows are left alone (calendar-only delete).
- * @param {{ source_type: string, source_id: number, occurrence_date: string, title: string, start_datetime: string }} data
+ * @param {{ source_type: string, source_id: number, occurrence_date: string, title: string, start_datetime: string, description?: string|null }} data
  */
 function upsertLinkedEvent({
   source_type,
@@ -66,22 +75,25 @@ function upsertLinkedEvent({
   occurrence_date,
   title,
   start_datetime,
+  description = null,
 }) {
   try {
     if (!source_type || source_id == null || !occurrence_date || !title) return null;
+    const details = normDesc(description);
     const existing = findLinked(source_type, source_id, occurrence_date);
     if (existing) {
       if (Number(existing.hidden) === 1) return getEvent(existing.id);
       getDb()
         .prepare(
-          `UPDATE events SET title = ?, start_datetime = ? WHERE id = ?`
+          `UPDATE events SET title = ?, start_datetime = ?, description = ? WHERE id = ?`
         )
-        .run(title.trim(), start_datetime, existing.id);
+        .run(title.trim(), start_datetime, details, existing.id);
       return getEvent(existing.id);
     }
     return createEvent({
       title,
       start_datetime,
+      description: details,
       source_type,
       source_id,
       occurrence_date,
@@ -100,8 +112,9 @@ function upsertLinkedEvent({
  * @param {string} toDate
  * @param {string} title
  * @param {string} startIso
+ * @param {string|null} [description]
  */
-function moveLinkedEvent(sourceType, sourceId, fromDate, toDate, title, startIso) {
+function moveLinkedEvent(sourceType, sourceId, fromDate, toDate, title, startIso, description) {
   try {
     if (!fromDate || fromDate === toDate) {
       return upsertLinkedEvent({
@@ -110,6 +123,7 @@ function moveLinkedEvent(sourceType, sourceId, fromDate, toDate, title, startIso
         occurrence_date: toDate,
         title,
         start_datetime: startIso,
+        description,
       });
     }
     const src = findLinked(sourceType, sourceId, fromDate);
@@ -120,24 +134,28 @@ function moveLinkedEvent(sourceType, sourceId, fromDate, toDate, title, startIso
         occurrence_date: toDate,
         title,
         start_datetime: startIso,
+        description,
       });
     }
     if (Number(src.hidden) === 1) return getEvent(src.id);
+    const details = description !== undefined ? normDesc(description) : src.description;
     const dest = findLinked(sourceType, sourceId, toDate);
     if (dest) {
       if (Number(dest.hidden) !== 1) {
         getDb()
-          .prepare(`UPDATE events SET title = ?, start_datetime = ? WHERE id = ?`)
-          .run(title.trim(), startIso, dest.id);
+          .prepare(
+            `UPDATE events SET title = ?, start_datetime = ?, description = ? WHERE id = ?`
+          )
+          .run(title.trim(), startIso, details, dest.id);
       }
       getDb().prepare('DELETE FROM events WHERE id = ?').run(src.id);
       return getEvent(dest.id);
     }
     getDb()
       .prepare(
-        `UPDATE events SET title = ?, start_datetime = ?, occurrence_date = ? WHERE id = ?`
+        `UPDATE events SET title = ?, start_datetime = ?, occurrence_date = ?, description = ? WHERE id = ?`
       )
-      .run(title.trim(), startIso, toDate, src.id);
+      .run(title.trim(), startIso, toDate, details, src.id);
     return getEvent(src.id);
   } catch (err) {
     logError('moveLinkedEvent', err);
@@ -176,7 +194,7 @@ function syncBill(bill, { prevDueDate } = {}) {
   const title = `${bill.name} Due`;
   const start = dateAtNine(bill.due_date);
   if (prevDueDate && prevDueDate !== bill.due_date) {
-    moveLinkedEvent('bill', bill.id, prevDueDate, bill.due_date, title, start);
+    moveLinkedEvent('bill', bill.id, prevDueDate, bill.due_date, title, start, bill.description);
     return;
   }
   upsertLinkedEvent({
@@ -185,6 +203,7 @@ function syncBill(bill, { prevDueDate } = {}) {
     occurrence_date: bill.due_date,
     title,
     start_datetime: start,
+    description: bill.description,
   });
 }
 
@@ -210,6 +229,7 @@ function syncHabit(habit, { year, monthIndex } = {}) {
     occurrence_date: occ,
     title: habit.name,
     start_datetime: dateAtNine(occ),
+    description: habit.description,
   });
   if (habit.name) retitleSourceEvents('habit', habit.id, habit.name);
 }
@@ -229,7 +249,7 @@ function syncReminder(rem, { prevDate } = {}) {
   const occ = localDateKey(rem.datetime);
   if (!occ) return;
   if (prevDate && prevDate !== occ) {
-    moveLinkedEvent('reminder', rem.id, prevDate, occ, rem.title, rem.datetime);
+    moveLinkedEvent('reminder', rem.id, prevDate, occ, rem.title, rem.datetime, rem.description);
     return;
   }
   upsertLinkedEvent({
@@ -238,6 +258,7 @@ function syncReminder(rem, { prevDate } = {}) {
     occurrence_date: occ,
     title: rem.title,
     start_datetime: rem.datetime,
+    description: rem.description,
   });
 }
 

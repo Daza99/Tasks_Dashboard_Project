@@ -992,6 +992,44 @@
   white-space: nowrap;
   cursor: pointer;
   text-align: left;
+  position: relative;
+}
+.cal-chip:hover {
+  overflow: visible;
+  z-index: 6;
+}
+.cal-grid__day:hover {
+  z-index: 5;
+}
+
+.cal-entry-label {
+  position: relative;
+}
+.cal-entry-tip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  min-width: 160px;
+  max-width: 260px;
+  max-height: 160px;
+  overflow: hidden;
+  pointer-events: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  text-decoration: none;
+}
+.cal-entry-label:hover .cal-entry-tip {
+  display: block;
 }
 .cal-chip--linked {
   text-decoration: underline;

@@ -15,6 +15,7 @@ import {
 } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import ConfirmDialog from '../components/ConfirmDialog';
+import CalEntryLabel from '../components/CalEntryLabel';
 
 const CHIP_CAP = 3;
 
@@ -260,10 +261,9 @@ export default function CalendarView({
             className={`cal-chip${picked.has(ev.id) ? ' cal-chip--selected' : ''}${
               isLinked(ev) ? ' cal-chip--linked' : ''
             }`}
-            title={ev.title}
             onClick={(e) => onChipClick(e, ev, day)}
           >
-            {ev.title}
+            <CalEntryLabel ev={ev} />
           </button>
         ))}
         {extra > 0 && (
@@ -386,10 +386,11 @@ export default function CalendarView({
                   className="cal-row-title"
                   onClick={(e) => onChipClick(e, ev, selected)}
                 >
-                  <strong>{ev.title}</strong>
+                  <strong>
+                    <CalEntryLabel ev={ev} />
+                  </strong>
                   <div className="module-list__meta">
-                    {format(parseISO(ev.start_datetime), 'h:mm a')}
-                    {isLinked(ev) ? ` · ${ev.source_type}` : ''}
+                    {isLinked(ev) ? ev.source_type : ''}
                   </div>
                 </button>
                 <div className="item-row__actions">

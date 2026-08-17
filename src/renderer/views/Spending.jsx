@@ -5,11 +5,8 @@ import TagInput from '../components/TagInput';
 import TagSearchInput from '../components/TagSearchInput';
 import DetailsInline from '../components/DetailsInline';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
-import {
-  formatTagsDisplay,
-  normalizeUserTagNames,
-  userTagsDisplay,
-} from '../../utils/tag-helpers.js';
+import { formatTagsDisplay, normalizeUserTagNames, userTagsDisplay } from '../../utils/tag-helpers.js';
+import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 
 const FILTER_OPTS = [
   { value: 'all', label: 'All' },
@@ -30,8 +27,9 @@ function monthBounds(ref) {
 /**
  * Focus view: spending / transactions entry + recent list.
  * Filter bar: amount/month presets + name/#tag/date search + From/To range.
+ * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
  */
-export default function SpendingView() {
+export default function SpendingView({ editId = null, onEditConsumed }) {
   const { refresh } = useBrief();
   const [rows, setRows] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -42,6 +40,7 @@ export default function SpendingView() {
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const editRowRef = useScrollEditIntoView(editingId);
   const [edit, setEdit] = useState({});
   const [listFilter, setListFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -57,6 +56,29 @@ export default function SpendingView() {
   useEffect(() => {
     load();
   }, []);
+
+  function beginEdit(tx) {
+    setEditingId(tx.id);
+    setEdit({
+      amount: String(tx.amount),
+      category: tx.category,
+      description: tx.description || '',
+      date: tx.date,
+      tagsInput: userTagsDisplay(tx.tags),
+    });
+  }
+
+  useEffect(() => {
+    if (editId == null) return;
+    setListFilter('all');
+    setSearch('');
+    setDateFrom('');
+    setDateTo('');
+    const tx = rows.find((x) => x.id === editId);
+    if (!tx) return;
+    beginEdit(tx);
+    onEditConsumed?.();
+  }, [editId, rows]);
 
   /** Dropdown + From/To + text search (AND), then sort. */
   const filtered = useMemo(() => {
@@ -201,7 +223,7 @@ export default function SpendingView() {
           <TagInput
             value={tagsInput}
             onChange={setTagsInput}
-            placeholder="#groceries #coffee"
+            placeholder="#groceries, #coffee"
             aria-label="Transaction tags"
           />
         </label>
@@ -257,7 +279,13 @@ export default function SpendingView() {
 
       <ul className="module-list">
         {filtered.map((tx) => (
-          <li key={tx.id} className="module-list__item glass-inset module-list__item--col">
+          <li
+            key={tx.id}
+            ref={editingId === tx.id ? editRowRef : null}
+            className={`module-list__item glass-inset module-list__item--col${
+              editingId === tx.id ? ' module-list__item--editing' : ''
+            }`}
+          >
             {editingId === tx.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
                 <div className="settings-row">
@@ -325,19 +353,7 @@ export default function SpendingView() {
                   </div>
                 </div>
                 <div className="item-row__actions">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingId(tx.id);
-                      setEdit({
-                        amount: String(tx.amount),
-                        category: tx.category,
-                        description: tx.description || '',
-                        date: tx.date,
-                        tagsInput: userTagsDisplay(tx.tags),
-                      });
-                    }}
-                  >
+                  <button type="button" onClick={() => beginEdit(tx)}>
                     Edit
                   </button>
                   <button type="button" className="danger" onClick={() => remove(tx.id)}>

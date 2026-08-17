@@ -127,7 +127,7 @@
       const id = Number(params.get('id'));
       const rawItemType = params.get('itemType');
       // Preserve habit|bill|task|reminder (old ternary coerced habit/bill → reminder)
-      const VALID = new Set(['reminder', 'task', 'bill', 'habit']);
+      const VALID = new Set(['reminder', 'reminder_nudge', 'task', 'bill', 'habit']);
       const itemType = VALID.has(rawItemType) ? rawItemType : 'reminder';
       const payload = { id, itemType };
       const title = params.get('title') || 'Reminder';

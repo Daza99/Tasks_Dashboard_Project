@@ -1,0 +1,16 @@
+---
+description: Standing don’t-break rules — read docs/DEV_REMINDER.md before planning
+alwaysApply: true
+---
+
+# Dev reminder
+
+Read [`docs/DEV_REMINDER.md`](docs/DEV_REMINDER.md) before planning. Confirm with the user before writing code.
+
+## Dialog contrast (do not re-break)
+
+`.confirm-dialog` is solid `#fff` with `#111` text (nested glass + Windows native chrome are light; `--text-primary` is light). Unclassed Cancel in `.confirm-dialog__actions` stays `#111`. Do not restore themed light text on that shell. Do not blanket-recolor every `<select>` (dark `--input-bg` would invert).
+
+## Dates / layout
+
+Dates: `yyyy-mm-dd`. Compact vs Focus as in `.cursorrules`. No decorative corner brackets.

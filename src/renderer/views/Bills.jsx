@@ -5,6 +5,7 @@ import BillPayConfirm from '../components/BillPayConfirm';
 import PrioritySelect from '../components/PrioritySelect';
 import DetailsInline from '../components/DetailsInline';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
+import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 
 const RECUR = [
   { id: '', label: 'once' },
@@ -46,9 +47,19 @@ function formatPaidAt(paidAt) {
 /**
  * Focus view: bills CRUD + mark paid (advances recurrence).
  * History mode lists bill_payments with year/month/name/sort filters.
- * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
+ * @param {{
+ *   editId?: number|null,
+ *   onEditConsumed?: () => void,
+ *   seedDate?: string|null,
+ *   onSeedConsumed?: () => void,
+ * }} props
  */
-export default function BillsView({ editId = null, onEditConsumed }) {
+export default function BillsView({
+  editId = null,
+  onEditConsumed,
+  seedDate = null,
+  onSeedConsumed,
+}) {
   const { refresh } = useBrief();
   const [mode, setMode] = useState('edit'); // edit | history
   const [rows, setRows] = useState([]);
@@ -63,6 +74,7 @@ export default function BillsView({ editId = null, onEditConsumed }) {
   const [stats, setStats] = useState({ count: 0, average: null, canAverage: false });
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const editRowRef = useScrollEditIntoView(editingId);
   const [edit, setEdit] = useState({});
   const [payingId, setPayingId] = useState(null);
   const [payActual, setPayActual] = useState('');
@@ -132,6 +144,13 @@ export default function BillsView({ editId = null, onEditConsumed }) {
     beginEdit(b);
     onEditConsumed?.();
   }, [editId, rows]);
+
+  useEffect(() => {
+    if (!seedDate) return;
+    setMode('edit');
+    setDue(seedDate);
+    onSeedConsumed?.();
+  }, [seedDate]);
 
   // Refresh name-based payment stats for create form
   useEffect(() => {
@@ -546,7 +565,13 @@ export default function BillsView({ editId = null, onEditConsumed }) {
       ) : (
         <ul className="module-list">
           {rows.map((b) => (
-            <li key={b.id} className="module-list__item glass-inset module-list__item--col">
+            <li
+              key={b.id}
+              ref={editingId === b.id ? editRowRef : null}
+              className={`module-list__item glass-inset module-list__item--col${
+                editingId === b.id ? ' module-list__item--editing' : ''
+              }`}
+            >
               {editingId === b.id ? (
                 <form className="edit-form" onSubmit={saveEdit}>
                   <input

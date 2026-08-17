@@ -12,6 +12,7 @@ import HabitsView from './views/Habits';
 import BillsView from './views/Bills';
 import CalendarView from './views/Calendar';
 import SpendingView from './views/Spending';
+import TagsView from './views/Tags';
 import StubView from './views/StubView';
 import Expired7Plus from './containers/Expired7Plus';
 import CompletedView from './containers/Completed';
@@ -33,6 +34,7 @@ function AppInner() {
   const { enterFocus } = useLayout();
   const [activeView, setActiveView] = useState('today');
   const [editRequest, setEditRequest] = useState(null); // { type, id }
+  const [createSeed, setCreateSeed] = useState(null); // { type, date } yyyy-MM-dd
 
   // Every launch: Focus Today once. Do not depend on enterFocus — its
   // identity changes when layout_mode flips and would yank Compact back.
@@ -63,16 +65,28 @@ function AppInner() {
     setEditRequest(null);
   }
 
+  function clearCreateSeed() {
+    setCreateSeed(null);
+  }
+
   /** Brief Edit → Focus on module with item open for edit. */
   function requestEdit(type, id) {
+    setCreateSeed(null);
     setEditRequest({ type, id });
+    setActiveView(EDIT_VIEW[type] || type);
+  }
+
+  /** Calendar RMB → Focus create form with date prefilled. */
+  function requestCreate(type, date) {
+    setEditRequest(null);
+    setCreateSeed({ type, date });
     setActiveView(EDIT_VIEW[type] || type);
   }
 
   let focusContent = <StubView viewId={activeView || 'module'} />;
   if (activeView === 'today') {
     focusContent = (
-      <TodayView onEditRequest={requestEdit} onNavigate={setActiveView} />
+      <TodayView onEditRequest={requestEdit} />
     );
   } else if (activeView === 'settings') focusContent = <SettingsView />;
   else if (activeView === 'tasks') {
@@ -80,6 +94,8 @@ function AppInner() {
       <TasksView
         editId={editRequest?.type === 'task' ? editRequest.id : null}
         onEditConsumed={clearEditRequest}
+        seedDate={createSeed?.type === 'task' ? createSeed.date : null}
+        onSeedConsumed={clearCreateSeed}
       />
     );
   } else if (activeView === 'reminders') {
@@ -87,6 +103,8 @@ function AppInner() {
       <RemindersView
         editId={editRequest?.type === 'reminder' ? editRequest.id : null}
         onEditConsumed={clearEditRequest}
+        seedDate={createSeed?.type === 'reminder' ? createSeed.date : null}
+        onSeedConsumed={clearCreateSeed}
       />
     );
   } else if (activeView === 'habits') {
@@ -101,6 +119,8 @@ function AppInner() {
       <BillsView
         editId={editRequest?.type === 'bill' ? editRequest.id : null}
         onEditConsumed={clearEditRequest}
+        seedDate={createSeed?.type === 'bill' ? createSeed.date : null}
+        onSeedConsumed={clearCreateSeed}
       />
     );
   } else if (activeView === 'calendar') {
@@ -109,10 +129,18 @@ function AppInner() {
         editId={editRequest?.type === 'event' ? editRequest.id : null}
         onEditConsumed={clearEditRequest}
         onEditRequest={requestEdit}
+        onCreateRequest={requestCreate}
       />
     );
   } else if (activeView === 'spending') {
-    focusContent = <SpendingView />;
+    focusContent = (
+      <SpendingView
+        editId={editRequest?.type === 'transaction' ? editRequest.id : null}
+        onEditConsumed={clearEditRequest}
+      />
+    );
+  } else if (activeView === 'tags') {
+    focusContent = <TagsView onEditRequest={requestEdit} />;
   } else if (activeView === 'lists') {
     focusContent = <ListsPanel />;
   } else if (activeView === 'expired') {

@@ -90,6 +90,36 @@ function enrich(row) {
   };
 }
 
+/**
+ * Resolve nudge columns from create/update payload + due ISO.
+ * Open / nudge off → all null. day_before = due minus 1 calendar day.
+ */
+function resolveNudgeFields(scope, dueIso, { nudge, nudge_mode, nudge_datetime } = {}) {
+  if (scope === 'open' || !nudge) {
+    return { nudge_datetime: null, nudge_mode: null, nudge_alerted: 0 };
+  }
+  const mode = nudge_mode === 'custom' ? 'custom' : 'day_before';
+  if (mode === 'custom') {
+    if (!nudge_datetime) throw new Error('nudge_datetime required for custom nudge');
+    const at = new Date(nudge_datetime);
+    if (Number.isNaN(at.getTime())) throw new Error('Invalid nudge_datetime');
+    return {
+      nudge_datetime: at.toISOString(),
+      nudge_mode: 'custom',
+      nudge_alerted: 0,
+    };
+  }
+  const due = new Date(dueIso);
+  if (Number.isNaN(due.getTime()) || String(dueIso).startsWith('9999')) {
+    return { nudge_datetime: null, nudge_mode: null, nudge_alerted: 0 };
+  }
+  return {
+    nudge_datetime: addDays(due, -1).toISOString(),
+    nudge_mode: 'day_before',
+    nudge_alerted: 0,
+  };
+}
+
 function createReminder({
   title,
   scope,
@@ -97,6 +127,9 @@ function createReminder({
   recurrence = null,
   is_appointment = 0,
   description = null,
+  nudge = false,
+  nudge_mode = null,
+  nudge_datetime = null,
 }) {
   try {
     if (!title?.trim()) throw new Error('Title required');
@@ -104,13 +137,28 @@ function createReminder({
     const appointment = scope === 'open' ? 0 : is_appointment ? 1 : 0;
     const rec = scope === 'open' ? null : recurrence || null;
     const details = description != null ? String(description).trim() || null : null;
+    const nudgeFields = resolveNudgeFields(scope, resolved.datetime, {
+      nudge,
+      nudge_mode,
+      nudge_datetime,
+    });
     const db = getDb();
     const info = db
       .prepare(
-        `INSERT INTO reminders (title, datetime, recurrence, is_appointment, description)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO reminders (title, datetime, recurrence, is_appointment, description,
+           nudge_datetime, nudge_mode, nudge_alerted)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(title.trim(), resolved.datetime, rec, appointment, details);
+      .run(
+        title.trim(),
+        resolved.datetime,
+        rec,
+        appointment,
+        details,
+        nudgeFields.nudge_datetime,
+        nudgeFields.nudge_mode,
+        nudgeFields.nudge_alerted
+      );
     const id = Number(info.lastInsertRowid);
     addTag('reminder', id, resolved.scopeTag);
     addTag('reminder', id, 'rem_pending');
@@ -152,7 +200,17 @@ function updateReminder(id, fields) {
     const prevDate = cur?.datetime && !String(cur.datetime).startsWith('9999')
       ? dateKeyFromIso(cur.datetime)
       : null;
-    const allowed = ['title', 'datetime', 'recurrence', 'snooze_until', 'is_appointment', 'description'];
+    const allowed = [
+      'title',
+      'datetime',
+      'recurrence',
+      'snooze_until',
+      'is_appointment',
+      'description',
+      'nudge_datetime',
+      'nudge_mode',
+      'nudge_alerted',
+    ];
     const sets = [];
     const vals = [];
     const nextFields = { ...fields };
@@ -162,6 +220,36 @@ function updateReminder(id, fields) {
     }
     if (nextFields.is_appointment !== undefined) {
       nextFields.is_appointment = nextFields.is_appointment ? 1 : 0;
+    }
+    const nextScope = nextFields.scope || null;
+    const dueIso = nextFields.datetime !== undefined ? nextFields.datetime : cur?.datetime;
+    const nudgeTouched =
+      nextFields.nudge !== undefined ||
+      nextFields.nudge_mode !== undefined ||
+      nextFields.nudge_datetime !== undefined ||
+      (nextFields.datetime !== undefined && cur?.nudge_mode === 'day_before') ||
+      nextScope === 'open';
+    if (nudgeTouched) {
+      const nudgeOn =
+        nextScope === 'open'
+          ? false
+          : nextFields.nudge !== undefined
+            ? Boolean(nextFields.nudge)
+            : Boolean(cur?.nudge_datetime);
+      const mode =
+        nextFields.nudge_mode !== undefined ? nextFields.nudge_mode : cur?.nudge_mode;
+      const customAt =
+        nextFields.nudge_datetime !== undefined
+          ? nextFields.nudge_datetime
+          : cur?.nudge_datetime;
+      const resolvedNudge = resolveNudgeFields(nextScope === 'open' ? 'open' : 'dated', dueIso, {
+        nudge: nudgeOn,
+        nudge_mode: mode,
+        nudge_datetime: customAt,
+      });
+      nextFields.nudge_datetime = resolvedNudge.nudge_datetime;
+      nextFields.nudge_mode = resolvedNudge.nudge_mode;
+      nextFields.nudge_alerted = resolvedNudge.nudge_alerted;
     }
     for (const key of allowed) {
       if (nextFields[key] !== undefined) {
@@ -212,13 +300,20 @@ function completeReminder(id) {
     if (isDaily && !isOpen) {
       const prevDate = dateKeyFromIso(cur.datetime);
       const next = addDays(new Date(cur.datetime), 1).toISOString();
+      let nextNudge = cur.nudge_datetime;
+      let nextAlerted = cur.nudge_alerted;
+      if (cur.nudge_mode === 'day_before') {
+        nextNudge = addDays(new Date(next), -1).toISOString();
+        nextAlerted = 0;
+      }
       getDb()
         .prepare(
           `UPDATE reminders SET datetime = ?, completed_at = NULL, dismissed = 0,
-             snooze_until = NULL, container = 'active', archived = 0
+             snooze_until = NULL, container = 'active', archived = 0,
+             nudge_datetime = ?, nudge_alerted = ?
            WHERE id = ?`
         )
-        .run(next, id);
+        .run(next, nextNudge, nextAlerted, id);
       replaceTags('reminder', id, STATE_TAGS, 'rem_pending');
       replaceTags('reminder', id, SCOPE_TAGS, 'rem_dated');
       removeTag('reminder', id, 'archived');
@@ -410,6 +505,57 @@ function expireGraceReminders() {
   }
 }
 
+/** Pending reminders whose nudge_datetime has arrived and not yet alerted. */
+function listDueReminderNudges() {
+  return getDb()
+    .prepare(
+      `SELECT r.* FROM reminders r
+       JOIN item_tags it ON it.item_id = r.id AND it.item_type = 'reminder'
+       JOIN tags t ON t.id = it.tag_id AND t.name = 'rem_pending'
+       WHERE r.completed_at IS NULL AND r.archived = 0
+         AND (r.container IS NULL OR r.container = 'active')
+         AND r.nudge_datetime IS NOT NULL
+         AND COALESCE(r.nudge_alerted, 0) = 0
+         AND datetime(r.nudge_datetime) <= datetime('now')`
+    )
+    .all()
+    .map(enrich);
+}
+
+/** Mark the pre-reminder nudge as shown/dismissed. Does not complete the reminder. */
+function markNudgeAlerted(id) {
+  getDb().prepare('UPDATE reminders SET nudge_alerted = 1 WHERE id = ?').run(id);
+  return getReminder(id);
+}
+
+/** Snooze only the nudge; reminder due is unchanged. */
+function snoozeReminderNudge(id, minutes) {
+  try {
+    const settingsMins = Number(
+      getDb()
+        .prepare(`SELECT value FROM settings WHERE key = 'notif_default_snooze_minutes'`)
+        .get()?.value || 10
+    );
+    const mins = Number(minutes);
+    const useMins = Number.isFinite(mins) && mins > 0 ? mins : settingsMins;
+    const until = new Date(Date.now() + useMins * 60 * 1000).toISOString();
+    getDb()
+      .prepare(
+        `UPDATE reminders SET nudge_datetime = ?, nudge_alerted = 0 WHERE id = ?`
+      )
+      .run(until, id);
+    return getReminder(id);
+  } catch (err) {
+    logError('snoozeReminderNudge', err);
+    throw err;
+  }
+}
+
+/** X / Done on nudge popup — drop this nudge only. */
+function dismissReminderNudge(id) {
+  return markNudgeAlerted(id);
+}
+
 module.exports = {
   createReminder,
   getReminder,
@@ -425,6 +571,10 @@ module.exports = {
   listDuePending,
   listDueSnoozed,
   expireGraceReminders,
+  listDueReminderNudges,
+  markNudgeAlerted,
+  snoozeReminderNudge,
+  dismissReminderNudge,
   resolveScope,
   startOfDay,
   endOfDay,

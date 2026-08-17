@@ -26,6 +26,17 @@ export function DatabaseProvider({ children }) {
     };
   }, []);
 
+  // Auto/manual backup in main — keep last_backup_* in sync for the status bar
+  useEffect(() => {
+    if (!window.api.onBackupDidRun) return undefined;
+    return window.api.onBackupDidRun(() => {
+      window.api
+        .getSettings()
+        .then((s) => setSettings(s))
+        .catch(() => {});
+    });
+  }, []);
+
   /** Persist a setting key and refresh local cache. */
   async function updateSetting(key, value) {
     const next = await window.api.setSetting(key, value);

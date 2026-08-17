@@ -15,7 +15,57 @@ function enrich(row) {
   };
 }
 
-const VISIBLE = 'AND COALESCE(hidden, 0) = 0';
+const VISIBLE = 'AND COALESCE(e.hidden, 0) = 0';
+
+/** Event row plus reminder nudge_datetime when the source is a reminder. */
+const EVENT_WITH_NUDGE = `SELECT e.*, r.nudge_datetime AS nudge_datetime
+       FROM events e
+       LEFT JOIN reminders r ON e.source_type = 'reminder' AND e.source_id = r.id`;
+
+function getEvent(id) {
+  const row = getDb().prepare(`${EVENT_WITH_NUDGE} WHERE e.id = ?`).get(id);
+  return enrich(row);
+}
+
+/** All events overlapping a local calendar day (YYYY-MM-DD). */
+function listEventsForDay(dayKey) {
+  try {
+    const start = startOfDay(new Date(`${dayKey}T12:00:00`)).toISOString();
+    const end = endOfDay(new Date(`${dayKey}T12:00:00`)).toISOString();
+    return getDb()
+      .prepare(
+        `${EVENT_WITH_NUDGE}
+         WHERE datetime(e.start_datetime) <= datetime(?)
+           AND datetime(COALESCE(e.end_datetime, e.start_datetime)) >= datetime(?)
+           ${VISIBLE}
+         ORDER BY e.start_datetime ASC`
+      )
+      .all(end, start)
+      .map(enrich);
+  } catch (err) {
+    logError('listEventsForDay', err);
+    throw err;
+  }
+}
+
+/** Events in [monthStart, monthEnd] for calendar dots (ISO month bounds). */
+function listEventsInRange(rangeStartIso, rangeEndIso) {
+  try {
+    return getDb()
+      .prepare(
+        `${EVENT_WITH_NUDGE}
+         WHERE datetime(e.start_datetime) <= datetime(?)
+           AND datetime(COALESCE(e.end_datetime, e.start_datetime)) >= datetime(?)
+           ${VISIBLE}
+         ORDER BY e.start_datetime ASC`
+      )
+      .all(rangeEndIso, rangeStartIso)
+      .map(enrich);
+  } catch (err) {
+    logError('listEventsInRange', err);
+    throw err;
+  }
+}
 
 /** Create event (manual or linked). */
 function createEvent({
@@ -50,51 +100,6 @@ function createEvent({
     return getEvent(Number(info.lastInsertRowid));
   } catch (err) {
     logError('createEvent', err);
-    throw err;
-  }
-}
-
-function getEvent(id) {
-  const row = getDb().prepare('SELECT * FROM events WHERE id = ?').get(id);
-  return enrich(row);
-}
-
-/** All events overlapping a local calendar day (YYYY-MM-DD). */
-function listEventsForDay(dayKey) {
-  try {
-    const start = startOfDay(new Date(`${dayKey}T12:00:00`)).toISOString();
-    const end = endOfDay(new Date(`${dayKey}T12:00:00`)).toISOString();
-    return getDb()
-      .prepare(
-        `SELECT * FROM events
-         WHERE datetime(start_datetime) <= datetime(?)
-           AND datetime(COALESCE(end_datetime, start_datetime)) >= datetime(?)
-           ${VISIBLE}
-         ORDER BY start_datetime ASC`
-      )
-      .all(end, start)
-      .map(enrich);
-  } catch (err) {
-    logError('listEventsForDay', err);
-    throw err;
-  }
-}
-
-/** Events in [monthStart, monthEnd] for calendar dots (ISO month bounds). */
-function listEventsInRange(rangeStartIso, rangeEndIso) {
-  try {
-    return getDb()
-      .prepare(
-        `SELECT * FROM events
-         WHERE datetime(start_datetime) <= datetime(?)
-           AND datetime(COALESCE(end_datetime, start_datetime)) >= datetime(?)
-           ${VISIBLE}
-         ORDER BY start_datetime ASC`
-      )
-      .all(rangeEndIso, rangeStartIso)
-      .map(enrich);
-  } catch (err) {
-    logError('listEventsInRange', err);
     throw err;
   }
 }

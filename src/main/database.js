@@ -35,6 +35,9 @@ const DEFAULT_SETTINGS = {
   display_name: '',
   Debut_mode: '1',
   show_tags_always: 'false',
+  backup_auto_daily: 'true',
+  last_backup_at: '',
+  last_backup_path: '',
   hotkeys: JSON.stringify({
     calendar: 'Ctrl+C',
     projects: 'Ctrl+P',
@@ -148,6 +151,15 @@ function migrateSchema() {
   const remCols = db.prepare('PRAGMA table_info(reminders)').all().map((c) => c.name);
   if (!remCols.includes('description')) {
     db.exec('ALTER TABLE reminders ADD COLUMN description TEXT');
+  }
+  if (!remCols.includes('nudge_datetime')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN nudge_datetime TEXT');
+  }
+  if (!remCols.includes('nudge_mode')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN nudge_mode TEXT');
+  }
+  if (!remCols.includes('nudge_alerted')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN nudge_alerted INTEGER DEFAULT 0');
   }
 
   // One-shot: clamp legacy task 4–5 down to P3 Low

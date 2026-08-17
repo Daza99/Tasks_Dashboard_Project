@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { useLayout } from '../context/LayoutContext';
 import SearchBar from '../search/SearchBar';
 
-/** Top chrome: menu stubs, search, live clock, calendar jump, date, Compact restore. */
+/** Top chrome: search, live clock, calendar jump, date, Compact restore. */
 export default function TopBar({
   activeView,
   onEditRequest,
@@ -26,13 +26,6 @@ export default function TopBar({
   return (
     <header className="top-bar">
       <div className="top-bar__left">
-        <nav className="top-bar__menus" aria-label="App menu">
-          {['File', 'View', 'Tools', 'Help'].map((label) => (
-            <button key={label} type="button" className="top-bar__menu-btn">
-              {label}
-            </button>
-          ))}
-        </nav>
         <SearchBar activeView={activeView} onEditRequest={onEditRequest} />
       </div>
 

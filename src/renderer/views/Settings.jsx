@@ -3,15 +3,17 @@ import SettingsGeneral from '../settings-tabs/SettingsGeneral';
 import SettingsTheme from '../settings-tabs/SettingsTheme';
 import SettingsWallpaper from '../settings-tabs/SettingsWallpaper';
 import SettingsHotkeys from '../settings-tabs/SettingsHotkeys';
+import SettingsData from '../settings-tabs/SettingsData';
 
 const TABS = [
   { id: 'general', label: 'General' },
+  { id: 'data', label: 'Data' },
   { id: 'hotkeys', label: 'Hotkeys' },
   { id: 'theme', label: 'Theme' },
   { id: 'wallpaper', label: 'Wallpaper' },
 ];
 
-/** Settings host with General / Hotkeys / Theme / Wallpaper tabs. */
+/** Settings host with General / Data / Hotkeys / Theme / Wallpaper tabs. */
 export default function SettingsView() {
   const [tab, setTab] = useState('general');
 
@@ -34,6 +36,7 @@ export default function SettingsView() {
         ))}
       </div>
       {tab === 'general' && <SettingsGeneral />}
+      {tab === 'data' && <SettingsData />}
       {tab === 'hotkeys' && <SettingsHotkeys />}
       {tab === 'theme' && <SettingsTheme />}
       {tab === 'wallpaper' && <SettingsWallpaper />}

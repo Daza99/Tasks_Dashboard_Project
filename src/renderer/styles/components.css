@@ -13,7 +13,7 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 6px 16px;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--panel-border);
   backdrop-filter: blur(12px);
@@ -27,24 +27,6 @@
   align-items: center;
   gap: 14px;
   min-width: 0;
-}
-
-.top-bar__menus {
-  display: flex;
-  gap: 14px;
-  flex-shrink: 0;
-}
-
-.top-bar__menu-btn {
-  background: none;
-  border: none;
-  color: var(--accent);
-  opacity: 0.85;
-  padding: 4px 2px;
-  font-size: 13px;
-}
-.top-bar__menu-btn:hover {
-  opacity: 1;
 }
 
 .top-bar__clock {
@@ -443,6 +425,7 @@
 
 .settings__tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 16px;
 }
@@ -496,6 +479,56 @@
   align-items: center;
 }
 
+.settings-data__actions {
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.settings-data__path {
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.settings-data__ok {
+  font-size: 12px;
+  color: var(--accent);
+  margin: 0 0 12px;
+}
+
+.settings-data__err {
+  font-size: 12px;
+  color: var(--danger);
+  margin: 0 0 12px;
+}
+
+/* Unclassed Win32 chrome is white; inherited --text-primary is light */
+.btn-light {
+  color: #111;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.btn-cyan {
+  background: var(--tab-reminders-dim);
+  border: 1px solid var(--tab-reminders);
+  color: var(--tab-reminders);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.settings-data__actions button.danger {
+  color: var(--danger);
+  border: 1px solid rgba(255, 92, 92, 0.45);
+  background: var(--accent-dim);
+  border-radius: 8px;
+  padding: 8px 14px;
+}
+
 .btn-primary {
   background: var(--accent-dim);
   border: 1px solid var(--accent);
@@ -506,6 +539,13 @@
 }
 .btn-primary:hover {
   filter: brightness(1.1);
+}
+.btn-primary--muted {
+  opacity: 0.4;
+}
+.btn-primary.active {
+  filter: brightness(1.12);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .theme-toggle {
@@ -723,6 +763,79 @@
   color: #000;
   background: #fff;
 }
+.module-filter-bar__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  padding-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Tags catalog */
+.tags-tally {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.tags-catalog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tags-catalog__block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tags-catalog__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 4px 2px;
+}
+.tags-catalog__name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tags-catalog__count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tags-catalog__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 8px;
+}
+.tags-catalog__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tags-type-group__title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.tags-continue {
+  align-self: flex-start;
+  margin: 2px 0 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
 
 /* Ghost tag autocomplete (TagInput / TagSearchInput / Quick Add) */
 .tag-input {
@@ -791,6 +904,9 @@
 .module-list__item--col {
   flex-direction: column;
   align-items: stretch;
+}
+.module-list__item--editing {
+  scroll-margin-top: 8px;
 }
 .module-list__row {
   display: flex;
@@ -1029,9 +1145,20 @@
   line-height: 1.35;
   white-space: pre-wrap;
   text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cal-entry-tip__nudge {
+  color: var(--tab-notes);
+  font-size: 9px;
+}
+.cal-entry-tip__notes {
+  display: block;
+  color: var(--text-primary);
 }
 .cal-entry-label:hover .cal-entry-tip {
-  display: block;
+  display: flex;
 }
 .cal-chip--linked {
   text-decoration: underline;
@@ -1072,6 +1199,48 @@
   width: fit-content;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.nudge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.nudge-row .btn-primary {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.nudge-custom-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.nudge-custom-fields .edit-label {
+  min-width: 140px;
+}
+.nudge-custom-fields input,
+.nudge-custom-fields select {
+  color: #111;
+}
+.btn-nudge-cancel {
+  background: var(--danger);
+  border: 1px solid var(--danger);
+  color: #111;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.nudge-preview {
+  border: 1px solid #000;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Date/time + checkbox left; details box fills the right (mockup). */
@@ -1188,23 +1357,34 @@
   justify-content: center;
   z-index: 80;
 }
+/* Solid white + black text; color-scheme:light so Win32 Cancel glyphs stay dark */
 .confirm-dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 18px 20px;
+  background: #fff;
+  color: #111;
+  color-scheme: light;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .confirm-dialog h2 {
   margin: 0 0 8px;
   font-size: 16px;
+  color: #111;
 }
 .confirm-dialog p {
   margin: 0 0 16px;
-  color: var(--text-secondary);
+  color: #111;
   font-size: 13px;
 }
 .confirm-dialog__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+/* Native Cancel chrome is white; inherited theme text is light */
+.confirm-dialog__actions button:not(.btn-primary):not(.danger):not(.btn-nudge-cancel) {
+  color: #111;
 }
 .details-dialog {
   width: min(520px, calc(100vw - 32px));
@@ -1366,7 +1546,7 @@
   position: relative;
   flex: 1;
   min-width: 160px;
-  max-width: 280px;
+  max-width: 380px;
 }
 .search-bar__input .tag-input__field,
 .search-bar__input .tag-input__ghost {

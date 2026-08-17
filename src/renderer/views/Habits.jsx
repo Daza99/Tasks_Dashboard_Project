@@ -11,6 +11,7 @@ import {
 import DetailsInline from '../components/DetailsInline';
 import PrioritySelect from '../components/PrioritySelect';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
+import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 
 const FREQS = ['daily', 'weekly', 'monthly'];
 const FILTER_OPTS = ['all', 'daily', 'weekly', 'monthly'];
@@ -36,6 +37,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
   const [details, setDetails] = useState('');
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const editRowRef = useScrollEditIntoView(editingId);
   const [editName, setEditName] = useState('');
   const [editFreq, setEditFreq] = useState('daily');
   const [editNudge, setEditNudge] = useState('');
@@ -59,6 +61,9 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
 
   useEffect(() => {
     if (editId == null) return;
+    setMode('edit');
+    setFreqFilter('all');
+    setSearch('');
     const h = rows.find((x) => x.id === editId);
     if (!h) return;
     beginEdit(h);
@@ -244,7 +249,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
             <TagInput
               value={tagsInput}
               onChange={setTagsInput}
-              placeholder="#fitness #health"
+              placeholder="#fitness, #health"
               aria-label="Habit tags"
             />
           </label>
@@ -272,7 +277,10 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
         {filtered.map((h) => (
           <li
             key={h.id}
-            className="module-list__item glass-inset module-list__item--col"
+            ref={editingId === h.id ? editRowRef : null}
+            className={`module-list__item glass-inset module-list__item--col${
+              editingId === h.id ? ' module-list__item--editing' : ''
+            }`}
           >
             {editingId === h.id ? (
               <form className="edit-form" onSubmit={saveEdit}>

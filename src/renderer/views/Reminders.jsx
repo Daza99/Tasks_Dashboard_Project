@@ -11,6 +11,9 @@ import {
   userTagsOnly,
 } from '../../utils/tag-helpers.js';
 import DetailsInline from '../components/DetailsInline';
+import NudgeCustomDialog from '../components/NudgeCustomDialog';
+import { formatNudgeLine } from '../components/CalEntryLabel';
+import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 
 function fmt(iso) {
   if (!iso || String(iso).startsWith('9999')) return 'Open';
@@ -40,11 +43,90 @@ function scopeFromTags(tags = []) {
   return 'today';
 }
 
+function todayKey() {
+  return format(new Date(), 'yyyy-MM-dd');
+}
+
+/** Local yyyy-MM-dd for the create-form scope. */
+function createDueDate(scope, date) {
+  if (scope === 'today') return todayKey();
+  if (scope === 'tomorrow') return format(addDays(new Date(), 1), 'yyyy-MM-dd');
+  return date;
+}
+
+/** ISO from local date + HH:mm. */
+function localToIso(date, time) {
+  const base = parseISO(`${date}T${time || '09:00'}:00`);
+  return isValid(base) ? base.toISOString() : null;
+}
+
+function NudgeRow({ nudge, mode, dueDate, onNudgeChange, onDayBefore, onCustom }) {
+  const dayBeforeOff = dueDate === todayKey();
+  const bright = Boolean(nudge);
+  return (
+    <div className="nudge-row">
+      <label className="cal-appt-check">
+        <input
+          type="checkbox"
+          checked={nudge}
+          onChange={(e) => onNudgeChange(e.target.checked)}
+        />
+        Nudge
+      </label>
+      <button
+        type="button"
+        className={`btn-primary${bright && !dayBeforeOff ? '' : ' btn-primary--muted'}${
+          bright && mode === 'day_before' && !dayBeforeOff ? ' active' : ''
+        }`}
+        disabled={dayBeforeOff}
+        title={dayBeforeOff ? 'Reminder is today' : 'Same time, one day before'}
+        onClick={onDayBefore}
+      >
+        Day Before
+      </button>
+      <button
+        type="button"
+        className={`btn-primary${bright ? '' : ' btn-primary--muted'}${
+          bright && mode === 'custom' ? ' active' : ''
+        }`}
+        onClick={onCustom}
+      >
+        Custom
+      </button>
+    </div>
+  );
+}
+
+/** Live “Nudge yyyy-MM-dd 11am” under the row; hidden when Nudge is off. */
+function NudgePreview({ nudge, mode, dueDate, dueTime, customDate, customTime }) {
+  if (!nudge) return null;
+  let when = null;
+  if (mode === 'custom') {
+    when = parseISO(`${customDate}T${customTime || '09:00'}:00`);
+  } else if (dueDate) {
+    const due = parseISO(`${dueDate}T${dueTime || '09:00'}:00`);
+    when = isValid(due) ? addDays(due, -1) : null;
+  }
+  const line = formatNudgeLine(when);
+  if (!line) return null;
+  return <div className="nudge-preview">{line}</div>;
+}
+
 /**
  * Focus view: list + create/edit with mandatory scope.
- * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
+ * @param {{
+ *   editId?: number|null,
+ *   onEditConsumed?: () => void,
+ *   seedDate?: string|null,
+ *   onSeedConsumed?: () => void,
+ * }} props
  */
-export default function RemindersView({ editId = null, onEditConsumed }) {
+export default function RemindersView({
+  editId = null,
+  onEditConsumed,
+  seedDate = null,
+  onSeedConsumed,
+}) {
   const { refresh } = useBrief();
   const [rows, setRows] = useState([]);
   const [title, setTitle] = useState('');
@@ -54,6 +136,11 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
   const [tagsInput, setTagsInput] = useState('');
   const [appointment, setAppointment] = useState(false);
   const [daily, setDaily] = useState(false);
+  const [nudge, setNudge] = useState(false);
+  const [nudgeMode, setNudgeMode] = useState('day_before');
+  const [customDate, setCustomDate] = useState(() => todayKey());
+  const [customTime, setCustomTime] = useState('09:00');
+  const [customOpen, setCustomOpen] = useState(null); // 'create' | 'edit' | null
   const [details, setDetails] = useState('');
   const [error, setError] = useState('');
 
@@ -64,8 +151,13 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
   const [editTags, setEditTags] = useState('');
   const [editAppointment, setEditAppointment] = useState(false);
   const [editDaily, setEditDaily] = useState(false);
+  const [editNudge, setEditNudge] = useState(false);
+  const [editNudgeMode, setEditNudgeMode] = useState('day_before');
+  const [editCustomDate, setEditCustomDate] = useState(() => todayKey());
+  const [editCustomTime, setEditCustomTime] = useState('09:00');
   const [editDetails, setEditDetails] = useState('');
   const [editError, setEditError] = useState('');
+  const editRowRef = useScrollEditIntoView(editingId);
 
   async function load() {
     setRows(await window.api.listReminders());
@@ -82,6 +174,46 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
     beginEdit(r);
     onEditConsumed?.();
   }, [editId, rows]);
+
+  useEffect(() => {
+    if (!seedDate) return;
+    setScope('dated');
+    setDate(seedDate);
+    setAppointment(true);
+    onSeedConsumed?.();
+  }, [seedDate]);
+
+  const createDue = createDueDate(scope, date);
+  const editDueDate = editDue ? editDue.slice(0, 10) : todayKey();
+  const editDueTime = editDue && editDue.length >= 16 ? editDue.slice(11, 16) : '09:00';
+
+  // Today reminders cannot use Day Before (would be yesterday).
+  useEffect(() => {
+    if (nudge && nudgeMode === 'day_before' && createDue === todayKey()) {
+      setNudgeMode('custom');
+      setCustomDate(createDue);
+      setCustomTime(time);
+    }
+  }, [nudge, nudgeMode, createDue, time]);
+
+  useEffect(() => {
+    if (editNudge && editNudgeMode === 'day_before' && editDueDate === todayKey()) {
+      setEditNudgeMode('custom');
+      setEditCustomDate(editDueDate);
+      setEditCustomTime(editDueTime);
+    }
+  }, [editNudge, editNudgeMode, editDueDate, editDueTime]);
+
+  function applyNudgeOn(dueDate, dueTime, setOn, setMode, setCDate, setCTime) {
+    setOn(true);
+    if (dueDate === todayKey()) {
+      setMode('custom');
+      setCDate(dueDate);
+      setCTime(dueTime);
+    } else {
+      setMode('day_before');
+    }
+  }
 
   function buildDatetime() {
     const [hh, mm] = time.split(':').map(Number);
@@ -108,11 +240,19 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
         is_appointment: scope !== 'open' && appointment,
         recurrence: scope !== 'open' && daily ? 'daily' : null,
         description: details.trim() || null,
+        nudge: scope !== 'open' && nudge,
+        nudge_mode: scope !== 'open' && nudge ? nudgeMode : null,
+        nudge_datetime:
+          scope !== 'open' && nudge && nudgeMode === 'custom'
+            ? localToIso(customDate, customTime)
+            : null,
       });
       setTitle('');
       setTagsInput('');
       setAppointment(false);
       setDaily(false);
+      setNudge(false);
+      setNudgeMode('day_before');
       setDetails('');
       invalidateTagCatalog();
       await load();
@@ -130,6 +270,20 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
     setEditTags(userTagsDisplay(r.tags));
     setEditAppointment(Number(r.is_appointment) === 1);
     setEditDaily(r.recurrence === 'daily');
+    const hasNudge = Boolean(r.nudge_datetime);
+    setEditNudge(hasNudge);
+    setEditNudgeMode(r.nudge_mode === 'custom' ? 'custom' : 'day_before');
+    if (r.nudge_mode === 'custom' && r.nudge_datetime) {
+      const d = parseISO(r.nudge_datetime);
+      if (isValid(d)) {
+        setEditCustomDate(format(d, 'yyyy-MM-dd'));
+        setEditCustomTime(format(d, 'HH:mm'));
+      }
+    } else {
+      const due = toLocalInput(r.datetime);
+      setEditCustomDate(due.slice(0, 10) || todayKey());
+      setEditCustomTime(due.length >= 16 ? due.slice(11, 16) : '09:00');
+    }
     setEditDetails(r.description || '');
     setEditError('');
   }
@@ -152,6 +306,12 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
         is_appointment: editScope !== 'open' && editAppointment,
         recurrence: editScope !== 'open' && editDaily ? 'daily' : null,
         description: editDetails.trim() || null,
+        nudge: editScope !== 'open' && editNudge,
+        nudge_mode: editScope !== 'open' && editNudge ? editNudgeMode : null,
+        nudge_datetime:
+          editScope !== 'open' && editNudge && editNudgeMode === 'custom'
+            ? localToIso(editCustomDate, editCustomTime)
+            : null,
       });
       setEditingId(null);
       invalidateTagCatalog();
@@ -197,7 +357,10 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
               className={scope === s ? 'active' : ''}
               onClick={() => {
                 setScope(s);
-                if (s === 'open') setDaily(false);
+                if (s === 'open') {
+                  setDaily(false);
+                  setNudge(false);
+                }
               }}
             >
               {s}
@@ -231,6 +394,41 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
                 />
                 Daily
               </label>
+              <NudgeRow
+                nudge={nudge}
+                mode={nudgeMode}
+                dueDate={createDue}
+                onNudgeChange={(on) => {
+                  if (!on) {
+                    setNudge(false);
+                    return;
+                  }
+                  applyNudgeOn(
+                    createDue,
+                    time,
+                    setNudge,
+                    setNudgeMode,
+                    setCustomDate,
+                    setCustomTime
+                  );
+                }}
+                onDayBefore={() => {
+                  setNudge(true);
+                  setNudgeMode('day_before');
+                }}
+                onCustom={() => {
+                  setNudge(true);
+                  setCustomOpen('create');
+                }}
+              />
+              <NudgePreview
+                nudge={nudge}
+                mode={nudgeMode}
+                dueDate={createDue}
+                dueTime={time}
+                customDate={customDate}
+                customTime={customTime}
+              />
             </div>
           )}
           <DetailsInline value={details} onChange={setDetails} />
@@ -240,7 +438,7 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
           <TagInput
             value={tagsInput}
             onChange={setTagsInput}
-            placeholder="#errands"
+            placeholder="#errands, #food"
             aria-label="Reminder tags"
           />
         </label>
@@ -252,7 +450,13 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
 
       <ul className="module-list">
         {rows.map((r) => (
-          <li key={r.id} className="module-list__item glass-inset module-list__item--col">
+          <li
+            key={r.id}
+            ref={editingId === r.id ? editRowRef : null}
+            className={`module-list__item glass-inset module-list__item--col${
+              editingId === r.id ? ' module-list__item--editing' : ''
+            }`}
+          >
             {editingId === r.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
                 <input
@@ -269,7 +473,10 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
                       className={editScope === s ? 'active' : ''}
                       onClick={() => {
                         setEditScope(s);
-                        if (s === 'open') setEditDaily(false);
+                        if (s === 'open') {
+                          setEditDaily(false);
+                          setEditNudge(false);
+                        }
                       }}
                     >
                       {s}
@@ -306,6 +513,41 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
                         />
                         Daily
                       </label>
+                      <NudgeRow
+                        nudge={editNudge}
+                        mode={editNudgeMode}
+                        dueDate={editDueDate}
+                        onNudgeChange={(on) => {
+                          if (!on) {
+                            setEditNudge(false);
+                            return;
+                          }
+                          applyNudgeOn(
+                            editDueDate,
+                            editDueTime,
+                            setEditNudge,
+                            setEditNudgeMode,
+                            setEditCustomDate,
+                            setEditCustomTime
+                          );
+                        }}
+                        onDayBefore={() => {
+                          setEditNudge(true);
+                          setEditNudgeMode('day_before');
+                        }}
+                        onCustom={() => {
+                          setEditNudge(true);
+                          setCustomOpen('edit');
+                        }}
+                      />
+                      <NudgePreview
+                        nudge={editNudge}
+                        mode={editNudgeMode}
+                        dueDate={editDueDate}
+                        dueTime={editDueTime}
+                        customDate={editCustomDate}
+                        customTime={editCustomTime}
+                      />
                     </div>
                   )}
                   <DetailsInline value={editDetails} onChange={setEditDetails} />
@@ -378,6 +620,28 @@ export default function RemindersView({ editId = null, onEditConsumed }) {
         ))}
         {!rows.length && <p className="stub-empty">No active reminders.</p>}
       </ul>
+
+      <NudgeCustomDialog
+        open={Boolean(customOpen)}
+        dueDate={customOpen === 'edit' ? editDueDate : createDue}
+        time={customOpen === 'edit' ? editDueTime : time}
+        initialDate={customOpen === 'edit' ? editCustomDate : customDate}
+        onCancel={() => setCustomOpen(null)}
+        onSave={(d, t) => {
+          if (customOpen === 'edit') {
+            setEditNudge(true);
+            setEditNudgeMode('custom');
+            setEditCustomDate(d);
+            setEditCustomTime(t);
+          } else {
+            setNudge(true);
+            setNudgeMode('custom');
+            setCustomDate(d);
+            setCustomTime(t);
+          }
+          setCustomOpen(null);
+        }}
+      />
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
 import PrioritySelect from '../components/PrioritySelect';
 import DetailsInline from '../components/DetailsInline';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
+import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 
 function fmt(iso) {
   if (!iso) return '—';
@@ -38,9 +39,19 @@ function toLocalInput(iso) {
 
 /**
  * Focus view: list + create/edit with mandatory todo_24 | todo_open + P1–P3.
- * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
+ * @param {{
+ *   editId?: number|null,
+ *   onEditConsumed?: () => void,
+ *   seedDate?: string|null,
+ *   onSeedConsumed?: () => void,
+ * }} props
  */
-export default function TasksView({ editId = null, onEditConsumed }) {
+export default function TasksView({
+  editId = null,
+  onEditConsumed,
+  seedDate = null,
+  onSeedConsumed,
+}) {
   const { refresh } = useBrief();
   const [tasks, setTasks] = useState([]);
   const [title, setTitle] = useState('');
@@ -48,8 +59,10 @@ export default function TasksView({ editId = null, onEditConsumed }) {
   const [priority, setPriority] = useState(DEFAULT_PRIORITY);
   const [tagsInput, setTagsInput] = useState('');
   const [details, setDetails] = useState('');
+  const [due, setDue] = useState('');
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const editRowRef = useScrollEditIntoView(editingId);
   const [editTitle, setEditTitle] = useState('');
   const [editKind, setEditKind] = useState('todo_24');
   const [editDue, setEditDue] = useState('');
@@ -75,6 +88,12 @@ export default function TasksView({ editId = null, onEditConsumed }) {
     onEditConsumed?.();
   }, [editId, tasks]);
 
+  useEffect(() => {
+    if (!seedDate) return;
+    setDue(`${seedDate}T09:00`);
+    onSeedConsumed?.();
+  }, [seedDate]);
+
   async function create(e) {
     e.preventDefault();
     setError('');
@@ -85,11 +104,13 @@ export default function TasksView({ editId = null, onEditConsumed }) {
         priority,
         tags: normalizeUserTagNames(tagsInput),
         description: details.trim() || null,
+        due_datetime: due ? new Date(due).toISOString() : null,
       });
       setTitle('');
       setPriority(DEFAULT_PRIORITY);
       setTagsInput('');
       setDetails('');
+      setDue('');
       invalidateTagCatalog();
       await load();
       await refresh();
@@ -178,11 +199,19 @@ export default function TasksView({ editId = null, onEditConsumed }) {
             </div>
             <PrioritySelect id="create-priority" value={priority} onChange={setPriority} />
             <label className="edit-label">
+              Due
+              <input
+                type="datetime-local"
+                value={due}
+                onChange={(e) => setDue(e.target.value)}
+              />
+            </label>
+            <label className="edit-label">
               Tags (optional)
               <TagInput
                 value={tagsInput}
                 onChange={setTagsInput}
-                placeholder="#work #home"
+                placeholder="#work, #home"
                 aria-label="Task tags"
               />
             </label>
@@ -202,7 +231,13 @@ export default function TasksView({ editId = null, onEditConsumed }) {
 
       <ul className="module-list">
         {tasks.map((t) => (
-          <li key={t.id} className="module-list__item glass-inset module-list__item--col">
+          <li
+            key={t.id}
+            ref={editingId === t.id ? editRowRef : null}
+            className={`module-list__item glass-inset module-list__item--col${
+              editingId === t.id ? ' module-list__item--editing' : ''
+            }`}
+          >
             {editingId === t.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
                 <input

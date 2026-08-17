@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   format,
   startOfMonth,
@@ -16,6 +16,7 @@ import {
 import { useBrief } from '../context/BriefContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CalEntryLabel from '../components/CalEntryLabel';
+import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 
 const CHIP_CAP = 3;
 
@@ -42,6 +43,15 @@ function isLinked(ev) {
   return Boolean(ev?.source_type && ev.source_id != null);
 }
 
+/** Keep a fixed context menu inside the viewport. */
+function clampMenuPos(clientX, clientY, w = 200, h = 130) {
+  const pad = 8;
+  return {
+    x: Math.max(pad, Math.min(clientX, window.innerWidth - w - pad)),
+    y: Math.max(pad, Math.min(clientY, window.innerHeight - h - pad)),
+  };
+}
+
 /**
  * Focus view: month grid + day event list/create.
  * Linked chips jump to the source item; Ctrl+click multi-selects.
@@ -49,12 +59,14 @@ function isLinked(ev) {
  *   editId?: number|null,
  *   onEditConsumed?: () => void,
  *   onEditRequest?: (type: string, id: number) => void,
+ *   onCreateRequest?: (type: string, date: string) => void,
  * }} props
  */
 export default function CalendarView({
   editId = null,
   onEditConsumed,
   onEditRequest,
+  onCreateRequest,
 }) {
   const { refresh } = useBrief();
   const [cursor, setCursor] = useState(() => new Date());
@@ -65,10 +77,13 @@ export default function CalendarView({
   const [start, setStart] = useState('');
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const editRowRef = useScrollEditIntoView(editingId);
   const [editTitle, setEditTitle] = useState('');
   const [editStart, setEditStart] = useState('');
   const [picked, setPicked] = useState(() => new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [menu, setMenu] = useState(null); // { x, y, date }
+  const menuRef = useRef(null);
 
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
@@ -161,6 +176,23 @@ export default function CalendarView({
     return () => window.removeEventListener('keydown', onKey);
   }, [picked, pickedHasLinked]);
 
+  useEffect(() => {
+    if (!menu) return;
+    function onDown(e) {
+      if (menuRef.current?.contains(e.target)) return;
+      setMenu(null);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') setMenu(null);
+    }
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
   function togglePick(id, additive) {
     setPicked((prev) => {
       const next = additive ? new Set(prev) : new Set();
@@ -168,6 +200,19 @@ export default function CalendarView({
       else next.add(id);
       return next;
     });
+  }
+
+  function openDayMenu(e, day) {
+    e.preventDefault();
+    setSelected(day);
+    const pos = clampMenuPos(e.clientX, e.clientY);
+    setMenu({ ...pos, date: format(day, 'yyyy-MM-dd') });
+  }
+
+  function pickCreate(type) {
+    if (!menu) return;
+    onCreateRequest?.(type, menu.date);
+    setMenu(null);
   }
 
   function onChipClick(e, ev, day) {
@@ -277,7 +322,7 @@ export default function CalendarView({
     <div className="module-view">
       <h1>Calendar</h1>
       <p className="module-view__hint">
-        Month grid · click a linked entry to open it · Ctrl+click to select.
+        Month grid · click a linked entry to open it · Ctrl+click to select · RMB a day to add a task, reminder, or bill.
       </p>
 
       <div className="cal-nav">
@@ -320,6 +365,7 @@ export default function CalendarView({
                 sel ? ' cal-grid__day--selected' : ''
               }`}
               onClick={() => setSelected(d)}
+              onContextMenu={(e) => openDayMenu(e, d)}
             >
               <span className="cal-grid__day-num">{format(d, 'd')}</span>
               {renderChips(d)}
@@ -354,9 +400,10 @@ export default function CalendarView({
         {dayEvents.map((ev) => (
           <li
             key={ev.id}
+            ref={editingId === ev.id ? editRowRef : null}
             className={`module-list__item glass-inset module-list__item--col${
               picked.has(ev.id) ? ' cal-row--selected' : ''
-            }`}
+            }${editingId === ev.id ? ' module-list__item--editing' : ''}`}
           >
             {editingId === ev.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
@@ -418,6 +465,26 @@ export default function CalendarView({
         ))}
         {!dayEvents.length && <p className="stub-empty">No events this day.</p>}
       </ul>
+
+      {menu && (
+        <div
+          ref={menuRef}
+          className="lists-menu glass-panel"
+          style={{ top: menu.y, left: menu.x }}
+          role="menu"
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button type="button" role="menuitem" onClick={() => pickCreate('task')}>
+            Add a Task
+          </button>
+          <button type="button" role="menuitem" onClick={() => pickCreate('reminder')}>
+            Add a Reminder
+          </button>
+          <button type="button" role="menuitem" onClick={() => pickCreate('bill')}>
+            Add a Bill
+          </button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={deleteOpen}

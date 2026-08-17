@@ -8,6 +8,7 @@ const { registerIpcHandlers } = require('./ipc-handlers');
 const { ensureDirs } = require('./portable-paths');
 const { logError } = require('./logger');
 const { startScheduler, stopScheduler } = require('./scheduler');
+const { maybeAutoBackup } = require('./backup');
 
 const isDev = !app.isPackaged;
 
@@ -42,6 +43,7 @@ app.whenReady().then(() => {
     registerIpcHandlers();
     startScheduler();
     createWindow();
+    maybeAutoBackup().catch((err) => logError('maybeAutoBackup', err));
   } catch (err) {
     logError('app.whenReady', err);
     app.quit();

@@ -11,6 +11,8 @@ const {
   listDueSnoozed,
   markFired,
   expireGraceReminders,
+  listDueReminderNudges,
+  markNudgeAlerted,
 } = require('../services/db/reminders');
 const {
   listDueNudges,
@@ -26,7 +28,7 @@ const { sweepContainers } = require('../services/db/containers');
 const { logError } = require('./logger');
 
 let intervalId = null;
-/** Session keys: `reminder:12` | `task:4` | `bill:3` | `habit:1` */
+/** Session keys: `reminder:12` | `reminder_nudge:12` | `task:4` | `bill:3` | `habit:1` */
 const firedThisSession = new Set();
 
 function sessionKey(itemType, id) {
@@ -55,6 +57,26 @@ function runTagAudit() {
   } catch (err) {
     logError('runTagAudit', err);
     return { expired: 0, ignored: 0, overdue: 0, error: String(err) };
+  }
+}
+
+/** Pre-reminder nudge popup — does not complete or fire the reminder itself. */
+function pollReminderNudges() {
+  try {
+    const due = listDueReminderNudges();
+    for (const rem of due) {
+      const key = sessionKey('reminder_nudge', rem.id);
+      if (firedThisSession.has(key)) continue;
+      markNudgeAlerted(rem.id);
+      firedThisSession.add(key);
+      showItemNotification({
+        id: rem.id,
+        title: rem.title,
+        itemType: 'reminder_nudge',
+      });
+    }
+  } catch (err) {
+    logError('pollReminderNudges', err);
   }
 }
 
@@ -137,6 +159,7 @@ function pollHabitNudges() {
 function tick() {
   // Alerts first (while items still match due queries), then audit/expire
   pollDueTasks();
+  pollReminderNudges();
   pollDueReminders();
   pollDueBills();
   pollHabitNudges();
@@ -163,6 +186,7 @@ module.exports = {
   stopScheduler,
   runTagAudit,
   pollDueReminders,
+  pollReminderNudges,
   pollDueTasks,
   pollDueBills,
   pollHabitNudges,

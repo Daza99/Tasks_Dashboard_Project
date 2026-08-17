@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const WORD_LIMIT = 300;
 
@@ -21,7 +22,7 @@ export function clipToWordLimit(text, limit = WORD_LIMIT) {
 }
 
 /**
- * Optional notes modal. Renders nothing when closed.
+ * Optional notes modal. Portaled to body (same as ConfirmDialog). Renders nothing when closed.
  * @param {{
  *   open: boolean,
  *   value: string,
@@ -51,10 +52,10 @@ export default function DetailsDialog({
     setDraft(clipToWordLimit(e.target.value));
   }
 
-  return (
+  return createPortal(
     <div className="confirm-overlay" role="presentation" onClick={onCancel}>
       <div
-        className="confirm-dialog glass-panel details-dialog"
+        className="confirm-dialog details-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="details-title"
@@ -82,6 +83,7 @@ export default function DetailsDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

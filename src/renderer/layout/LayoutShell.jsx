@@ -19,6 +19,15 @@ function isTypingTarget(el) {
   return Boolean(el.isContentEditable);
 }
 
+/** Status-bar date: yyyy-mm-dd or never. */
+function formatStatusBackupDate(iso) {
+  if (!iso) return 'never';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'never';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /**
  * Shell: Compact (3-col) vs Focus (full center view).
  * @param {{
@@ -106,6 +115,10 @@ export default function LayoutShell({
           Connection: <strong>OFFLINE</strong>
         </span>
         <span>Sync: N/A</span>
+        <span>
+          Last Backup:{' '}
+          <strong>{formatStatusBackupDate(settings?.last_backup_at)}</strong>
+        </span>
         <span>Mode: {isFocus ? 'Focus' : 'Compact'}</span>
       </footer>
     </div>

@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
 
-const DATA_SUBDIRS = ['wallpapers', 'sounds', 'exports', 'themes'];
+const DATA_SUBDIRS = ['wallpapers', 'sounds', 'exports', 'themes', 'backups'];
 
 /** Absolute path to the portable data root. */
 function getDataDir() {

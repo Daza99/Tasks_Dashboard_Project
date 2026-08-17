@@ -2,6 +2,7 @@
 
 ## Source of truth
 - Product blueprint: /docs/Master_Dashboard_blueprint_Lumo_v2.md — follow phases and locked decisions unless the user overrides
+- Standing don’t-break reminder: /docs/DEV_REMINDER.md — read before planning
 
 ## Code Style- Use React functional components with hooks
 - Use async/await for all async operations

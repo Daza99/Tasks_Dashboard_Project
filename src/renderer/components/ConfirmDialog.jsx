@@ -1,7 +1,9 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Modal confirm. Renders nothing when closed.
+ * Portaled to body so nested focus-host backdrop-filter cannot wash contrast.
  * @param {{
  *   open: boolean,
  *   title: string,
@@ -26,10 +28,10 @@ export default function ConfirmDialog({
   onCancel,
 }) {
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="confirm-overlay" role="presentation" onClick={onCancel}>
       <div
-        className="confirm-dialog glass-panel"
+        className="confirm-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
@@ -55,6 +57,7 @@ export default function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

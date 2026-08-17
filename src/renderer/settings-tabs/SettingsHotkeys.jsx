@@ -80,6 +80,7 @@ export default function SettingsHotkeys() {
             </kbd>
             <button
               type="button"
+              className="btn-cyan"
               onClick={() => {
                 setError('');
                 setCapturing(a.id);

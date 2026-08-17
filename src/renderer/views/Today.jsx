@@ -18,11 +18,10 @@ function fmtWhen(iso) {
  * Focus landing: only items due today (reminders, bills, habits).
  * Today-only type: Outfit title + Habits, Source Serif 4 Reminders, IBM Plex Mono Bills.
  * @param {{
- *   onEditRequest?: (type: string, id: number) => void,
- *   onNavigate?: (id: string) => void
+ *   onEditRequest?: (type: string, id: number) => void
  * }} props
  */
-export default function TodayView({ onEditRequest, onNavigate }) {
+export default function TodayView({ onEditRequest }) {
   const { brief, loading, error, refresh } = useBrief();
   const [payingId, setPayingId] = useState(null);
   const [payActual, setPayActual] = useState('');
@@ -100,9 +99,9 @@ export default function TodayView({ onEditRequest, onNavigate }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => onNavigate?.('habits')}
+                    onClick={() => onEditRequest?.('habit', h.id)}
                   >
-                    Open
+                    Edit
                   </button>
                 </div>
               </li>

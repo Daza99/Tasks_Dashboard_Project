@@ -11,6 +11,17 @@ contextBridge.exposeInMainWorld('api', {
   getPaths: () => ipcRenderer.invoke('app:getPaths'),
   health: () => ipcRenderer.invoke('app:health'),
 
+  backupNow: () => ipcRenderer.invoke('backup:now'),
+  backupStatus: () => ipcRenderer.invoke('backup:status'),
+  backupChooseDest: () => ipcRenderer.invoke('backup:chooseDest'),
+  backupPickRestore: () => ipcRenderer.invoke('backup:pickRestore'),
+  backupRestore: (folderPath) => ipcRenderer.invoke('backup:restore', folderPath),
+  onBackupDidRun: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('backup:didRun', listener);
+    return () => ipcRenderer.removeListener('backup:didRun', listener);
+  },
+
   listTasks: (opts) => ipcRenderer.invoke('tasks:list', opts),
   getTask: (id) => ipcRenderer.invoke('tasks:get', id),
   createTask: (data) => ipcRenderer.invoke('tasks:create', data),
@@ -66,6 +77,9 @@ contextBridge.exposeInMainWorld('api', {
   deleteTransaction: (id) => ipcRenderer.invoke('tx:delete', id),
 
   listTags: (opts) => ipcRenderer.invoke('tags:list', opts),
+  listTagCatalog: () => ipcRenderer.invoke('tags:catalog'),
+  listTagItems: (tagName, opts) =>
+    ipcRenderer.invoke('tags:items', tagName, opts),
 
   listExpired7: () => ipcRenderer.invoke('containers:listExpired7'),
   listCompleted: (opts) => ipcRenderer.invoke('containers:listCompleted', opts),

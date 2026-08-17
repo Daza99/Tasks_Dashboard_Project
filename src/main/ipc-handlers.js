@@ -67,7 +67,12 @@ const {
   deleteTransaction,
 } = require('../services/db/transactions');
 const { getTodayBrief } = require('../services/db/today');
-const { addTag, listTags } = require('../services/db/tags');
+const {
+  addTag,
+  listTags,
+  listUserTagsWithCounts,
+  listTagItems,
+} = require('../services/db/tags');
 const {
   setLocked,
   listExpired7,
@@ -99,6 +104,13 @@ const { runTagAudit } = require('./scheduler');
 const { registerNotificationIpc } = require('./notification-window');
 const { parseQuickAdd } = require('../utils/quick-add-parser');
 const { runSearch, searchFilterOptions } = require('../services/db/search');
+const {
+  runBackup,
+  getBackupStatus,
+  chooseDestAndCopy,
+  pickRestoreFolder,
+  restoreFromFolder,
+} = require('./backup');
 
 function registerIpcHandlers() {
   registerNotificationIpc();
@@ -149,6 +161,51 @@ function registerIpcHandlers() {
     offline: true,
   }));
 
+  ipcMain.handle('backup:now', async () => {
+    try {
+      return await runBackup({ kind: 'manual' });
+    } catch (err) {
+      logError('backup:now', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('backup:status', () => {
+    try {
+      return getBackupStatus();
+    } catch (err) {
+      logError('backup:status', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('backup:chooseDest', async () => {
+    try {
+      return await chooseDestAndCopy();
+    } catch (err) {
+      logError('backup:chooseDest', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('backup:pickRestore', async () => {
+    try {
+      return await pickRestoreFolder();
+    } catch (err) {
+      logError('backup:pickRestore', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('backup:restore', async (_e, folderPath) => {
+    try {
+      return await restoreFromFolder(folderPath);
+    } catch (err) {
+      logError('backup:restore', err);
+      throw err;
+    }
+  });
+
   // --- Tasks ---
   ipcMain.handle('tasks:list', (_e, opts) => listTasks(opts || {}));
   ipcMain.handle('tasks:get', (_e, id) => getTask(id));
@@ -182,9 +239,10 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('reminders:update', (_e, id, fields) => {
     const row = updateReminder(id, fields);
-    if (fields?.datetime !== undefined) {
+    if (fields?.datetime !== undefined || fields?.nudge !== undefined || fields?.nudge_datetime !== undefined) {
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession('reminder', id);
+      clearFiredSession('reminder_nudge', id);
     }
     return row;
   });
@@ -253,6 +311,10 @@ function registerIpcHandlers() {
   ipcMain.handle('tx:delete', (_e, id) => deleteTransaction(id));
 
   ipcMain.handle('tags:list', (_e, opts) => listTags(opts || {}));
+  ipcMain.handle('tags:catalog', () => listUserTagsWithCounts());
+  ipcMain.handle('tags:items', (_e, tagName, opts) =>
+    listTagItems(tagName, opts || {})
+  );
 
   // --- Cleanup containers + padlock ---
   ipcMain.handle('containers:listExpired7', () => listExpired7());

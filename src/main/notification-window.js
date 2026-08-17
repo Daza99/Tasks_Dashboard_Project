@@ -1,6 +1,6 @@
 /**
  * Custom due popup — BrowserWindow with taskbar presence (not OS toast).
- * itemType: reminder | task | bill | habit
+ * itemType: reminder | reminder_nudge | task | bill | habit
  */
 const { BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
@@ -9,6 +9,8 @@ const {
   completeReminder,
   ignoreReminder,
   snoozeReminder,
+  dismissReminderNudge,
+  snoozeReminderNudge,
 } = require('../services/db/reminders');
 const {
   completeTask,
@@ -27,7 +29,7 @@ const {
 } = require('../services/db/habits');
 const { logError } = require('./logger');
 
-const VALID_TYPES = new Set(['reminder', 'task', 'bill', 'habit']);
+const VALID_TYPES = new Set(['reminder', 'reminder_nudge', 'task', 'bill', 'habit']);
 
 /** Map key → { win, resolved, itemType, id } */
 const openWindows = new Map();
@@ -59,6 +61,7 @@ function registerNotificationIpc() {
       if (itemType === 'task') completeTask(id);
       else if (itemType === 'bill') markPaid(id);
       else if (itemType === 'habit') markCheckin(id);
+      else if (itemType === 'reminder_nudge') dismissReminderNudge(id);
       else completeReminder(id);
       closeNotif(itemType, id);
       return true;
@@ -75,6 +78,7 @@ function registerNotificationIpc() {
       if (itemType === 'task') snoozeTask(id, minutes);
       else if (itemType === 'bill') snoozeBill(id, minutes);
       else if (itemType === 'habit') snoozeHabit(id, minutes);
+      else if (itemType === 'reminder_nudge') snoozeReminderNudge(id, minutes);
       else snoozeReminder(id, minutes);
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession(itemType, id);
@@ -98,6 +102,7 @@ function registerNotificationIpc() {
       if (itemType === 'task') ignoreTaskAlert(id);
       else if (itemType === 'bill') dismissBillAlert(id);
       else if (itemType === 'habit') dismissHabitNudge(id);
+      else if (itemType === 'reminder_nudge') dismissReminderNudge(id);
       else ignoreReminder(id);
       closeNotif(itemType, id);
       return true;
@@ -149,6 +154,7 @@ function cornerBounds(position, width, height) {
 
 const TYPE_LABELS = {
   reminder: 'Reminder',
+  reminder_nudge: 'Nudge',
   task: 'Task',
   bill: 'Bill',
   habit: 'Habit',
@@ -230,6 +236,7 @@ function showItemNotification(item) {
         if (itemType === 'task') ignoreTaskAlert(item.id);
         else if (itemType === 'bill') dismissBillAlert(item.id);
         else if (itemType === 'habit') dismissHabitNudge(item.id);
+        else if (itemType === 'reminder_nudge') dismissReminderNudge(item.id);
         else ignoreReminder(item.id);
       } catch (err) {
         logError('notif close→ignore', err);

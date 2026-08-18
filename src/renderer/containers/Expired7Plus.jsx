@@ -17,20 +17,14 @@ export default function Expired7Plus() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [confirm, setConfirm] = useState(null); // 'delete' | 'deleteAll' | null
-  const [lists, setLists] = useState([]);
-  const [listId, setListId] = useState('');
 
   const days = settings?.retention_days_expired || '7';
   const autoDel = settings?.auto_delete_expired7 === 'true';
 
   async function load() {
     setError('');
-    const [list, folders] = await Promise.all([
-      window.api.listExpired7(),
-      window.api.listLists({ type: 'all' }),
-    ]);
+    const list = await window.api.listExpired7();
     setRows(list);
-    setLists(folders);
     setSelected(new Set());
   }
 
@@ -76,31 +70,6 @@ export default function Expired7Plus() {
     await refresh();
   }
 
-  async function moveToList() {
-    if (!listId) {
-      setNotice('Pick a list first.');
-      return;
-    }
-    const items = picked();
-    const types = new Set(items.map((i) => i.item_type));
-    if (types.size > 1) {
-      setNotice('Select only tasks or only reminders — lists are typed.');
-      return;
-    }
-    try {
-      const res = await window.api.moveToList({
-        items,
-        listId: Number(listId),
-        from: 'expired7',
-      });
-      setNotice(res.ok ? `Moved ${res.moved} to list.` : res.message);
-      await load();
-      await refresh();
-    } catch (err) {
-      setNotice(err?.message || String(err));
-    }
-  }
-
   return (
     <div className="module-view">
       <h1>7+ Days Expired</h1>
@@ -112,18 +81,6 @@ export default function Expired7Plus() {
       {notice && <p className="stub-empty">{notice}</p>}
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
 
-      <label className="bills-history-filters__field" style={{ marginBottom: 10 }}>
-        Move to list
-        <select value={listId} onChange={(e) => setListId(e.target.value)}>
-          <option value="">Choose list…</option>
-          {lists.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.type === 'todo' ? 'To-Do' : 'Rem'} · {l.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
       <ContainerActions
         allCount={rows.length}
         selectedCount={selected.size}
@@ -131,7 +88,6 @@ export default function Expired7Plus() {
         onClear={() => setSelected(new Set())}
         onRestore={restore}
         onArchive={archive}
-        onMoveToList={moveToList}
         onDelete={() => setConfirm(selected.size === rows.length ? 'deleteAll' : 'delete')}
         deleteLabel="Delete"
       />

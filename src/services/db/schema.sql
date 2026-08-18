@@ -144,16 +144,19 @@ CREATE TABLE IF NOT EXISTS item_tags (
 CREATE TABLE IF NOT EXISTS lists (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL,
+    type TEXT NOT NULL, -- todo | bullet | md
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    parent_id INTEGER
+    parent_id INTEGER,
+    content TEXT,
+    style_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS list_items (
     id INTEGER PRIMARY KEY,
     list_id INTEGER NOT NULL,
-    item_type TEXT NOT NULL,
-    item_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    done INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
     added_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(list_id) REFERENCES lists(id)
 );

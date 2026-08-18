@@ -11,7 +11,7 @@ Full product blueprint (phases, schema, lifecycle, UI):
 
 - Cleanup containers — 7+ Days Expired, Completed, Archive (restore / archive / delete, bulk + confirm)
 - Padlock — per-item lock, `#locked`, excluded from bulk/auto-delete
-- Lists — todo/reminder folders, date filter, rename/merge, add items, export stub
+- Lists — To-Do checklists, bullet notepads, MD notes; date filter, rename/merge, export stub
 - Settings → General: retention days (1–30), archive years, auto-delete toggles (off), filesize warning
 
 Phase 3 tracking modules remain (Habits, Bills, Calendar, Spending, Today brief).

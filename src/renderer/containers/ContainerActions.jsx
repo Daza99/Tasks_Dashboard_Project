@@ -10,7 +10,6 @@ import React from 'react';
  *   onRestore?: () => void,
  *   onArchive?: () => void,
  *   onDelete: () => void,
- *   onMoveToList?: () => void,
  *   deleteLabel?: string,
  * }} props
  */
@@ -22,7 +21,6 @@ export default function ContainerActions({
   onRestore,
   onArchive,
   onDelete,
-  onMoveToList,
   deleteLabel = 'Delete',
 }) {
   const none = selectedCount === 0;
@@ -46,11 +44,6 @@ export default function ContainerActions({
         {onArchive && (
           <button type="button" disabled={none} onClick={onArchive}>
             Archive
-          </button>
-        )}
-        {onMoveToList && (
-          <button type="button" disabled={none} onClick={onMoveToList} title="Lists next">
-            Move to list
           </button>
         )}
         <button type="button" className="danger" disabled={none} onClick={onDelete}>

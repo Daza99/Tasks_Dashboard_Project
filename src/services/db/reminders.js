@@ -292,14 +292,32 @@ function updateReminder(id, fields) {
   }
 }
 
+/** True when this row is the Settings-owned backup reminder. */
+function isBackupRemindId(id) {
+  const raw = getDb().prepare(`SELECT value FROM settings WHERE key = 'backup_remind_id'`).get()
+    ?.value;
+  const stored = Number(raw);
+  return Number.isFinite(stored) && stored > 0 && Number(id) === stored;
+}
+
+/** Interval for the backup reminder (settings), minimum 1. */
+function backupRemindDays() {
+  const raw = getDb().prepare(`SELECT value FROM settings WHERE key = 'backup_remind_days'`).get()
+    ?.value;
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 1 ? n : 5;
+}
+
 function completeReminder(id) {
   try {
     const cur = getDb().prepare('SELECT * FROM reminders WHERE id = ?').get(id);
     const isDaily = cur?.recurrence === 'daily';
+    const isBackupRemind = isBackupRemindId(id);
     const isOpen = !cur?.datetime || String(cur.datetime).startsWith('9999');
-    if (isDaily && !isOpen) {
+    if ((isDaily || isBackupRemind) && !isOpen) {
       const prevDate = dateKeyFromIso(cur.datetime);
-      const next = addDays(new Date(cur.datetime), 1).toISOString();
+      const step = isBackupRemind ? backupRemindDays() : 1;
+      const next = addDays(new Date(cur.datetime), step).toISOString();
       let nextNudge = cur.nudge_datetime;
       let nextAlerted = cur.nudge_alerted;
       if (cur.nudge_mode === 'day_before') {
@@ -310,10 +328,11 @@ function completeReminder(id) {
         .prepare(
           `UPDATE reminders SET datetime = ?, completed_at = NULL, dismissed = 0,
              snooze_until = NULL, container = 'active', archived = 0,
-             nudge_datetime = ?, nudge_alerted = ?
+             nudge_datetime = ?, nudge_alerted = ?,
+             is_appointment = CASE WHEN ? = 1 THEN 1 ELSE is_appointment END
            WHERE id = ?`
         )
-        .run(next, nextNudge, nextAlerted, id);
+        .run(next, nextNudge, nextAlerted, isBackupRemind ? 1 : 0, id);
       replaceTags('reminder', id, STATE_TAGS, 'rem_pending');
       replaceTags('reminder', id, SCOPE_TAGS, 'rem_dated');
       removeTag('reminder', id, 'archived');
@@ -426,12 +445,19 @@ function uncompleteReminder(id) {
   }
 }
 
-function deleteReminder(id) {
+/**
+ * Delete a reminder and its calendar events.
+ * @param {number} id
+ * @param {{ force?: boolean }} [opts] — force skips the padlock (system backup reminder)
+ */
+function deleteReminder(id, { force = false } = {}) {
   try {
-    const row = getDb().prepare('SELECT locked FROM reminders WHERE id = ?').get(id);
-    if (row && Number(row.locked) === 1) throw new Error('Reminder is locked');
-    if (hasTag('reminder', id, 'locked')) {
-      throw new Error('Reminder is locked');
+    if (!force) {
+      const row = getDb().prepare('SELECT locked FROM reminders WHERE id = ?').get(id);
+      if (row && Number(row.locked) === 1) throw new Error('Reminder is locked');
+      if (hasTag('reminder', id, 'locked')) {
+        throw new Error('Reminder is locked');
+      }
     }
     const db = getDb();
     const tx = db.transaction(() => {

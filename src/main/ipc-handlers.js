@@ -85,7 +85,6 @@ const {
   bulkArchive,
   bulkRestore,
   bulkDelete,
-  moveToList,
   sweepContainers,
 } = require('../services/db/containers');
 const {
@@ -96,8 +95,11 @@ const {
   deleteList,
   mergeLists,
   listItems,
-  addListItem,
-  removeListItem,
+  addListEntry,
+  toggleListEntry,
+  renameListEntry,
+  removeListEntry,
+  saveListDoc,
   exportList,
 } = require('../services/db/lists');
 const { runTagAudit } = require('./scheduler');
@@ -107,6 +109,7 @@ const { runSearch, searchFilterOptions } = require('../services/db/search');
 const {
   runBackup,
   getBackupStatus,
+  setBackupPolicy,
   chooseDestAndCopy,
   pickRestoreFolder,
   restoreFromFolder,
@@ -175,6 +178,15 @@ function registerIpcHandlers() {
       return getBackupStatus();
     } catch (err) {
       logError('backup:status', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('backup:setPolicy', (_e, opts) => {
+    try {
+      return setBackupPolicy(opts || {});
+    } catch (err) {
+      logError('backup:setPolicy', err);
       throw err;
     }
   });
@@ -329,7 +341,6 @@ function registerIpcHandlers() {
   ipcMain.handle('containers:bulkArchive', (_e, payload) => bulkArchive(payload || {}));
   ipcMain.handle('containers:bulkRestore', (_e, payload) => bulkRestore(payload || {}));
   ipcMain.handle('containers:bulkDelete', (_e, payload) => bulkDelete(payload || {}));
-  ipcMain.handle('containers:moveToList', (_e, payload) => moveToList(payload || {}));
   ipcMain.handle('containers:sweep', () => sweepContainers());
   ipcMain.handle('items:setLocked', (_e, itemType, id, locked) =>
     setLocked(itemType, id, locked)
@@ -345,10 +356,11 @@ function registerIpcHandlers() {
     mergeLists(sourceId, targetId)
   );
   ipcMain.handle('lists:items', (_e, id) => listItems(id));
-  ipcMain.handle('lists:addItem', (_e, listId, itemType, itemId) =>
-    addListItem(listId, itemType, itemId)
-  );
-  ipcMain.handle('lists:removeItem', (_e, membershipId) => removeListItem(membershipId));
+  ipcMain.handle('lists:addEntry', (_e, listId, title) => addListEntry(listId, title));
+  ipcMain.handle('lists:toggleEntry', (_e, id, done) => toggleListEntry(id, done));
+  ipcMain.handle('lists:renameEntry', (_e, id, title) => renameListEntry(id, title));
+  ipcMain.handle('lists:removeEntry', (_e, id) => removeListEntry(id));
+  ipcMain.handle('lists:saveDoc', (_e, id, payload) => saveListDoc(id, payload || {}));
   ipcMain.handle('lists:export', (_e, id) => exportList(id));
 
   ipcMain.handle('search:query', (_e, opts) => runSearch(opts || {}));

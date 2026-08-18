@@ -11,22 +11,54 @@ function formatBackupWhen(iso) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** Exclusive policy from settings (legacy daily flag if mode missing). */
+function resolveMode(settings) {
+  const mode = settings?.backup_mode;
+  if (mode === 'daily' || mode === 'every3' || mode === 'remind' || mode === 'off') {
+    return mode;
+  }
+  return settings?.backup_auto_daily !== 'false' ? 'daily' : 'off';
+}
+
 /** Backup / restore: snapshot DB + wallpapers/sounds/themes. */
 export default function SettingsData() {
-  const { settings, updateSetting, setSettings } = useDatabase();
-  const [autoDaily, setAutoDaily] = useState(settings?.backup_auto_daily !== 'false');
+  const { settings, setSettings } = useDatabase();
+  const mode = resolveMode(settings);
+  const [remindDays, setRemindDays] = useState(settings?.backup_remind_days || '5');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [restoreTarget, setRestoreTarget] = useState(null);
 
   useEffect(() => {
-    setAutoDaily(settings?.backup_auto_daily !== 'false');
-  }, [settings?.backup_auto_daily]);
+    if (settings?.backup_remind_days) setRemindDays(String(settings.backup_remind_days));
+  }, [settings?.backup_remind_days]);
 
-  async function onToggleDaily(checked) {
-    setAutoDaily(checked);
-    await updateSetting('backup_auto_daily', checked ? 'true' : 'false');
+  /** Tick one mode (unticks the rest); ticking the active box turns all off. */
+  async function onToggleMode(next) {
+    const nextMode = mode === next ? 'off' : next;
+    const days = Math.max(1, parseInt(String(remindDays), 10) || 5);
+    setRemindDays(String(days));
+    setError('');
+    try {
+      const result = await window.api.backupSetPolicy({ mode: nextMode, remindDays: days });
+      setSettings(result);
+    } catch (err) {
+      setError(err?.message || String(err));
+    }
+  }
+
+  /** Persist interval; if remind is on, move the existing reminder due date. */
+  async function onDaysCommit(raw) {
+    const days = Math.max(1, parseInt(String(raw), 10) || 5);
+    setRemindDays(String(days));
+    setError('');
+    try {
+      const result = await window.api.backupSetPolicy({ mode, remindDays: days });
+      setSettings(result);
+    } catch (err) {
+      setError(err?.message || String(err));
+    }
   }
 
   async function onBackupNow() {
@@ -123,11 +155,47 @@ export default function SettingsData() {
         <label>
           <input
             type="checkbox"
-            checked={autoDaily}
-            onChange={(e) => onToggleDaily(e.target.checked)}
+            checked={mode === 'daily'}
+            onChange={() => onToggleMode('daily')}
           />{' '}
           Daily auto-backup on launch (if last backup is older than 24h)
         </label>
+      </div>
+
+      <div className="settings-field settings-field--check">
+        <label>
+          <input
+            type="checkbox"
+            checked={mode === 'every3'}
+            onChange={() => onToggleMode('every3')}
+          />{' '}
+          Once every 3 days auto-backup on launch
+        </label>
+      </div>
+
+      <div className="settings-field settings-field--check settings-data__remind-row">
+        <label>
+          <input
+            type="checkbox"
+            checked={mode === 'remind'}
+            onChange={() => onToggleMode('remind')}
+          />{' '}
+          I will manually backup but remind me every
+        </label>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          className="settings-data__days"
+          value={remindDays}
+          onChange={(e) => setRemindDays(e.target.value)}
+          onBlur={(e) => onDaysCommit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          aria-label="Remind every N days"
+        />
+        <span>days</span>
       </div>
 
       <div className="settings-row settings-data__actions">

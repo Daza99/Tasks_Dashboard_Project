@@ -489,7 +489,7 @@ function searchLists(parsed, filters) {
   let textSql = '1=1';
   const textVals = [];
   if (!parsed.empty) {
-    // List name OR a linked task/reminder title — same OR/AND structure, no tags
+    // List name, notepad body, or checklist title
     const groupSqls = [];
     for (const group of parsed.orGroups) {
       const parts = [];
@@ -499,11 +499,9 @@ function searchLists(parsed, filters) {
         } else {
           const pat = likePat(part.value);
           parts.push(
-            `(l.name LIKE ? ESCAPE '\\' OR EXISTS (
+            `(l.name LIKE ? ESCAPE '\\' OR IFNULL(l.content,'') LIKE ? ESCAPE '\\' OR EXISTS (
               SELECT 1 FROM list_items li
-              LEFT JOIN tasks t ON li.item_type = 'task' AND t.id = li.item_id
-              LEFT JOIN reminders r ON li.item_type = 'reminder' AND r.id = li.item_id
-              WHERE li.list_id = l.id AND (t.title LIKE ? ESCAPE '\\' OR r.title LIKE ? ESCAPE '\\')
+              WHERE li.list_id = l.id AND li.title LIKE ? ESCAPE '\\'
             ))`
           );
           textVals.push(pat, pat, pat);

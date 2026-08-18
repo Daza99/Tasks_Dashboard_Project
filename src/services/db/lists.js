@@ -1,30 +1,59 @@
 /**
- * Lists filing cabinet — named todo/reminder folders + membership.
+ * Lists — todo checklists + bullet/md notepad docs (list-local).
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
-const { getTask } = require('./tasks');
-const { getReminder } = require('./reminders');
+
+const LIST_TYPES = new Set(['todo', 'bullet', 'md']);
+
+const DEFAULT_STYLE = {
+  bulletMode: 'mixed',
+  fontFamily: 'segoe',
+  fontSize: 16,
+  fontColor: '#111111',
+  bgColor: '#ffffff',
+};
 
 function assertType(type) {
-  if (type !== 'todo' && type !== 'reminder') {
-    throw new Error('list type must be todo or reminder');
+  if (!LIST_TYPES.has(type)) {
+    throw new Error('list type must be todo, bullet, or md');
   }
 }
 
-function itemTypeForList(type) {
-  return type === 'todo' ? 'task' : 'reminder';
+/** Parse style_json; fill defaults. */
+function parseStyle(raw) {
+  try {
+    const o = raw ? JSON.parse(raw) : {};
+    return {
+      bulletMode: ['mixed', 'line', 'dot', 'numbered'].includes(o.bulletMode)
+        ? o.bulletMode
+        : DEFAULT_STYLE.bulletMode,
+      fontFamily: typeof o.fontFamily === 'string' ? o.fontFamily : DEFAULT_STYLE.fontFamily,
+      fontSize: Number.isFinite(Number(o.fontSize)) ? Number(o.fontSize) : DEFAULT_STYLE.fontSize,
+      fontColor: typeof o.fontColor === 'string' ? o.fontColor : DEFAULT_STYLE.fontColor,
+      bgColor: typeof o.bgColor === 'string' ? o.bgColor : DEFAULT_STYLE.bgColor,
+    };
+  } catch {
+    return { ...DEFAULT_STYLE };
+  }
+}
+
+function lineCount(content) {
+  if (!content || !String(content).trim()) return 0;
+  return String(content).split('\n').length;
 }
 
 function enrichList(row) {
   if (!row) return null;
-  const count = getDb()
-    .prepare('SELECT COUNT(*) AS c FROM list_items WHERE list_id = ?')
-    .get(row.id).c;
-  return { ...row, item_count: count };
+  const db = getDb();
+  const item_count =
+    row.type === 'todo'
+      ? db.prepare('SELECT COUNT(*) AS c FROM list_items WHERE list_id = ?').get(row.id).c
+      : lineCount(row.content);
+  return { ...row, item_count, style: parseStyle(row.style_json) };
 }
 
-/** Create a list. type is todo | reminder. */
+/** Create a list. type is todo | bullet | md. */
 function createList({ name, type }) {
   try {
     if (!name?.trim()) throw new Error('Name required');
@@ -46,11 +75,12 @@ function getList(id) {
 
 /**
  * Lists with optional type + created_date filter (yyyy-mm-dd).
- * @param {{ type?: 'todo'|'reminder'|'all', dateFrom?: string, dateTo?: string }} [opts]
+ * @param {{ type?: 'todo'|'bullet'|'md'|'all', dateFrom?: string, dateTo?: string }} [opts]
  */
 function listLists(opts = {}) {
   try {
     const type = opts.type && opts.type !== 'all' ? opts.type : null;
+    if (type) assertType(type);
     const parts = [];
     const vals = [];
     if (type) {
@@ -102,7 +132,7 @@ function deleteList(id) {
   }
 }
 
-/** Move all items from source → target, then delete source. Same type only. */
+/** Move source into target, then delete source. Same type only. */
 function mergeLists(sourceId, targetId) {
   try {
     if (Number(sourceId) === Number(targetId)) throw new Error('Cannot merge a list into itself');
@@ -112,19 +142,24 @@ function mergeLists(sourceId, targetId) {
     if (src.type !== dst.type) throw new Error('Lists must be the same type');
     const db = getDb();
     const tx = db.transaction(() => {
-      const items = db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(sourceId);
-      const exists = db.prepare(
-        `SELECT id FROM list_items WHERE list_id = ? AND item_type = ? AND item_id = ?`
-      );
-      const insert = db.prepare(
-        `INSERT INTO list_items (list_id, item_type, item_id) VALUES (?, ?, ?)`
-      );
-      for (const it of items) {
-        if (!exists.get(targetId, it.item_type, it.item_id)) {
-          insert.run(targetId, it.item_type, it.item_id);
-        }
+      if (src.type === 'todo') {
+        const items = db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(sourceId);
+        const maxOrder = db
+          .prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM list_items WHERE list_id = ?')
+          .get(targetId).m;
+        const insert = db.prepare(
+          `INSERT INTO list_items (list_id, title, done, sort_order) VALUES (?, ?, ?, ?)`
+        );
+        items.forEach((it, i) => {
+          insert.run(targetId, it.title, it.done, maxOrder + i + 1);
+        });
+        db.prepare('DELETE FROM list_items WHERE list_id = ?').run(sourceId);
+      } else {
+        const a = src.content || '';
+        const b = dst.content || '';
+        const merged = [b.trimEnd(), a.trim()].filter(Boolean).join('\n\n');
+        db.prepare('UPDATE lists SET content = ? WHERE id = ?').run(merged, targetId);
       }
-      db.prepare('DELETE FROM list_items WHERE list_id = ?').run(sourceId);
       db.prepare('DELETE FROM lists WHERE id = ?').run(sourceId);
     });
     tx();
@@ -139,22 +174,14 @@ function listItems(listId) {
   try {
     const list = getList(listId);
     if (!list) throw new Error('List not found');
-    const rows = getDb()
-      .prepare(
-        `SELECT * FROM list_items WHERE list_id = ? ORDER BY added_date DESC, id DESC`
-      )
-      .all(listId);
-    const items = [];
-    for (const row of rows) {
-      const item =
-        row.item_type === 'task' ? getTask(row.item_id) : getReminder(row.item_id);
-      if (!item) continue;
-      items.push({
-        membership_id: row.id,
-        added_date: row.added_date,
-        ...item,
-      });
-    }
+    const items =
+      list.type === 'todo'
+        ? getDb()
+            .prepare(
+              `SELECT * FROM list_items WHERE list_id = ? ORDER BY sort_order ASC, id ASC`
+            )
+            .all(listId)
+        : [];
     return { list, items };
   } catch (err) {
     logError('listItems', err);
@@ -162,45 +189,84 @@ function listItems(listId) {
   }
 }
 
-/**
- * Add a task/reminder to a list. Type must match list.
- * @param {number} listId
- * @param {'task'|'reminder'} itemType
- * @param {number} itemId
- */
-function addListItem(listId, itemType, itemId) {
+/** Append a checklist line. Todo lists only. */
+function addListEntry(listId, title) {
   try {
     const list = getList(listId);
     if (!list) throw new Error('List not found');
-    const expected = itemTypeForList(list.type);
-    if (itemType !== expected) {
-      throw new Error(`This list only accepts ${expected}s`);
-    }
-    const item = itemType === 'task' ? getTask(itemId) : getReminder(itemId);
-    if (!item) throw new Error('Item not found');
+    if (list.type !== 'todo') throw new Error('Only to-do lists accept checklist lines');
+    if (!title?.trim()) throw new Error('Title required');
     const db = getDb();
-    const exists = db
-      .prepare(
-        `SELECT id FROM list_items WHERE list_id = ? AND item_type = ? AND item_id = ?`
-      )
-      .get(listId, itemType, itemId);
-    if (exists) return listItems(listId);
+    const maxOrder = db
+      .prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM list_items WHERE list_id = ?')
+      .get(listId).m;
     db.prepare(
-      `INSERT INTO list_items (list_id, item_type, item_id) VALUES (?, ?, ?)`
-    ).run(listId, itemType, itemId);
+      `INSERT INTO list_items (list_id, title, done, sort_order) VALUES (?, ?, 0, ?)`
+    ).run(listId, title.trim(), maxOrder + 1);
     return listItems(listId);
   } catch (err) {
-    logError('addListItem', err);
+    logError('addListEntry', err);
     throw err;
   }
 }
 
-function removeListItem(membershipId) {
+function toggleListEntry(id, done) {
   try {
-    getDb().prepare('DELETE FROM list_items WHERE id = ?').run(membershipId);
-    return true;
+    getDb()
+      .prepare('UPDATE list_items SET done = ? WHERE id = ?')
+      .run(done ? 1 : 0, id);
+    const row = getDb().prepare('SELECT list_id FROM list_items WHERE id = ?').get(id);
+    if (!row) throw new Error('Entry not found');
+    return listItems(row.list_id);
   } catch (err) {
-    logError('removeListItem', err);
+    logError('toggleListEntry', err);
+    throw err;
+  }
+}
+
+function renameListEntry(id, title) {
+  try {
+    if (!title?.trim()) throw new Error('Title required');
+    getDb().prepare('UPDATE list_items SET title = ? WHERE id = ?').run(title.trim(), id);
+    const row = getDb().prepare('SELECT list_id FROM list_items WHERE id = ?').get(id);
+    if (!row) throw new Error('Entry not found');
+    return listItems(row.list_id);
+  } catch (err) {
+    logError('renameListEntry', err);
+    throw err;
+  }
+}
+
+function removeListEntry(id) {
+  try {
+    const row = getDb().prepare('SELECT list_id FROM list_items WHERE id = ?').get(id);
+    if (!row) return true;
+    getDb().prepare('DELETE FROM list_items WHERE id = ?').run(id);
+    return listItems(row.list_id);
+  } catch (err) {
+    logError('removeListEntry', err);
+    throw err;
+  }
+}
+
+/**
+ * Save bullet/md body + style.
+ * @param {number} id
+ * @param {{ content?: string, style?: object }} payload
+ */
+function saveListDoc(id, payload = {}) {
+  try {
+    const list = getList(id);
+    if (!list) throw new Error('List not found');
+    if (list.type === 'todo') throw new Error('To-do lists use checklist entries');
+    const nextStyle = { ...parseStyle(list.style_json), ...(payload.style || {}) };
+    const content = payload.content !== undefined ? String(payload.content) : list.content;
+    getDb()
+      .prepare('UPDATE lists SET content = ?, style_json = ? WHERE id = ?')
+      .run(content, JSON.stringify(nextStyle), id);
+    return getList(id);
+  } catch (err) {
+    logError('saveListDoc', err);
     throw err;
   }
 }
@@ -218,8 +284,12 @@ module.exports = {
   deleteList,
   mergeLists,
   listItems,
-  addListItem,
-  removeListItem,
+  addListEntry,
+  toggleListEntry,
+  renameListEntry,
+  removeListEntry,
+  saveListDoc,
   exportList,
-  itemTypeForList,
+  parseStyle,
+  DEFAULT_STYLE,
 };

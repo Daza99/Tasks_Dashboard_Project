@@ -36,7 +36,7 @@
 **Key Differentiators:**
 - Tag lifecycle system: Items automatically transition through states based on time and user action (or inaction)
 - Anti-habituation notifications: Randomized colors and sounds fight notification blindness
-- Filing cabinet Lists system: Expired items moved to named lists with date citation
+- Lists: To-Do checklists, bullet notepads, and basic markdown notes (list-local; not Tasks/Today)
 - Three-container cleanup: 7+ Days Expired, Completed, Archive — each with bulk/individual management
 - Lock feature: Per-item "never delete" protection
 - Offline-first, USB-portable, privacy-focused
@@ -118,9 +118,10 @@ personal-dashboard/
 │   │   │
 │   │   ├── lists-view/
 │   │   │   ├── ListsPanel.jsx
-│   │   │   ├── ListItemView.jsx
 │   │   │   ├── ListEditor.jsx
-│   │   │   └── ListFilter.jsx
+│   │   │   ├── TodoChecklist.jsx
+│   │   │   ├── BulletPad.jsx
+│   │   │   └── MdPad.jsx
 │   │   │
 │   │   ├── notification/
 │   │   │   ├── NotificationPopup.jsx
@@ -306,21 +307,24 @@ CREATE TABLE item_tags (
     FOREIGN KEY(tag_id) REFERENCES tags(id)
 );
 
--- LISTS TABLE (Named containers)
+-- LISTS TABLE (named folders; type = todo | bullet | md)
 CREATE TABLE lists (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL, -- 'todo', 'reminder', 'mixed'
+    type TEXT NOT NULL, -- 'todo', 'bullet', 'md'
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    parent_id INTEGER -- For future nesting capability
+    parent_id INTEGER,
+    content TEXT, -- bullet / md body
+    style_json TEXT -- { bulletMode, fontFamily, fontSize, fontColor, bgColor }
 );
 
--- LIST_ITEMS JUNCTION TABLE
+-- LIST_ITEMS (to-do checklist lines only; list-local, not Tasks)
 CREATE TABLE list_items (
     id INTEGER PRIMARY KEY,
     list_id INTEGER NOT NULL,
-    item_type TEXT NOT NULL, -- 'task', 'reminder'
-    item_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    done INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
     added_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(list_id) REFERENCES lists(id)
 );
@@ -495,38 +499,26 @@ Find rem_snoozed items past snooze time → re-fire or tag rem_ignored
 Check for orphaned tags (tags applied to deleted items, duplicates)
 Report anomalies in log panel
 7. Lists Management System
-List Creation Experience
-When creating a new to-do or reminder list:
+Three list types (tabs): To-Do lists, Bullet lists, MD lists. Reminder lists are removed (Reminders module covers that). All list content is list-local — to-do lines are not Tasks and do not appear in Today.
 
-Naming Dialog:
+List Creation
+Default name = today's long date (e.g. "Tuesday 18 August 2026"). Templates: Current Date, Project, Other. Ctrl+; inserts the date. Created citation uses yyyy-mm-dd.
 
-Default name field pre-populated with today's date and day (e.g., "Wednesday 5 August 2026")
-User can append a name (e.g., "Wednesday 5 August 2026 — House Projects") or clear and write their own
-Naming template selector:
-Current Date — auto-fills today's day + date
-Project — prompts "Enter project name:" → optionally appends date
-Custom defaults — user-defined templates
-Below the name: creation date citation (small muted text: "Created 5 Aug 2026")
-Hotkey to insert current date (Ctrl+;)
-Lists Panel (Sidebar Navigation Item: "Lists")
-Two View Modes:
+Lists Panel
+Folder rail (name + created date + count) + date Range filter (week / month / year / custom). Right-click: rename, delete, merge (same type), export .md (Phase 5 stub).
 
-Side Panel (default): Compact view, lists displayed like folders in file explorer — icon + name + creation date + item count
-Full-Screen/Expand: Click expand icon, opens Lists view into main content area with larger grid
-Features:
+To-Do lists
+Checklist only. Add a line (e.g. `[ ] Write an email to Jill`); each row has a tick-box, title, delete. Done = strike + muted. No "Add existing" task picker. No filing from Expired 7+.
 
-Clicking a list opens it in main content area
-Lists organized into two categories: To-Do Lists and Reminder Lists (toggle tabs at top)
-Filter bar: filter list headers by week date range, month, year, custom date range
-Right-click on list: rename, delete, merge, export items as .md
-Drag-and-drop items onto lists from any view
-Data Model for Lists
-lists table:
+Bullet lists
+Notepad canvas (white, dark text). Toolbar: Type of (Mixed, Line `-`, Dot `*`, Numbered `1.`), font size, font color, BG color. Enter continues the current marker; Mixed inherits the last line (numbered increments). Typed markers accepted: `-`, `*`, `1` / `1.`.
 
-id, name, type (todo/reminder), created_date, parent_id
-list_items table:
+MD lists
+Same notepad chrome without Type of. Font family: Outfit, Source Serif 4, IBM Plex Mono, Segoe UI. Basic markdown only (`#` / `##`, `**`, `*`, lists, `` ` ``, links). Edit / Preview toggle. No extra markdown library.
 
-id, list_id, item_type (task/reminder), item_id, added_date
+Data
+lists: id, name, type (todo|bullet|md), created_date, parent_id, content, style_json
+list_items: id, list_id, title, done, sort_order, added_date (todo lines only)
 8. Cleanup Containers
 Three-Container Flow
 Active Items
@@ -757,7 +749,7 @@ Scope:
 Spending graphs (monthly breakdown by category)
 Habit consistency graphs (weekly/monthly heatmap or bar chart)
 Weather widget (optional, API-fed, toggle in settings)
-Lists management system (full implementation with panel, fullscreen expand, filter)
+Lists (To-Do checklists, bullet notepads, MD notes; date filter)
 Notification randomization engine (random bg + random SFX)
 Deep theme customization UI
 Tag Inspector (auto-run on launch + manual trigger)
@@ -767,7 +759,7 @@ Deliverables:
 
 All differentiating features live
 Full tag lifecycle system operational
-Lists filing cabinet working
+Lists (todo / bullet / md) working
 Phase 5 — Polish & Export
 Scope:
 
@@ -896,7 +888,7 @@ Export	.md + PDF via Electron print API	✅ Locked
 To-do creation	Mandatory choice: 24hr or Open	✅ Locked
 To-do expiry	Auto-tag todo_expired after 24hr window	✅ Locked
 Expired handling	Stays in Today pane "Expired" section, nag visually, RMB context menu	✅ Locked
-List management system	Lists pane with folder-style UI, fullscreen expand, date filtering	✅ Locked
+List management system	To-Do / Bullet / MD tabs; list-local checklists + notepads; date filter	✅ Locked
 List naming	Default templates (Current Date, Project, Other), user-extensible	✅ Locked
 Reminder creation	Mandatory choice: Today / Tomorrow / Choose Date / Open	✅ Locked
 Reminder lifecycle	fired → ignored (if not completed) → stays in data, tagged	✅ Locked

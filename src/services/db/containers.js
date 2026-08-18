@@ -393,27 +393,6 @@ function bulkDelete(payload) {
  * File items onto a named list. Optionally lift out of expired7.
  * @param {{ items: {item_type:string,id:number}[], listId: number, from?: string }} payload
  */
-function moveToList(payload) {
-  try {
-    const { addListItem } = require('./lists');
-    const listId = Number(payload?.listId);
-    if (!listId) return { ok: false, message: 'listId required' };
-    const items = normalizeItems(payload?.items);
-    let moved = 0;
-    for (const it of items) {
-      addListItem(listId, it.item_type, it.id);
-      if (payload?.from === 'expired7') {
-        restoreItem(it.item_type, it.id, 'expired7');
-      }
-      moved += 1;
-    }
-    return { ok: true, moved };
-  } catch (err) {
-    logError('moveToList', err);
-    throw err;
-  }
-}
-
 function retentionDays() {
   return clampInt(settings().retention_days_expired, 1, 30, 7);
 }
@@ -546,7 +525,6 @@ module.exports = {
   bulkArchive,
   bulkRestore,
   bulkDelete,
-  moveToList,
   sweepContainers,
   retentionDays,
 };

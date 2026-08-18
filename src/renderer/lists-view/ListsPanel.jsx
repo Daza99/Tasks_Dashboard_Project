@@ -2,9 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { format, parseISO, startOfYear, startOfMonth, subDays } from 'date-fns';
 import { useDatabase } from '../context/DatabaseContext';
 import ConfirmDialog from '../components/ConfirmDialog';
-import LockButton from '../components/LockButton';
 import ListEditor from './ListEditor';
-import { dayStamp } from '../containers/ContainerActions';
+import TodoChecklist from './TodoChecklist';
+import BulletPad from './BulletPad';
+import MdPad from './MdPad';
+
+const TABS = [
+  { id: 'todo', label: 'To-Do lists' },
+  { id: 'bullet', label: 'Bullet lists' },
+  { id: 'md', label: 'MD lists' },
+];
 
 function createdLabel(iso) {
   if (!iso) return '';
@@ -16,7 +23,7 @@ function createdLabel(iso) {
 }
 
 /**
- * Focus Lists view — folder list + open list items.
+ * Focus Lists view — folder rail + type-specific editor.
  */
 export default function ListsPanel() {
   const { settings } = useDatabase();
@@ -42,8 +49,6 @@ export default function ListsPanel() {
   const [mergeTarget, setMergeTarget] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [notice, setNotice] = useState('');
-  const [addId, setAddId] = useState('');
-  const [candidates, setCandidates] = useState([]);
 
   const dateFilter = useMemo(() => {
     const today = new Date();
@@ -73,14 +78,7 @@ export default function ListsPanel() {
 
   async function openList(id) {
     setSelectedId(id);
-    const data = await window.api.listListItems(id);
-    setDetail(data);
-    const itemType = data.list.type === 'todo' ? 'task' : 'reminder';
-    const pool =
-      itemType === 'task' ? await window.api.listTasks() : await window.api.listReminders();
-    const memberIds = new Set(data.items.map((i) => i.id));
-    setCandidates(pool.filter((i) => !memberIds.has(i.id)));
-    setAddId('');
+    setDetail(await window.api.listListItems(id));
   }
 
   useEffect(() => {
@@ -135,56 +133,44 @@ export default function ListsPanel() {
     setMenu(null);
   }
 
-  async function addExisting() {
-    if (!addId || !detail) return;
-    const itemType = detail.list.type === 'todo' ? 'task' : 'reminder';
-    await window.api.addListItem(detail.list.id, itemType, Number(addId));
-    await openList(detail.list.id);
-    await loadLists();
+  function onTodoChanged(data) {
+    setDetail(data);
+    loadLists();
   }
 
-  async function dropItem(membershipId) {
-    await window.api.removeListItem(membershipId);
-    if (detail) await openList(detail.list.id);
-    await loadLists();
+  function onDocSaved(list) {
+    setDetail((prev) => (prev ? { ...prev, list } : { list, items: [] }));
+    loadLists();
   }
 
   return (
     <div className="module-view lists-view">
       <h1>Lists</h1>
       <p className="module-view__hint">
-        Filing cabinet for tasks and reminders. Filter by created date (date method:
-        yyyy-mm-dd). Export is Phase 5.
+        Checklists, bullet notes, and basic markdown. Filter by created date (date
+        method: yyyy-mm-dd).
       </p>
       {notice && <p className="stub-empty">{notice}</p>}
 
       <div className="kind-toggle" role="tablist">
-        <button
-          type="button"
-          className={type === 'todo' ? 'active' : ''}
-          onClick={() => {
-            setType('todo');
-            setSelectedId(null);
-            setDetail(null);
-          }}
-        >
-          To-Do lists
-        </button>
-        <button
-          type="button"
-          className={type === 'reminder' ? 'active' : ''}
-          onClick={() => {
-            setType('reminder');
-            setSelectedId(null);
-            setDetail(null);
-          }}
-        >
-          Reminder lists
-        </button>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={type === t.id ? 'active' : ''}
+            onClick={() => {
+              setType(t.id);
+              setSelectedId(null);
+              setDetail(null);
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className="module-filter-bar glass-inset">
-        <label className="bills-history-filters__field">
+        <label className="module-filter-bar__field">
           Range
           <select value={range} onChange={(e) => setRange(e.target.value)}>
             <option value="all">All</option>
@@ -196,11 +182,11 @@ export default function ListsPanel() {
         </label>
         {range === 'custom' && (
           <>
-            <label className="bills-history-filters__field">
+            <label className="module-filter-bar__field">
               From
               <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             </label>
-            <label className="bills-history-filters__field">
+            <label className="module-filter-bar__field">
               To
               <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </label>
@@ -266,44 +252,19 @@ export default function ListsPanel() {
               <p className="module-list__meta">
                 Created {createdLabel(detail.list.created_date)}
               </p>
-              <div className="lists-add">
-                <select value={addId} onChange={(e) => setAddId(e.target.value)}>
-                  <option value="">Add existing…</option>
-                  {candidates.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title}
-                    </option>
-                  ))}
-                </select>
-                <button type="button" disabled={!addId} onClick={addExisting}>
-                  Add
-                </button>
-              </div>
-              <ul className="module-list">
-                {detail.items.map((it) => (
-                  <li key={it.membership_id} className="module-list__item glass-inset">
-                    <div>
-                      <strong>{it.title}</strong>
-                      {it.locked ? ' 🔒' : ''}
-                      <div className="module-list__meta">
-                        added {dayStamp(it.added_date)}
-                      </div>
-                    </div>
-                    <div className="item-row__actions">
-                      <LockButton
-                        itemType={it.item_type}
-                        id={it.id}
-                        locked={it.locked}
-                        onChanged={() => openList(detail.list.id)}
-                      />
-                      <button type="button" onClick={() => dropItem(it.membership_id)}>
-                        Remove
-                      </button>
-                    </div>
-                  </li>
-                ))}
-                {!detail.items.length && <p className="stub-empty">Empty list.</p>}
-              </ul>
+              {detail.list.type === 'todo' && (
+                <TodoChecklist
+                  listId={detail.list.id}
+                  items={detail.items}
+                  onChanged={onTodoChanged}
+                />
+              )}
+              {detail.list.type === 'bullet' && (
+                <BulletPad list={detail.list} onSaved={onDocSaved} />
+              )}
+              {detail.list.type === 'md' && (
+                <MdPad list={detail.list} onSaved={onDocSaved} />
+              )}
             </>
           )}
         </div>
@@ -348,7 +309,7 @@ export default function ListsPanel() {
                   </option>
                 ))}
             </select>
-            <button type="button" disabled={!mergeTarget} onClick={doMerge}>
+            <button type="button" className="btn-primary" disabled={!mergeTarget} onClick={doMerge}>
               Merge
             </button>
           </div>
@@ -361,7 +322,7 @@ export default function ListsPanel() {
       <ConfirmDialog
         open={Boolean(confirm)}
         title="Delete list?"
-        message={`Delete “${confirm?.name}”? Items stay in Tasks/Reminders; only the folder is removed.`}
+        message={`Delete “${confirm?.name}” and its contents? This cannot be undone.`}
         confirmLabel="Delete"
         danger
         onCancel={() => setConfirm(null)}

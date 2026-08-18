@@ -7,6 +7,7 @@ export function DatabaseProvider({ children }) {
   const [settings, setSettings] = useState(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
+  const [backupBusy, setBackupBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,15 +27,29 @@ export function DatabaseProvider({ children }) {
     };
   }, []);
 
-  // Auto/manual backup in main — keep last_backup_* in sync for the status bar
+  // Auto/manual backup in main — splash + last_backup_* for the status bar
   useEffect(() => {
-    if (!window.api.onBackupDidRun) return undefined;
-    return window.api.onBackupDidRun(() => {
+    let cancelled = false;
+    window.api.backupStatus?.()
+      .then((s) => {
+        if (!cancelled && s?.running) setBackupBusy(true);
+      })
+      .catch(() => {});
+    const offStart = window.api.onBackupStarted?.(() => setBackupBusy(true));
+    const offEnd = window.api.onBackupEnded?.(() => setBackupBusy(false));
+    const offDid = window.api.onBackupDidRun?.(() => {
+      setBackupBusy(false);
       window.api
         .getSettings()
         .then((s) => setSettings(s))
         .catch(() => {});
     });
+    return () => {
+      cancelled = true;
+      offStart?.();
+      offEnd?.();
+      offDid?.();
+    };
   }, []);
 
   /** Persist a setting key and refresh local cache. */
@@ -44,7 +59,7 @@ export function DatabaseProvider({ children }) {
     return next;
   }
 
-  const value = { settings, ready, error, updateSetting, setSettings };
+  const value = { settings, ready, error, updateSetting, setSettings, backupBusy };
   return (
     <DatabaseContext.Provider value={value}>{children}</DatabaseContext.Provider>
   );

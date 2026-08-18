@@ -14,8 +14,11 @@ const ASSET_DIRS = ['wallpapers', 'sounds', 'themes'];
 const KEEP_LOCAL = 10;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STAMP_RE = /(\d{4}-\d{2}-\d{2}_\d{6})$/;
+const BACKUP_MODES = new Set(['daily', 'every3', 'remind', 'off']);
+const BACKUP_REMIND_TITLE = 'Backup dashboard';
 
 let lock = Promise.resolve();
+let backupRunning = false;
 
 /** Serialize backup/restore so auto + manual cannot overlap. */
 function withLock(fn) {
@@ -40,11 +43,179 @@ function ensureBackupsDir() {
   return dir;
 }
 
+function sendAllWindows(channel, payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(channel, payload);
+  }
+}
+
+/** Resolve exclusive backup policy; fall back to legacy daily flag. */
+function resolveBackupMode(s) {
+  if (s?.backup_mode && BACKUP_MODES.has(s.backup_mode)) return s.backup_mode;
+  return s?.backup_auto_daily === 'false' ? 'off' : 'daily';
+}
+
+/** Parse remind interval; default 5, minimum 1. */
+function parseRemindDays(raw) {
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 1 ? n : 5;
+}
+
+/** Local 09:00 ISO, N days after last backup (or today if none). */
+function backupRemindDueIso(lastBackupAt, days) {
+  const anchor =
+    lastBackupAt && !Number.isNaN(Date.parse(lastBackupAt))
+      ? new Date(lastBackupAt)
+      : new Date();
+  const d = new Date(anchor);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + days);
+  d.setHours(9, 0, 0, 0);
+  return d.toISOString();
+}
+
+function notifyBackupStarted() {
+  backupRunning = true;
+  sendAllWindows('backup:started');
+}
+
+function notifyBackupEnded() {
+  backupRunning = false;
+  sendAllWindows('backup:ended');
+}
+
 /** Push last-backup fields to all renderer windows. */
 function notifyBackupDidRun(payload) {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('backup:didRun', payload);
+  sendAllWindows('backup:didRun', payload);
+}
+
+/** Force-delete the Settings-owned backup reminder + calendar event. */
+function dropBackupReminder() {
+  const { deleteReminder } = require('../services/db/reminders');
+  const s = getAllSettings();
+  const id = Number(s.backup_remind_id);
+  if (Number.isFinite(id) && id > 0) {
+    try {
+      deleteReminder(id, { force: true });
+    } catch (err) {
+      logError('dropBackupReminder', err);
+    }
   }
+  setSetting('backup_remind_id', '');
+}
+
+/** Create or move the locked appointment reminder for manual-remind mode. */
+function upsertBackupReminder(days) {
+  const {
+    createReminder,
+    getReminder,
+    updateReminder,
+  } = require('../services/db/reminders');
+  const { setLocked } = require('../services/db/containers');
+  const s = getAllSettings();
+  const due = backupRemindDueIso(s.last_backup_at, days);
+  const id = Number(s.backup_remind_id);
+  const existing = Number.isFinite(id) && id > 0 ? getReminder(id) : null;
+
+  if (existing) {
+    updateReminder(existing.id, {
+      title: BACKUP_REMIND_TITLE,
+      datetime: due,
+      scope: 'dated',
+      is_appointment: 1,
+    });
+    if (!existing.locked) setLocked('reminder', existing.id, true);
+    return getReminder(existing.id);
+  }
+
+  const row = createReminder({
+    title: BACKUP_REMIND_TITLE,
+    scope: 'dated',
+    datetime: due,
+    is_appointment: 1,
+  });
+  setLocked('reminder', row.id, true);
+  setSetting('backup_remind_id', String(row.id));
+  return getReminder(row.id);
+}
+
+/**
+ * Recreate / reset the backup reminder if mode is remind.
+ * Ignored or completed rows become pending again; appointment stays on.
+ */
+function ensureBackupReminder() {
+  const s = getAllSettings();
+  if (resolveBackupMode(s) !== 'remind') return;
+  const days = parseRemindDays(s.backup_remind_days);
+  const { getReminder, updateReminder } = require('../services/db/reminders');
+  const { setLocked } = require('../services/db/containers');
+  const id = Number(s.backup_remind_id);
+  const rem = Number.isFinite(id) && id > 0 ? getReminder(id) : null;
+  if (!rem) {
+    upsertBackupReminder(days);
+    return;
+  }
+
+  const tags = rem.tags || [];
+  const stale =
+    rem.completed_at ||
+    tags.includes('rem_ignored') ||
+    tags.includes('rem_completed');
+  let due = backupRemindDueIso(s.last_backup_at, days);
+  if (stale && Date.parse(due) < Date.now()) {
+    due = backupRemindDueIso(null, days);
+  }
+  if (stale || Number(rem.is_appointment) !== 1) {
+    updateReminder(rem.id, {
+      title: BACKUP_REMIND_TITLE,
+      datetime: due,
+      scope: 'dated',
+      is_appointment: 1,
+    });
+  }
+  if (!rem.locked) setLocked('reminder', rem.id, true);
+}
+
+/** After a real snapshot, push the remind-mode due date to last-backup + N. */
+function rollBackupReminderAfterBackup() {
+  const s = getAllSettings();
+  if (resolveBackupMode(s) !== 'remind') return;
+  const days = parseRemindDays(s.backup_remind_days);
+  const { getReminder, updateReminder } = require('../services/db/reminders');
+  const id = Number(s.backup_remind_id);
+  if (!id || !getReminder(id)) {
+    upsertBackupReminder(days);
+    return;
+  }
+  updateReminder(id, {
+    title: BACKUP_REMIND_TITLE,
+    datetime: backupRemindDueIso(s.last_backup_at, days),
+    scope: 'dated',
+    is_appointment: 1,
+  });
+}
+
+/**
+ * Exclusive backup policy. Ticking a new mode unticks the previous.
+ * @param {{ mode?: string, remindDays?: number|string }} [opts]
+ * @returns {object} full settings snapshot
+ */
+function setBackupPolicy({ mode, remindDays } = {}) {
+  const current = getAllSettings();
+  const nextMode = BACKUP_MODES.has(mode) ? mode : 'off';
+  const days =
+    remindDays !== undefined
+      ? parseRemindDays(remindDays)
+      : parseRemindDays(current.backup_remind_days);
+
+  setSetting('backup_mode', nextMode);
+  setSetting('backup_remind_days', String(days));
+  setSetting('backup_auto_daily', nextMode === 'daily' ? 'true' : 'false');
+
+  if (nextMode === 'remind') upsertBackupReminder(days);
+  else dropBackupReminder();
+
+  return getAllSettings();
 }
 
 function copyAssetDirs(srcRoot, destRoot, { replace = false } = {}) {
@@ -120,6 +291,7 @@ function removeLiveDbFiles() {
  */
 async function runBackup(opts = {}) {
   const kind = opts.kind || 'manual';
+  notifyBackupStarted();
   ensureBackupsDir();
   removeStaleWritingDirs();
 
@@ -147,6 +319,7 @@ async function runBackup(opts = {}) {
       setSetting('last_backup_at', lastBackupAt);
       setSetting('last_backup_path', finalPath);
       pruneBackups();
+      rollBackupReminderAfterBackup();
       notifyBackupDidRun({ lastBackupAt, lastBackupPath: finalPath });
     }
 
@@ -164,26 +337,37 @@ async function runBackup(opts = {}) {
     }
     logError('runBackup', err);
     throw err;
+  } finally {
+    notifyBackupEnded();
   }
 }
 
-/** Status for Settings / status bar. */
+/** Status for Settings / status bar / wait splash. */
 function getBackupStatus() {
   const s = getAllSettings();
+  const mode = resolveBackupMode(s);
   return {
     lastBackupAt: s.last_backup_at || null,
     lastBackupPath: s.last_backup_path || null,
-    autoDaily: s.backup_auto_daily !== 'false',
+    autoDaily: mode === 'daily',
+    mode,
+    remindDays: parseRemindDays(s.backup_remind_days),
+    running: backupRunning,
   };
 }
 
-/** On launch: snapshot if auto enabled and last backup is missing or older than 24h. */
+/** On launch: snapshot if daily/every3 and last backup is older than the mode threshold. */
 async function maybeAutoBackup() {
   return withLock(async () => {
+    ensureBackupReminder();
     const s = getAllSettings();
-    if (s.backup_auto_daily === 'false') return { skipped: true, reason: 'disabled' };
+    const mode = resolveBackupMode(s);
+    let threshold = 0;
+    if (mode === 'daily') threshold = DAY_MS;
+    else if (mode === 'every3') threshold = 3 * DAY_MS;
+    else return { skipped: true, reason: 'disabled' };
     const last = s.last_backup_at;
-    if (last && Date.now() - Date.parse(last) < DAY_MS) {
+    if (last && Date.now() - Date.parse(last) < threshold) {
       return { skipped: true, reason: 'fresh' };
     }
     return runBackup({ kind: 'auto' });
@@ -332,6 +516,7 @@ module.exports = {
   runBackup: (opts) => withLock(() => runBackup(opts)),
   maybeAutoBackup,
   getBackupStatus,
+  setBackupPolicy,
   chooseDestAndCopy,
   pickRestoreFolder,
   restoreFromFolder,

@@ -13,9 +13,20 @@ contextBridge.exposeInMainWorld('api', {
 
   backupNow: () => ipcRenderer.invoke('backup:now'),
   backupStatus: () => ipcRenderer.invoke('backup:status'),
+  backupSetPolicy: (opts) => ipcRenderer.invoke('backup:setPolicy', opts),
   backupChooseDest: () => ipcRenderer.invoke('backup:chooseDest'),
   backupPickRestore: () => ipcRenderer.invoke('backup:pickRestore'),
   backupRestore: (folderPath) => ipcRenderer.invoke('backup:restore', folderPath),
+  onBackupStarted: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('backup:started', listener);
+    return () => ipcRenderer.removeListener('backup:started', listener);
+  },
+  onBackupEnded: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('backup:ended', listener);
+    return () => ipcRenderer.removeListener('backup:ended', listener);
+  },
   onBackupDidRun: (cb) => {
     const listener = (_e, payload) => cb(payload);
     ipcRenderer.on('backup:didRun', listener);
@@ -93,7 +104,6 @@ contextBridge.exposeInMainWorld('api', {
   bulkArchive: (payload) => ipcRenderer.invoke('containers:bulkArchive', payload),
   bulkRestore: (payload) => ipcRenderer.invoke('containers:bulkRestore', payload),
   bulkDelete: (payload) => ipcRenderer.invoke('containers:bulkDelete', payload),
-  moveToList: (payload) => ipcRenderer.invoke('containers:moveToList', payload),
   sweepContainers: () => ipcRenderer.invoke('containers:sweep'),
   setLocked: (itemType, id, locked) =>
     ipcRenderer.invoke('items:setLocked', itemType, id, locked),
@@ -105,10 +115,23 @@ contextBridge.exposeInMainWorld('api', {
   deleteList: (id) => ipcRenderer.invoke('lists:delete', id),
   mergeLists: (sourceId, targetId) => ipcRenderer.invoke('lists:merge', sourceId, targetId),
   listListItems: (id) => ipcRenderer.invoke('lists:items', id),
-  addListItem: (listId, itemType, itemId) =>
-    ipcRenderer.invoke('lists:addItem', listId, itemType, itemId),
-  removeListItem: (membershipId) => ipcRenderer.invoke('lists:removeItem', membershipId),
+  addListEntry: (listId, title) => ipcRenderer.invoke('lists:addEntry', listId, title),
+  toggleListEntry: (id, done) => ipcRenderer.invoke('lists:toggleEntry', id, done),
+  renameListEntry: (id, title) => ipcRenderer.invoke('lists:renameEntry', id, title),
+  removeListEntry: (id) => ipcRenderer.invoke('lists:removeEntry', id),
+  saveListDoc: (id, payload) => ipcRenderer.invoke('lists:saveDoc', id, payload),
   exportList: (id) => ipcRenderer.invoke('lists:export', id),
+
+  /** Main asks renderer to flush debounced pad saves before quit. */
+  onFlush: (cb) => {
+    const listener = () => {
+      Promise.resolve(cb()).catch(() => {}).finally(() => {
+        ipcRenderer.send('app:flushed');
+      });
+    };
+    ipcRenderer.on('app:flush', listener);
+    return () => ipcRenderer.removeListener('app:flush', listener);
+  },
 
   search: (opts) => ipcRenderer.invoke('search:query', opts),
   searchFilterOptions: (scope) =>

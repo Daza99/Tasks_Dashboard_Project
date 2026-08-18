@@ -5,6 +5,7 @@ import CenterBrief from './CenterBrief';
 import RightRail from './RightRail';
 import { useLayout } from '../context/LayoutContext';
 import { useDatabase } from '../context/DatabaseContext';
+import BackupWaitDialog from '../components/BackupWaitDialog';
 import {
   HOTKEY_ACTIONS,
   eventMatchesCombo,
@@ -44,7 +45,7 @@ export default function LayoutShell({
   focusContent,
 }) {
   const { isCompact, isFocus, enterFocus, enterCompact } = useLayout();
-  const { settings } = useDatabase();
+  const { settings, backupBusy } = useDatabase();
   const hotkeys = useMemo(() => parseHotkeys(settings?.hotkeys), [settings?.hotkeys]);
 
   function handleEditRequest(type, id) {
@@ -109,6 +110,8 @@ export default function LayoutShell({
 
         {isCompact && <RightRail onNavigate={onNavigate} />}
       </div>
+
+      <BackupWaitDialog open={Boolean(backupBusy)} />
 
       <footer className="status-bar">
         <span>

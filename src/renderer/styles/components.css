@@ -473,6 +473,38 @@
   cursor: pointer;
 }
 
+.settings-data__remind-row {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-data__remind-row label {
+  margin: 0;
+}
+
+/* White/black — do not use themed --input-bg (light text would invert) */
+.settings-field input.settings-data__days,
+.settings-data__days {
+  width: 3.4em;
+  background: #fff;
+  color: #111;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  padding: 2px 6px;
+  text-align: center;
+  color-scheme: light;
+}
+
+.backup-wait-dialog {
+  text-align: center;
+}
+
+.backup-wait-dialog h2 {
+  margin: 0;
+}
+
 .settings-row {
   display: flex;
   gap: 10px;
@@ -1499,7 +1531,7 @@
   gap: 8px;
   margin: 10px 0 12px;
 }
-.lists-add select {
+.lists-add input[type="text"] {
   flex: 1;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
@@ -1507,6 +1539,138 @@
   padding: 8px 10px;
   color: var(--text-primary);
 }
+.todo-check__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.todo-check__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--input-bg);
+  border-radius: 8px;
+}
+.todo-check__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.todo-check__item input {
+  flex-shrink: 0;
+}
+.todo-check__row--done .todo-check__item span {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.todo-check__row .btn-light {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.list-pad {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+}
+.list-pad__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  padding: 8px 12px;
+  background: #1e6fd9;
+  color: #fff;
+  border-radius: 8px 8px 0 0;
+}
+.list-pad__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+}
+.list-pad__field--sm {
+  min-width: 72px;
+}
+.list-pad__field select,
+.list-pad__field input[type="number"] {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: #fff;
+}
+.list-pad__field select option {
+  color: #000;
+  background: #fff;
+}
+.list-pad__field input[type="color"] {
+  width: 36px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  cursor: pointer;
+}
+.list-pad__toggle {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.list-pad__toggle--on {
+  background: #fff;
+  color: #1e6fd9;
+}
+.list-pad__canvas {
+  flex: 1;
+  min-height: 240px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--input-border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 14px 16px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
+}
+.list-pad__preview {
+  overflow: auto;
+}
+.list-pad__preview h1 {
+  font-size: 1.4em;
+  margin: 0 0 8px;
+}
+.list-pad__preview h2 {
+  font-size: 1.15em;
+  margin: 0 0 8px;
+}
+.list-pad__preview p,
+.list-pad__preview ul {
+  margin: 0 0 8px;
+}
+.list-pad__preview code {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.9em;
+}
+.md-pad__link {
+  text-decoration: underline;
+}
+
 .lists-menu {
   position: fixed;
   z-index: 70;
@@ -1527,6 +1691,12 @@
 .lists-menu button:hover {
   background: var(--sidebar-active-bg);
 }
+.lists-menu button.btn-primary {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  background: var(--accent-dim);
+  text-align: center;
+}
 .lists-menu__merge {
   display: flex;
   flex-direction: column;
@@ -1539,6 +1709,10 @@
   border-radius: 6px;
   padding: 4px 6px;
   color: var(--text-primary);
+}
+.lists-menu__merge select option {
+  color: #000;
+  background: #fff;
 }
 
 /* Global search (TopBar) */

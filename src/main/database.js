@@ -36,6 +36,8 @@ const DEFAULT_SETTINGS = {
   Debut_mode: '1',
   show_tags_always: 'false',
   backup_auto_daily: 'true',
+  backup_remind_days: '5',
+  backup_remind_id: '',
   last_backup_at: '',
   last_backup_path: '',
   hotkeys: JSON.stringify({
@@ -111,6 +113,7 @@ function initDatabase() {
     migrateSchema();
 
     seedSettings();
+    migrateBackupSettings();
     seedSystemTags();
     seedThemes();
     try {
@@ -245,6 +248,7 @@ function migrateSchema() {
 
   migrateContainerColumns();
   migrateCalendarLinks();
+  migrateListsLocal();
 }
 
 /** Linked calendar events + reminder appointment flag (existing DBs). */
@@ -280,6 +284,46 @@ function migrateCalendarLinks() {
       ON events(source_type, source_id, occurrence_date)
       WHERE source_type IS NOT NULL AND occurrence_date IS NOT NULL
   `);
+}
+
+/**
+ * Lists v2: todo|bullet|md, list-local checklist rows, drop reminder lists.
+ * One-shot flag lists_local_v1.
+ */
+function migrateListsLocal() {
+  const listCols = db.prepare('PRAGMA table_info(lists)').all().map((c) => c.name);
+  if (!listCols.includes('content')) db.exec('ALTER TABLE lists ADD COLUMN content TEXT');
+  if (!listCols.includes('style_json')) db.exec('ALTER TABLE lists ADD COLUMN style_json TEXT');
+
+  const flag = db.prepare("SELECT value FROM settings WHERE key = 'lists_local_v1'").get();
+  if (flag && flag.value === '1') return;
+
+  db.prepare(
+    `DELETE FROM list_items WHERE list_id IN (SELECT id FROM lists WHERE type = 'reminder')`
+  ).run();
+  db.prepare("DELETE FROM lists WHERE type = 'reminder'").run();
+
+  const itemCols = db.prepare('PRAGMA table_info(list_items)').all().map((c) => c.name);
+  if (itemCols.includes('item_type') || itemCols.includes('item_id')) {
+    db.exec(`
+      CREATE TABLE list_items_new (
+        id INTEGER PRIMARY KEY,
+        list_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        done INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        added_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(list_id) REFERENCES lists(id)
+      );
+    `);
+    db.exec('DROP TABLE list_items');
+    db.exec('ALTER TABLE list_items_new RENAME TO list_items');
+  }
+
+  db.prepare(
+    `INSERT INTO settings (key, value) VALUES ('lists_local_v1', '1')
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run();
 }
 
 /** Padlock + cleanup container columns; backfill locked from #locked tag. */
@@ -335,6 +379,22 @@ function seedSettings() {
     }
   });
   tx();
+}
+
+const BACKUP_MODES = new Set(['daily', 'every3', 'remind', 'off']);
+
+/** One-time: derive backup_mode from legacy backup_auto_daily (do not seed daily blindly). */
+function migrateBackupSettings() {
+  const s = getAllSettings();
+  if (!s.backup_mode || !BACKUP_MODES.has(s.backup_mode)) {
+    setSetting('backup_mode', s.backup_auto_daily === 'false' ? 'off' : 'daily');
+  }
+  if (s.backup_remind_days == null || s.backup_remind_days === '') {
+    setSetting('backup_remind_days', '5');
+  }
+  if (s.backup_remind_id == null) {
+    setSetting('backup_remind_id', '');
+  }
 }
 
 function seedSystemTags() {

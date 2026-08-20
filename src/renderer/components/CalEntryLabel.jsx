@@ -1,5 +1,7 @@
 import React from 'react';
 import { format, parseISO, isValid } from 'date-fns';
+import { formatDateKey } from '../../utils/date-format.js';
+import { useDateFormat } from '../hooks/useDateFormat';
 
 /**
  * Date-only calendar sources (synthetic 09:00). Do not add task / reminder / event.
@@ -27,13 +29,13 @@ export function eventClockLabel(ev) {
 }
 
 /** "Nudge 2026-09-17 11am" or empty when iso is missing/invalid. */
-export function formatNudgeLine(iso) {
+export function formatNudgeLine(iso, dateFormat) {
   if (!iso) return '';
   try {
     const d = typeof iso === 'string' ? parseISO(iso) : iso;
     if (!isValid(d)) return '';
     const clock = clockFromDate(d);
-    return clock ? `Nudge ${format(d, 'yyyy-MM-dd')} ${clock}` : '';
+    return clock ? `Nudge ${formatDateKey(d, dateFormat)} ${clock}` : '';
   } catch {
     return '';
   }
@@ -51,8 +53,9 @@ export function eventDisplayTitle(ev) {
  * @param {{ ev: object, className?: string }} props
  */
 export default function CalEntryLabel({ ev, className }) {
+  const { dateFormat } = useDateFormat();
   const notes = String(ev?.description || '').trim();
-  const nudgeLine = formatNudgeLine(ev?.nudge_datetime);
+  const nudgeLine = formatNudgeLine(ev?.nudge_datetime, dateFormat);
   const showTip = Boolean(nudgeLine || notes);
   return (
     <span className={`cal-entry-label${className ? ` ${className}` : ''}`}>

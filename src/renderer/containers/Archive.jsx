@@ -5,6 +5,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import LockButton from '../components/LockButton';
 import { formatTagsDisplay, userTagsOnly } from '../../utils/tag-helpers.js';
 import ContainerActions, { asRef, dayStamp, itemKey } from './ContainerActions';
+import { useDateFormat } from '../hooks/useDateFormat';
 
 /**
  * Archive (trash can) — restore or permanent delete. Retention default 3 years.
@@ -12,6 +13,7 @@ import ContainerActions, { asRef, dayStamp, itemKey } from './ContainerActions';
 export default function Archive() {
   const { refresh } = useBrief();
   const { settings } = useDatabase();
+  const { dateFormat, methodHint } = useDateFormat();
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
@@ -70,7 +72,7 @@ export default function Archive() {
       <p className="module-view__hint">
         Trash can. Restore or permanent delete. Retention {years} year(s).
         Auto-delete is {autoDel ? 'ON' : 'OFF'} (default off). Dates: (date method:
-        yyyy-mm-dd).
+        {methodHint}).
       </p>
       {size?.overLimit && (
         <p className="archive-size-warn">
@@ -141,8 +143,8 @@ export default function Archive() {
                 </div>
               </div>
               <div className="module-list__meta">
-                archived {dayStamp(r.archived_date)}
-                {r.completed_at ? ` · completed ${dayStamp(r.completed_at)}` : ''}
+                archived {dayStamp(r.archived_date, dateFormat)}
+                {r.completed_at ? ` · completed ${dayStamp(r.completed_at, dateFormat)}` : ''}
                 {userTagsOnly(r.tags).length
                   ? ` · ${formatTagsDisplay(userTagsOnly(r.tags))}`
                   : ''}

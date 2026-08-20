@@ -22,6 +22,12 @@ Transparent Electron windows often drop a thin CSS border; keep the 3px stroke +
 
 Incident: [`dev-note-notif-random-colors.md`](dev-note-notif-random-colors.md).
 
+## Lists hashtags / Tag Inspector
+
+List tags use `item_tags` with `item_type = 'list'`. Tag Inspector orphan repair **deletes** any `item_type` not in `TAGGED_TYPES` + `PARENT_TABLE`. When adding a new tagged entity type, register it there (and in `tags.js`) or tags vanish on the next scheduler/launch tick and Lists filters look empty.
+
+Incident: [`dev-note-lists-hashtag-orphan.md`](dev-note-lists-hashtag-orphan.md).
+
 ## Dates
 
 Storage and display: `yyyy-mm-dd` only. Module hints that mention dates get `(date method: yyyy-mm-dd)`.

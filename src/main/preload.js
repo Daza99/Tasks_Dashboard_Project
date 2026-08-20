@@ -57,6 +57,25 @@ contextBridge.exposeInMainWorld('api', {
   activateHabit: (id) => ipcRenderer.invoke('habits:activate', id),
   toggleCheckin: (id, date) => ipcRenderer.invoke('habits:toggleCheckin', id, date),
 
+  listTrackers: () => ipcRenderer.invoke('trackers:list'),
+  getTracker: (id) => ipcRenderer.invoke('trackers:get', id),
+  createTracker: (data) => ipcRenderer.invoke('trackers:create', data),
+  updateTracker: (id, fields) => ipcRenderer.invoke('trackers:update', id, fields),
+  deleteTracker: (id) => ipcRenderer.invoke('trackers:delete', id),
+  logTracker: (id, value) => ipcRenderer.invoke('trackers:log', id, value),
+  undoTrackerLog: (id) => ipcRenderer.invoke('trackers:undo', id),
+  trackerTimerStart: (id) => ipcRenderer.invoke('trackers:timerStart', id),
+  trackerTimerPause: (id) => ipcRenderer.invoke('trackers:timerPause', id),
+  trackerTimerReset: (id) => ipcRenderer.invoke('trackers:timerReset', id),
+  resetTracker: (id) => ipcRenderer.invoke('trackers:reset', id),
+  listTrackersDue: () => ipcRenderer.invoke('trackers:due'),
+  openTrackerPopout: (id) => ipcRenderer.invoke('trackers:popoutOpen', id),
+  onTrackersChanged: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('trackers:changed', listener);
+    return () => ipcRenderer.removeListener('trackers:changed', listener);
+  },
+
   listBills: (opts) => ipcRenderer.invoke('bills:list', opts),
   getBill: (id) => ipcRenderer.invoke('bills:get', id),
   createBill: (data) => ipcRenderer.invoke('bills:create', data),
@@ -123,6 +142,8 @@ contextBridge.exposeInMainWorld('api', {
   removeListEntry: (id) => ipcRenderer.invoke('lists:removeEntry', id),
   saveListDoc: (id, payload) => ipcRenderer.invoke('lists:saveDoc', id, payload),
   exportList: (id) => ipcRenderer.invoke('lists:export', id),
+  listHashtagWhitelist: () => ipcRenderer.invoke('lists:hashtagWhitelist'),
+  appendListHashtag: (name) => ipcRenderer.invoke('lists:appendHashtag', name),
 
   /** Main asks renderer to flush debounced pad saves before quit. */
   onFlush: (cb) => {

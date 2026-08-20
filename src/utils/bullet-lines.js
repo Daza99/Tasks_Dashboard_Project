@@ -67,6 +67,45 @@ export function insertPrefixedNewline(text, caret, mode) {
   return { text: before + insert + after, caret: before.length + insert.length };
 }
 
+/** Caret offset (chars) inside a contentEditable root. */
+export function getCaretOffset(el) {
+  const sel = window.getSelection();
+  if (!el || !sel || !sel.rangeCount) return 0;
+  const range = sel.getRangeAt(0);
+  const pre = range.cloneRange();
+  pre.selectNodeContents(el);
+  pre.setEnd(range.endContainer, range.endOffset);
+  return pre.toString().length;
+}
+
+/** Place caret at character offset inside a contentEditable root. */
+export function setCaretOffset(el, offset) {
+  if (!el) return;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let remaining = Math.max(0, offset);
+  let node = walker.nextNode();
+  while (node) {
+    if (node.length >= remaining) {
+      const r = document.createRange();
+      r.setStart(node, remaining);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      return;
+    }
+    remaining -= node.length;
+    node = walker.nextNode();
+  }
+  // Past end — collapse to end of element
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  r.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
 /**
  * Seed first line when the pad is empty and mode is locked.
  * @param {'mixed'|'line'|'dot'|'numbered'} mode

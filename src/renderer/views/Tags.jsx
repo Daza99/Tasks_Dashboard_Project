@@ -19,12 +19,13 @@ const SORT_OPTS = [
   { value: 'popular', label: 'Popular' },
 ];
 
-const TYPE_ORDER = ['task', 'reminder', 'habit', 'transaction'];
+const TYPE_ORDER = ['task', 'reminder', 'habit', 'tracker', 'transaction'];
 
 const TYPE_LABEL = {
   task: 'Tasks',
   reminder: 'Reminders',
   habit: 'Habits',
+  tracker: 'Trackers',
   transaction: 'Spending',
 };
 
@@ -231,6 +232,11 @@ export default function TagsView({ onEditRequest }) {
     await afterChange(tagName);
   }
 
+  async function deleteTracker(tagName, id) {
+    await window.api.deleteTracker(id);
+    await afterChange(tagName);
+  }
+
   return (
     <div className="module-view">
       <h1>Tags</h1>
@@ -325,6 +331,7 @@ export default function TagsView({ onEditRequest }) {
                               onToggleHabit={toggleHabit}
                               onDeleteHabit={deleteHabit}
                               onDeleteTx={deleteTx}
+                              onDeleteTracker={deleteTracker}
                             />
                           ))}
                         </ul>
@@ -371,6 +378,7 @@ function TagAttachedRow({
   onToggleHabit,
   onDeleteHabit,
   onDeleteTx,
+  onDeleteTracker,
 }) {
   const type = item.item_type;
   const locked = Boolean(item.locked);
@@ -420,6 +428,15 @@ function TagAttachedRow({
       item.nudge_time ? `nudge ${item.nudge_time}` : null,
       `streak ${item.streak || 0}`,
       item.completed_today ? 'done today' : null,
+      userTags.length ? formatTagsDisplay(userTags) : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  } else if (type === 'tracker') {
+    title = item.name;
+    meta = [
+      item.kind,
+      item.period,
       userTags.length ? formatTagsDisplay(userTags) : null,
     ]
       .filter(Boolean)
@@ -501,6 +518,15 @@ function TagAttachedRow({
               type="button"
               className="danger"
               onClick={() => onDeleteTx(tagName, item.id)}
+            >
+              Del
+            </button>
+          ) : null}
+          {type === 'tracker' ? (
+            <button
+              type="button"
+              className="danger"
+              onClick={() => onDeleteTracker(tagName, item.id)}
             >
               Del
             </button>

@@ -5,6 +5,7 @@
 export const DEFAULT_HOTKEYS = {
   calendar: 'Ctrl+C',
   projects: 'Ctrl+P',
+  trackers: 'Ctrl+T',
   habits: 'Ctrl+H',
   bills: 'Ctrl+B',
 };
@@ -12,6 +13,7 @@ export const DEFAULT_HOTKEYS = {
 export const HOTKEY_ACTIONS = [
   { id: 'calendar', label: 'Calendar', view: 'calendar' },
   { id: 'projects', label: 'Projects', view: 'projects' },
+  { id: 'trackers', label: 'Trackers', view: 'trackers' },
   { id: 'habits', label: 'Habits', view: 'habits' },
   { id: 'bills', label: 'Bills', view: 'bills' },
 ];

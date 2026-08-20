@@ -5,6 +5,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import LockButton from '../components/LockButton';
 import { formatTagsDisplay, userTagsOnly } from '../../utils/tag-helpers.js';
 import ContainerActions, { asRef, dayStamp, itemKey } from './ContainerActions';
+import { useDateFormat } from '../hooks/useDateFormat';
 
 /**
  * 7+ Days Expired — auto-moved after retention; restore / archive / delete.
@@ -12,6 +13,7 @@ import ContainerActions, { asRef, dayStamp, itemKey } from './ContainerActions';
 export default function Expired7Plus() {
   const { refresh } = useBrief();
   const { settings } = useDatabase();
+  const { dateFormat, methodHint } = useDateFormat();
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
   const [error, setError] = useState('');
@@ -76,7 +78,7 @@ export default function Expired7Plus() {
       <p className="module-view__hint">
         Auto-moved after {days} days (range 1–30 in Settings). Restore returns to
         Today Expired. Auto-delete is {autoDel ? 'ON' : 'OFF'} (default off).
-        Dates: (date method: yyyy-mm-dd).
+        Dates: (date method: {methodHint}).
       </p>
       {notice && <p className="stub-empty">{notice}</p>}
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
@@ -148,7 +150,7 @@ export default function Expired7Plus() {
                 </div>
               </div>
               <div className="module-list__meta">
-                due {dayStamp(r.due_datetime || r.datetime)}
+                due {dayStamp(r.due_datetime || r.datetime, dateFormat)}
                 {userTagsOnly(r.tags).length
                   ? ` · ${formatTagsDisplay(userTagsOnly(r.tags))}`
                   : ''}

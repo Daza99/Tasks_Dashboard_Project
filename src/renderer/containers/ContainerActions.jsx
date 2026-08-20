@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDateKey } from '../../utils/date-format.js';
 
 /**
  * Shared select-all + bulk actions for cleanup containers.
@@ -64,8 +65,8 @@ export function asRef(row) {
   return { item_type: row.item_type, id: row.id };
 }
 
-/** ISO → yyyy-mm-dd for container rows. */
-export function dayStamp(iso) {
+/** ISO → display date for container rows. */
+export function dayStamp(iso, dateFormat) {
   if (!iso || String(iso).startsWith('9999')) return '—';
-  return String(iso).slice(0, 10);
+  return formatDateKey(iso, dateFormat) || '—';
 }

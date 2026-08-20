@@ -31,10 +31,18 @@ const {
   dismissHabitNudge,
   getHabit,
 } = require('../services/db/habits');
+const { getTracker, deleteTracker } = require('../services/db/trackers');
 const { logError } = require('./logger');
 const { pickNotifTheme } = require('../utils/notif-colors.cjs');
 
-const VALID_TYPES = new Set(['reminder', 'reminder_nudge', 'task', 'bill', 'habit']);
+const VALID_TYPES = new Set([
+  'reminder',
+  'reminder_nudge',
+  'task',
+  'bill',
+  'habit',
+  'countdown',
+]);
 
 /** Unknown types / missing getter → no details block. */
 const DETAILS_GETTERS = {
@@ -43,6 +51,7 @@ const DETAILS_GETTERS = {
   task: getTask,
   bill: getBill,
   habit: getHabit,
+  countdown: getTracker,
 };
 
 /** Popup itemType → App.jsx requestEdit type. Nudge is the same reminder row. */
@@ -52,6 +61,7 @@ const ITEM_TO_EDIT_TYPE = {
   task: 'task',
   bill: 'bill',
   habit: 'habit',
+  countdown: 'tracker',
 };
 
 /** Map key → { win, resolved, itemType, id, details } */
@@ -112,7 +122,9 @@ function registerNotificationIpc() {
     try {
       const { id, itemType } = parsePayload(payload);
       markResolved(itemType, id);
-      if (itemType === 'task') completeTask(id);
+      if (itemType === 'countdown') {
+        /* already done — Done just dismisses */
+      } else if (itemType === 'task') completeTask(id);
       else if (itemType === 'bill') markPaid(id);
       else if (itemType === 'habit') markCheckin(id);
       else if (itemType === 'reminder_nudge') dismissReminderNudge(id);
@@ -128,6 +140,7 @@ function registerNotificationIpc() {
   ipcMain.handle('notif:snooze', (_e, payload, minutes) => {
     try {
       const { id, itemType } = parsePayload(payload);
+      if (itemType === 'countdown') return true;
       markResolved(itemType, id);
       if (itemType === 'task') snoozeTask(id, minutes);
       else if (itemType === 'bill') snoozeBill(id, minutes);
@@ -153,7 +166,9 @@ function registerNotificationIpc() {
     try {
       const { id, itemType } = parsePayload(payload);
       markResolved(itemType, id);
-      if (itemType === 'task') ignoreTaskAlert(id);
+      if (itemType === 'countdown') {
+        /* dismiss only — tracker stays */
+      } else if (itemType === 'task') ignoreTaskAlert(id);
       else if (itemType === 'bill') dismissBillAlert(id);
       else if (itemType === 'habit') dismissHabitNudge(id);
       else if (itemType === 'reminder_nudge') dismissReminderNudge(id);
@@ -162,6 +177,27 @@ function registerNotificationIpc() {
       return true;
     } catch (err) {
       logError('notif:ignore', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('notif:delete', (_e, payload) => {
+    try {
+      const { id, itemType } = parsePayload(payload);
+      markResolved(itemType, id);
+      if (itemType === 'countdown') {
+        deleteTracker(id);
+        try {
+          const { broadcastTrackersChanged } = require('./tracker-popout');
+          broadcastTrackersChanged(id);
+        } catch (err) {
+          logError('notif:delete broadcast', err);
+        }
+      }
+      closeNotif(itemType, id);
+      return true;
+    } catch (err) {
+      logError('notif:delete', err);
       throw err;
     }
   });
@@ -253,6 +289,7 @@ const TYPE_LABELS = {
   task: 'Task',
   bill: 'Bill',
   habit: 'Habit',
+  countdown: 'Countdown',
 };
 
 /**
@@ -339,7 +376,9 @@ function showItemNotification(item) {
       if (!entry || entry.resolved) return;
       entry.resolved = true;
       try {
-        if (itemType === 'task') ignoreTaskAlert(item.id);
+        if (itemType === 'countdown') {
+          /* leave tracker in the list */
+        } else if (itemType === 'task') ignoreTaskAlert(item.id);
         else if (itemType === 'bill') dismissBillAlert(item.id);
         else if (itemType === 'habit') dismissHabitNudge(item.id);
         else if (itemType === 'reminder_nudge') dismissReminderNudge(item.id);
@@ -367,4 +406,5 @@ module.exports = {
   showReminderNotification,
   registerNotificationIpc,
   setDashboardWindow,
+  getDashboardWindow,
 };

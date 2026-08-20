@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Tracker</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+        font-family: "Segoe UI", Candara, sans-serif;
+        overflow: hidden;
+        user-select: none;
+      }
+      .card {
+        margin: 4px;
+        height: calc(100% - 8px);
+        border-radius: 14px;
+        background: #f4f1ea;
+        border: 3px solid #4a5a6a;
+        box-shadow: 0 0 0 3px #4a5a6a, 0 8px 28px rgba(0, 0, 0, 0.45);
+        padding: 10px 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        color: #111111;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+      .card.done {
+        background: #f3e6e6;
+        border-color: #8a3a3a;
+        box-shadow: 0 0 0 3px #8a3a3a, 0 8px 28px rgba(0, 0, 0, 0.45);
+      }
+      .chrome {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex: 0 0 auto;
+        -webkit-app-region: drag;
+      }
+      .chrome-btns {
+        display: flex;
+        gap: 4px;
+        flex: 0 0 auto;
+        -webkit-app-region: no-drag;
+      }
+      .label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        opacity: 0.55;
+      }
+      .chrome-btn,
+      .close {
+        width: 28px;
+        height: 24px;
+        padding: 0;
+        border-radius: 6px;
+        border: 1px solid #4a5a6a;
+        background: rgba(255, 255, 255, 0.55);
+        color: #111111;
+        cursor: pointer;
+        -webkit-app-region: no-drag;
+      }
+      .chrome-btn:hover {
+        background: #fff;
+      }
+      .close:hover {
+        background: rgba(255, 92, 92, 0.35);
+      }
+      .controls {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: auto;
+        -webkit-app-region: no-drag;
+      }
+      .unit {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .meta {
+        font-size: 11px;
+        opacity: 0.7;
+        margin: 0 0 6px;
+      }
+      .clock {
+        font-size: 28px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      button.act {
+        border: 1px solid #4a5a6a;
+        background: rgba(255, 255, 255, 0.7);
+        color: #111111;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.act:hover {
+        background: #fff;
+      }
+      button.act.active {
+        border-color: #111;
+        background: #fff;
+        font-weight: 600;
+      }
+      button.face {
+        font-size: 26px;
+        padding: 4px 6px;
+        line-height: 1;
+        filter: saturate(1.15) brightness(1.12);
+      }
+      button.face.active {
+        filter: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="card">
+      <div class="chrome">
+        <span class="label" id="kindLabel">Tracker</span>
+        <div class="chrome-btns">
+          <button type="button" class="chrome-btn" id="minBtn" aria-label="Minimize">−</button>
+          <button type="button" class="close" id="closeBtn" aria-label="Close">✕</button>
+        </div>
+      </div>
+      <div class="controls" id="root"></div>
+    </div>
+    <script>
+      const FACES = ["😫", "😕", "😐", "🙂", "😄"];
+      const ENERGY = ["😩", "😪", "😐", "🙂"];
+      const FACE_LABELS = ["Very bad", "Bad", "Neutral", "Good", "Great"];
+      const ENERGY_LABELS = ["Very tired", "Tired", "Neutral", "Normal"];
+      let state = { controls: [] };
+      let tickId = null;
+
+      function formatMs(ms) {
+        const n = Math.max(0, Math.floor(Number(ms) / 1000));
+        const h = Math.floor(n / 3600);
+        const m = Math.floor((n % 3600) / 60);
+        const s = n % 60;
+        if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+        return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+      }
+
+      function liveDisplay(c) {
+        const base = Number(c.elapsed_ms) || 0;
+        let elapsed = base;
+        if (c.status === "running" && c.started_at) {
+          const t = Date.parse(c.started_at);
+          if (Number.isFinite(t)) elapsed = base + Math.max(0, Date.now() - t);
+        }
+        if (c.kind === "countdown") {
+          const dur = Number(c.config && c.config.duration_ms) || 0;
+          return Math.max(0, dur - elapsed);
+        }
+        return elapsed;
+      }
+
+      function render() {
+        const root = document.getElementById("root");
+        const card = document.getElementById("card");
+        const kindLabel = document.getElementById("kindLabel");
+        const first = (state.controls || [])[0];
+        kindLabel.textContent = first ? first.kind : "Tracker";
+        card.classList.toggle("done", Boolean(first && first.status === "done"));
+        root.innerHTML = "";
+        for (const c of state.controls || []) {
+          const wrap = document.createElement("div");
+          const title = document.createElement("div");
+          title.className = "unit";
+          title.textContent = c.name;
+          wrap.appendChild(title);
+          if (c.kind === "count") {
+            const meta = document.createElement("p");
+            meta.className = "meta";
+            const unit = (c.config && c.config.unit) || "";
+            const target = c.config && c.config.target;
+            meta.textContent =
+              "this period " +
+              (c.period_total || 0) +
+              (target != null ? "/" + target : "") +
+              (unit ? " " + unit : "");
+            wrap.appendChild(meta);
+            const row = document.createElement("div");
+            row.className = "row";
+            const minus = document.createElement("button");
+            minus.className = "act";
+            minus.textContent = "−";
+            minus.onclick = () => window.trackerApi.log(c.id, -(c.config.step || 1));
+            const plus = document.createElement("button");
+            plus.className = "act";
+            plus.textContent = "+";
+            plus.onclick = () => window.trackerApi.log(c.id, c.config.step || 1);
+            const undo = document.createElement("button");
+            undo.className = "act";
+            undo.textContent = "Undo";
+            undo.onclick = () => window.trackerApi.undo(c.id);
+            row.appendChild(minus);
+            row.appendChild(plus);
+            row.appendChild(undo);
+            wrap.appendChild(row);
+          } else if (c.kind === "scale") {
+            const min = c.config.min;
+            const max = c.config.max;
+            const span = max - min + 1;
+            const row = document.createElement("div");
+            row.className = "row";
+            if (span > 12) {
+              const sel = document.createElement("select");
+              sel.style.color = "#111";
+              for (let v = min; v <= max; v++) {
+                const opt = document.createElement("option");
+                opt.value = String(v);
+                opt.textContent = String(v);
+                if (c.last_value === v) opt.selected = true;
+                sel.appendChild(opt);
+              }
+              const go = document.createElement("button");
+              go.className = "act";
+              go.textContent = "Log";
+              go.onclick = () => window.trackerApi.log(c.id, Number(sel.value));
+              row.appendChild(sel);
+              row.appendChild(go);
+            } else {
+              for (let v = min; v <= max; v++) {
+                const b = document.createElement("button");
+                b.className = "act" + (c.last_value === v ? " active" : "");
+                b.textContent = String(v);
+                b.onclick = () => window.trackerApi.log(c.id, v);
+                row.appendChild(b);
+              }
+            }
+            wrap.appendChild(row);
+          } else if (c.kind === "mood" || c.kind === "energy") {
+            const faces = c.kind === "energy" ? ENERGY : FACES;
+            const labels = c.kind === "energy" ? ENERGY_LABELS : FACE_LABELS;
+            const row = document.createElement("div");
+            row.className = "row";
+            faces.forEach((face, i) => {
+              const v = i + 1;
+              const b = document.createElement("button");
+              b.className = "act face" + (c.last_value === v ? " active" : "");
+              b.textContent = face;
+              b.title = labels[i] || face;
+              b.setAttribute("aria-label", labels[i] || face);
+              b.onclick = () => window.trackerApi.log(c.id, v);
+              row.appendChild(b);
+            });
+            wrap.appendChild(row);
+          } else if (c.kind === "stopwatch" || c.kind === "countdown") {
+            const clock = document.createElement("div");
+            clock.className = "clock";
+            clock.dataset.id = String(c.id);
+            clock.textContent = formatMs(liveDisplay(c));
+            wrap.appendChild(clock);
+            const row = document.createElement("div");
+            row.className = "row";
+            const tog = document.createElement("button");
+            tog.className = "act";
+            tog.textContent = c.status === "running" ? "Pause" : c.status === "done" ? "Restart" : "Start";
+            tog.onclick = () => {
+              if (c.status === "running") window.trackerApi.timerPause(c.id);
+              else window.trackerApi.timerStart(c.id);
+            };
+            const reset = document.createElement("button");
+            reset.className = "act";
+            reset.textContent = "Reset";
+            reset.onclick = () => window.trackerApi.timerReset(c.id);
+            row.appendChild(tog);
+            row.appendChild(reset);
+            wrap.appendChild(row);
+          }
+          root.appendChild(wrap);
+        }
+      }
+
+      function tickClocks() {
+        for (const c of state.controls || []) {
+          if (c.kind !== "stopwatch" && c.kind !== "countdown") continue;
+          const el = document.querySelector('.clock[data-id="' + c.id + '"]');
+          if (el) el.textContent = formatMs(liveDisplay(c));
+        }
+      }
+
+      document.getElementById("closeBtn").onclick = () => window.trackerApi.close();
+      document.getElementById("minBtn").onclick = () => window.trackerApi.minimize();
+
+      window.trackerApi.onState((payload) => {
+        state = payload || { controls: [] };
+        render();
+      });
+
+      window.trackerApi.getState().then((payload) => {
+        state = payload || { controls: [] };
+        render();
+      });
+
+      tickId = setInterval(tickClocks, 250);
+    </script>
+  </body>
+</html>

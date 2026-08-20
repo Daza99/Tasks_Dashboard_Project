@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Minimized Trackers</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #f4f1ea;
+        font-family: "Segoe UI", Candara, sans-serif;
+        color: #111111;
+        user-select: none;
+      }
+      .wrap {
+        box-sizing: border-box;
+        height: 100%;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        opacity: 0.6;
+        font-weight: 600;
+      }
+      .empty {
+        font-size: 13px;
+        opacity: 0.7;
+        margin: 12px 0 0;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        overflow: auto;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid #4a5a6a;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+      .name {
+        font-size: 13px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      button.act {
+        border: 1px solid #4a5a6a;
+        background: rgba(255, 255, 255, 0.85);
+        color: #111111;
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+      button.act:hover {
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Minimized Trackers</h1>
+      <ul id="list"></ul>
+      <p class="empty" id="empty" hidden>None minimized.</p>
+    </div>
+    <script>
+      function render(payload) {
+        const items = (payload && payload.items) || [];
+        const list = document.getElementById("list");
+        const empty = document.getElementById("empty");
+        list.innerHTML = "";
+        empty.hidden = items.length > 0;
+        for (const item of items) {
+          const li = document.createElement("li");
+          const name = document.createElement("span");
+          name.className = "name";
+          name.textContent = item.name || "Tracker";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "act";
+          btn.textContent = "Restore";
+          btn.onclick = () => window.trackerApi.dockRestore(item.id);
+          li.appendChild(name);
+          li.appendChild(btn);
+          list.appendChild(li);
+        }
+      }
+
+      window.trackerApi.onDockList(render);
+      window.trackerApi.dockList().then(render);
+    </script>
+  </body>
+</html>

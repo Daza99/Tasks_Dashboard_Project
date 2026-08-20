@@ -4,12 +4,14 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import LockButton from '../components/LockButton';
 import { formatTagsDisplay, userTagsOnly } from '../../utils/tag-helpers.js';
 import ContainerActions, { asRef, dayStamp, itemKey } from './ContainerActions';
+import { useDateFormat } from '../hooks/useDateFormat';
 
 /**
  * Completed container — un-complete, archive, or delete. Filter by date/type/tag.
  */
 export default function Completed() {
   const { refresh } = useBrief();
+  const { dateFormat, methodHint } = useDateFormat();
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
   const [notice, setNotice] = useState('');
@@ -73,7 +75,7 @@ export default function Completed() {
       <h1>Completed</h1>
       <p className="module-view__hint">
         Completed tasks and reminders. Restore un-completes. Filter dates
-        (date method: yyyy-mm-dd).
+        (date method: {methodHint}).
       </p>
       {notice && <p className="stub-empty">{notice}</p>}
 
@@ -177,7 +179,7 @@ export default function Completed() {
                 </div>
               </div>
               <div className="module-list__meta">
-                completed {dayStamp(r.completed_at)}
+                completed {dayStamp(r.completed_at, dateFormat)}
                 {userTagsOnly(r.tags).length
                   ? ` · ${formatTagsDisplay(userTagsOnly(r.tags))}`
                   : ''}

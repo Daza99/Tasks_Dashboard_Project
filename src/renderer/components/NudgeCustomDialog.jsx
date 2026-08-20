@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { addDays, format, parseISO } from 'date-fns';
+import { useDateFormat } from '../hooks/useDateFormat';
 
 /** Inclusive yyyy-MM-dd list from today through `endDate` (clamped to today if past). */
 function datesThrough(endDate) {
@@ -35,6 +36,7 @@ export default function NudgeCustomDialog({
   onSave,
   onCancel,
 }) {
+  const { formatDate, methodHint } = useDateFormat();
   const options = useMemo(() => datesThrough(dueDate), [dueDate]);
   const [date, setDate] = useState(options[0] || '');
   const [clock, setClock] = useState(time || '09:00');
@@ -59,14 +61,14 @@ export default function NudgeCustomDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="nudge-custom-title">Custom nudge</h2>
-        <p>When to ping before the reminder (date method: yyyy-mm-dd).</p>
+        <p>When to ping before the reminder (date method: {methodHint}).</p>
         <div className="nudge-custom-fields">
           <label className="edit-label">
             Date
             <select value={date} onChange={(e) => setDate(e.target.value)}>
               {options.map((d) => (
                 <option key={d} value={d}>
-                  {d}
+                  {formatDate(d)}
                 </option>
               ))}
             </select>

@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS = {
   active_theme_id: '1',
   layout_mode: 'compact',
   display_name: '',
+  date_format: 'ymd',
   Debut_mode: '1',
   show_tags_always: 'false',
   backup_auto_daily: 'true',
@@ -43,6 +44,7 @@ const DEFAULT_SETTINGS = {
   hotkeys: JSON.stringify({
     calendar: 'Ctrl+C',
     projects: 'Ctrl+P',
+    trackers: 'Ctrl+T',
     habits: 'Ctrl+H',
     bills: 'Ctrl+B',
   }),
@@ -250,6 +252,8 @@ function migrateSchema() {
   migrateContainerColumns();
   migrateCalendarLinks();
   migrateListsLocal();
+  migrateListsHashtagBackfill();
+  migrateListsHashtagRetagAfterInspector();
   migrateTagInspector();
 }
 
@@ -370,6 +374,85 @@ function migrateListsLocal() {
 
   db.prepare(
     `INSERT INTO settings (key, value) VALUES ('lists_local_v1', '1')
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run();
+}
+
+/**
+ * One-shot: tag existing lists with #list so the default hashtag filter
+ * is not empty. Flag lists_hashtag_backfill_v1.
+ */
+function migrateListsHashtagBackfill() {
+  const flag = db
+    .prepare("SELECT value FROM settings WHERE key = 'lists_hashtag_backfill_v1'")
+    .get();
+  if (flag && flag.value === '1') return;
+
+  db.prepare(
+    `INSERT OR IGNORE INTO tags (name, color, is_system) VALUES ('list', NULL, 0)`
+  ).run();
+  const listTag = db.prepare(`SELECT id FROM tags WHERE name = 'list'`).get();
+  if (listTag) {
+    const lists = db.prepare('SELECT id FROM lists').all();
+    const hasUserTag = db.prepare(
+      `SELECT 1 FROM item_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.item_type = 'list' AND it.item_id = ? AND t.is_system = 0
+       LIMIT 1`
+    );
+    const link = db.prepare(
+      `INSERT INTO item_tags (item_type, item_id, tag_id) VALUES ('list', ?, ?)`
+    );
+    for (const row of lists) {
+      if (!hasUserTag.get(row.id)) link.run(row.id, listTag.id);
+    }
+  }
+
+  // Seed whitelist file so autocomplete has #list
+  try {
+    require('../services/list-hashtags').readWhitelist();
+  } catch {
+    /* ignore — file created on first Lists visit */
+  }
+
+  db.prepare(
+    `INSERT INTO settings (key, value) VALUES ('lists_hashtag_backfill_v1', '1')
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run();
+}
+
+/**
+ * Re-tag lists whose #list tags were wiped by Tag Inspector orphan repair
+ * (item_type 'list' was not in TAGGED_TYPES). Flag lists_hashtag_retag_v2.
+ */
+function migrateListsHashtagRetagAfterInspector() {
+  const flag = db
+    .prepare("SELECT value FROM settings WHERE key = 'lists_hashtag_retag_v2'")
+    .get();
+  if (flag && flag.value === '1') return;
+
+  db.prepare(
+    `INSERT OR IGNORE INTO tags (name, color, is_system) VALUES ('list', NULL, 0)`
+  ).run();
+  const listTag = db.prepare(`SELECT id FROM tags WHERE name = 'list'`).get();
+  if (listTag) {
+    const lists = db.prepare('SELECT id FROM lists').all();
+    const hasUserTag = db.prepare(
+      `SELECT 1 FROM item_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.item_type = 'list' AND it.item_id = ? AND t.is_system = 0
+       LIMIT 1`
+    );
+    const link = db.prepare(
+      `INSERT INTO item_tags (item_type, item_id, tag_id) VALUES ('list', ?, ?)`
+    );
+    for (const row of lists) {
+      if (!hasUserTag.get(row.id)) link.run(row.id, listTag.id);
+    }
+  }
+
+  db.prepare(
+    `INSERT INTO settings (key, value) VALUES ('lists_hashtag_retag_v2', '1')
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`
   ).run();
 }

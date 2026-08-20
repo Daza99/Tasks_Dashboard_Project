@@ -111,6 +111,30 @@ CREATE TABLE IF NOT EXISTS notes (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Trackers: counts, scales, mood, energy, stopwatch, countdown (not the timers stub)
+CREATE TABLE IF NOT EXISTS trackers (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL, -- count | scale | mood | energy | stopwatch | countdown
+    period TEXT NOT NULL, -- daily | weekly | monthly | bimonthly | as_needed
+    config_json TEXT NOT NULL DEFAULT '{}',
+    keep INTEGER NOT NULL DEFAULT 1, -- countdown: 1 Keep, 0 Once
+    status TEXT NOT NULL DEFAULT 'idle', -- idle | running | paused | done
+    started_at DATETIME,
+    elapsed_ms INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    description TEXT,
+    priority INTEGER DEFAULT 3
+);
+
+CREATE TABLE IF NOT EXISTS tracker_logs (
+    id INTEGER PRIMARY KEY,
+    tracker_id INTEGER NOT NULL,
+    logged_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    value REAL,
+    FOREIGN KEY(tracker_id) REFERENCES trackers(id) ON DELETE CASCADE
+);
+
 -- Timers module stub (Phase 3); Compact UI reserves a scroll slot
 CREATE TABLE IF NOT EXISTS timers (
     id INTEGER PRIMARY KEY,

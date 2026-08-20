@@ -6,6 +6,7 @@ import PrioritySelect from '../components/PrioritySelect';
 import DetailsInline from '../components/DetailsInline';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { useDateFormat } from '../hooks/useDateFormat';
 
 const RECUR = [
   { id: '', label: 'once' },
@@ -61,6 +62,7 @@ export default function BillsView({
   onSeedConsumed,
 }) {
   const { refresh } = useBrief();
+  const { methodHint } = useDateFormat();
   const [mode, setMode] = useState('edit'); // edit | history
   const [rows, setRows] = useState([]);
   const [name, setName] = useState('');
@@ -362,7 +364,7 @@ export default function BillsView({
       <p className="module-view__hint">
         {isHistory
           ? 'Filter paid history by year, month, and bill name. Highest/Lowest sort by amount.'
-          : 'Due dates + recurrence. Estimate or Calc Average for variable bills. Paid advances recurring bills and logs actuals (date method: yyyy-mm-dd).'}
+          : `Due dates + recurrence. Estimate or Calc Average for variable bills. Paid advances recurring bills and logs actuals (date method: ${methodHint}).`}
       </p>
 
       {isHistory ? (

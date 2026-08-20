@@ -9,6 +9,7 @@ import TodayView from './views/Today';
 import TasksView from './views/Tasks';
 import RemindersView from './views/Reminders';
 import HabitsView from './views/Habits';
+import TrackersView from './views/Trackers';
 import BillsView from './views/Bills';
 import CalendarView from './views/Calendar';
 import SpendingView from './views/Spending';
@@ -25,6 +26,7 @@ const EDIT_VIEW = {
   bill: 'bills',
   event: 'calendar',
   habit: 'habits',
+  tracker: 'trackers',
   transaction: 'spending',
   list: 'lists',
 };
@@ -122,6 +124,13 @@ function AppInner() {
     focusContent = (
       <HabitsView
         editId={editRequest?.type === 'habit' ? editRequest.id : null}
+        onEditConsumed={clearEditRequest}
+      />
+    );
+  } else if (activeView === 'trackers') {
+    focusContent = (
+      <TrackersView
+        editId={editRequest?.type === 'tracker' ? editRequest.id : null}
         onEditConsumed={clearEditRequest}
       />
     );

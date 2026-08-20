@@ -10,12 +10,14 @@ const { sweepContainers } = require('./containers');
 const { markOverdueBills } = require('./bills');
 
 const MAX_RUNS = 50;
-const TAGGED_TYPES = ['task', 'reminder', 'habit', 'transaction'];
+const TAGGED_TYPES = ['task', 'reminder', 'habit', 'transaction', 'tracker', 'list'];
 const PARENT_TABLE = {
   task: 'tasks',
   reminder: 'reminders',
   habit: 'habits',
   transaction: 'transactions',
+  tracker: 'trackers',
+  list: 'lists',
 };
 
 /**

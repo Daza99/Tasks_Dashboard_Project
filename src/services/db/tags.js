@@ -149,7 +149,7 @@ function listItemIdsWithTag(itemType, tagName) {
     .map((r) => r.id);
 }
 
-const TAGGED_TYPES = ['task', 'reminder', 'habit', 'transaction'];
+const TAGGED_TYPES = ['task', 'reminder', 'habit', 'transaction', 'tracker', 'list'];
 
 /**
  * User tags with attachment counts (unused tags included as usage 0).
@@ -185,6 +185,7 @@ function hydrateTaggedItem(itemType, itemId) {
   if (itemType === 'reminder') return require('./reminders').getReminder(itemId);
   if (itemType === 'habit') return require('./habits').getHabit(itemId);
   if (itemType === 'transaction') return require('./transactions').getTransaction(itemId);
+  if (itemType === 'tracker') return require('./trackers').getTracker(itemId);
   return null;
 }
 
@@ -236,11 +237,17 @@ function listTagItems(tagName, { limit = 10, offset = 0 } = {}) {
            JOIN item_tags it ON it.item_type = 'transaction' AND it.item_id = x.id
            JOIN tags tg ON tg.id = it.tag_id
            WHERE tg.name = ?
+           UNION ALL
+           SELECT 'tracker', k.id, k.created_at
+           FROM trackers k
+           JOIN item_tags it ON it.item_type = 'tracker' AND it.item_id = k.id
+           JOIN tags tg ON tg.id = it.tag_id
+           WHERE tg.name = ?
          ) attached
          ORDER BY attached.created_at DESC
          LIMIT ? OFFSET ?`
       )
-      .all(bare, bare, bare, bare, cap, skip);
+      .all(bare, bare, bare, bare, bare, cap, skip);
     const items = [];
     for (const row of rows) {
       const item = hydrateTaggedItem(row.item_type, row.item_id);

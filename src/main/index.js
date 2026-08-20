@@ -9,6 +9,7 @@ const { ensureDirs } = require('./portable-paths');
 const { logError } = require('./logger');
 const { startScheduler, stopScheduler } = require('./scheduler');
 const { setDashboardWindow } = require('./notification-window');
+const { closeAllTrackerPopouts } = require('./tracker-popout');
 const { maybeAutoBackup } = require('./backup');
 
 const isDev = !app.isPackaged;
@@ -19,6 +20,7 @@ let flushing = false;
 
 function shutdown() {
   stopScheduler();
+  closeAllTrackerPopouts();
   closeDatabase();
 }
 

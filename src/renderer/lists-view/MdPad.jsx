@@ -1,5 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { renderBasicMd } from '../../utils/basic-md.js';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  editHtmlToMd,
+  mdToEditHtml,
+  renderBasicMd,
+} from '../../utils/basic-md.js';
 import { registerDocFlusher } from './docFlush.js';
 
 const FONTS = [
@@ -9,12 +13,22 @@ const FONTS = [
   { id: 'segoe', label: 'Segoe UI', css: '"Segoe UI", sans-serif' },
 ];
 
+const SAVE_FLASH_MS = 2500;
+
 function fontCss(id) {
   return FONTS.find((f) => f.id === id)?.css || FONTS[3].css;
 }
 
+/** True if the selection is a non-collapsed range inside el. */
+function selectionIn(el) {
+  const sel = window.getSelection();
+  if (!el || !sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+  return el.contains(sel.anchorNode);
+}
+
 /**
  * Basic-markdown notepad. Same chrome as BulletPad minus Type of.
+ * Edit surface is uncontrolled contenteditable so mixed colors + undo work.
  * @param {{
  *   list: { id: number, content?: string, style: object },
  *   onSaved: (list: object) => void,
@@ -28,8 +42,13 @@ export default function MdPad({ list, onSaved }) {
   const [fontSize, setFontSize] = useState(style.fontSize || 16);
   const [fontColor, setFontColor] = useState(style.fontColor || '#111111');
   const [bgColor, setBgColor] = useState(style.bgColor || '#ffffff');
+  const [swatchOverride, setSwatchOverride] = useState(null);
+  const [savingFlash, setSavingFlash] = useState(false);
   const timer = useRef(null);
   const dirty = useRef(false);
+  const ceRef = useRef(null);
+  const saveFlashTimer = useRef(null);
+  const seenListId = useRef(list.id);
   const pending = useRef({
     content: list.content || '',
     style: {
@@ -39,6 +58,21 @@ export default function MdPad({ list, onSaved }) {
       bgColor: style.bgColor || '#ffffff',
     },
   });
+
+  // Keep pending in sync before paint when switching lists.
+  if (seenListId.current !== list.id) {
+    seenListId.current = list.id;
+    pending.current = {
+      content: list.content || '',
+      style: {
+        fontFamily: style.fontFamily || 'segoe',
+        fontSize: style.fontSize || 16,
+        fontColor: style.fontColor || '#111111',
+        bgColor: style.bgColor || '#ffffff',
+      },
+    };
+    dirty.current = false;
+  }
 
   async function flushNow() {
     clearTimeout(timer.current);
@@ -50,21 +84,41 @@ export default function MdPad({ list, onSaved }) {
   }
 
   useEffect(() => {
-    setContent(list.content || '');
+    const next = list.content || '';
+    setContent(next);
     setFontFamily(style.fontFamily || 'segoe');
     setFontSize(style.fontSize || 16);
     setFontColor(style.fontColor || '#111111');
     setBgColor(style.bgColor || '#ffffff');
     setPreview(false);
+    setSwatchOverride(null);
   }, [list.id]);
+
+  // Fill CE only on list switch or leaving Preview — never on each keystroke.
+  useLayoutEffect(() => {
+    if (preview) return;
+    const el = ceRef.current;
+    if (!el) return;
+    el.innerHTML = mdToEditHtml(pending.current.content);
+  }, [list.id, preview]);
 
   useEffect(() => {
     const unsub = registerDocFlusher(flushNow);
     return () => {
       unsub();
       void flushNow();
+      clearTimeout(saveFlashTimer.current);
     };
   }, [list.id]);
+
+  useEffect(() => {
+    if (preview) return undefined;
+    function onSel() {
+      if (!selectionIn(ceRef.current)) setSwatchOverride(null);
+    }
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, [preview]);
 
   function persist(nextContent, nextStyle) {
     pending.current = { content: nextContent, style: nextStyle };
@@ -93,10 +147,98 @@ export default function MdPad({ list, onSaved }) {
     persist(content, currentStyle(partial));
   }
 
-  function onChange(e) {
-    const v = e.target.value;
-    setContent(v);
-    persist(v, currentStyle());
+  /** Read CE → markdown state (does not rewrite innerHTML). */
+  function syncFromCe() {
+    const el = ceRef.current;
+    if (!el) return;
+    const md = editHtmlToMd(el);
+    setContent(md);
+    persist(md, currentStyle());
+  }
+
+  /** Wrap selection with MD markers via insertText (native-undoable). */
+  function applyFormat(marker) {
+    const el = ceRef.current;
+    if (!el || preview) return;
+    el.focus();
+    const sel = window.getSelection();
+    if (!sel) return;
+    const text = sel.toString();
+    const mLen = marker.length;
+    if (
+      text.length >= mLen * 2 &&
+      text.startsWith(marker) &&
+      text.endsWith(marker)
+    ) {
+      document.execCommand('insertText', false, text.slice(mLen, text.length - mLen));
+    } else if (text.length === 0) {
+      document.execCommand('insertText', false, marker + marker);
+      if (sel.rangeCount) {
+        const r = sel.getRangeAt(0);
+        const node = r.startContainer;
+        const off = r.startOffset - mLen;
+        if (node.nodeType === 3 && off >= 0) {
+          r.setStart(node, off);
+          r.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(r);
+        }
+      }
+    } else {
+      document.execCommand('insertText', false, marker + text + marker);
+    }
+    syncFromCe();
+  }
+
+  /** Hold selection when clicking format / color controls. */
+  function keepSelection(e) {
+    e.preventDefault();
+  }
+
+  function onFontColor(e) {
+    const hex = e.target.value;
+    const el = ceRef.current;
+    if (!preview && selectionIn(el)) {
+      el.focus();
+      document.execCommand('styleWithCSS', false, true);
+      document.execCommand('foreColor', false, hex);
+      setSwatchOverride(hex);
+      syncFromCe();
+      return;
+    }
+    setSwatchOverride(null);
+    bump({ fontColor: hex });
+  }
+
+  function onSelCheck() {
+    if (!selectionIn(ceRef.current)) setSwatchOverride(null);
+  }
+
+  function onKeyDown(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    document.execCommand('insertText', false, '\n');
+  }
+
+  function onPaste(e) {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  }
+
+  function hist(cmd) {
+    const el = ceRef.current;
+    if (!el || preview) return;
+    el.focus();
+    document.execCommand(cmd);
+    syncFromCe();
+  }
+
+  function onSaveClick() {
+    setSavingFlash(true);
+    clearTimeout(saveFlashTimer.current);
+    saveFlashTimer.current = setTimeout(() => setSavingFlash(false), SAVE_FLASH_MS);
+    void flushNow();
   }
 
   const canvasStyle = {
@@ -106,11 +248,13 @@ export default function MdPad({ list, onSaved }) {
     background: bgColor,
   };
 
+  const swatchValue = swatchOverride || fontColor;
+
   return (
     <div className="list-pad">
       <div className="list-pad__bar">
         <label className="list-pad__field">
-          Font
+          <span className="list-pad__caption list-pad__caption--font">Font</span>
           <select
             value={fontFamily}
             onChange={(e) => bump({ fontFamily: e.target.value })}
@@ -132,22 +276,147 @@ export default function MdPad({ list, onSaved }) {
             onChange={(e) => bump({ fontSize: Number(e.target.value) || 16 })}
           />
         </label>
-        <label className="list-pad__field list-pad__field--sm">
-          Font color
-          <input
-            type="color"
-            value={fontColor}
-            onChange={(e) => bump({ fontColor: e.target.value })}
-          />
-        </label>
-        <label className="list-pad__field list-pad__field--sm">
-          BG Color
-          <input
-            type="color"
-            value={bgColor}
-            onChange={(e) => bump({ bgColor: e.target.value })}
-          />
-        </label>
+        <div className="list-pad__swatches">
+          <label className="list-pad__field list-pad__field--swatch">
+            <span className="list-pad__caption list-pad__caption--font-color">
+              Font color
+            </span>
+            <input
+              type="color"
+              value={swatchValue}
+              onMouseDown={keepSelection}
+              onChange={onFontColor}
+            />
+          </label>
+          <label className="list-pad__field list-pad__field--swatch">
+            <span className="list-pad__caption">BG Color</span>
+            <input
+              type="color"
+              value={bgColor}
+              onChange={(e) => bump({ bgColor: e.target.value })}
+            />
+          </label>
+        </div>
+        <div className="list-pad__tools">
+          <button
+            type="button"
+            className="list-pad__fmt"
+            title="Bold"
+            disabled={preview}
+            onMouseDown={keepSelection}
+            onClick={() => applyFormat('**')}
+          >
+            B
+          </button>
+          <button
+            type="button"
+            className="list-pad__fmt list-pad__fmt--italic"
+            title="Italic"
+            disabled={preview}
+            onMouseDown={keepSelection}
+            onClick={() => applyFormat('*')}
+          >
+            I
+          </button>
+          <button
+            type="button"
+            className="list-pad__fmt list-pad__fmt--strike"
+            title="Strikethrough"
+            disabled={preview}
+            onMouseDown={keepSelection}
+            onClick={() => applyFormat('~~')}
+          >
+            S
+          </button>
+          <div className="list-pad__save-col">
+            <span
+              className={`list-pad__saving${savingFlash ? ' list-pad__saving--visible' : ''}`}
+            >
+              Saving..
+            </span>
+            <button
+              type="button"
+              className="list-pad__save"
+              title="Save"
+              onClick={onSaveClick}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M6 3h10l5 5v13a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M8 3v6h8V3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M8 15h8v6H8z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+              </svg>
+            </button>
+          </div>
+          <button
+            type="button"
+            className="list-pad__hist"
+            title="Undo"
+            disabled={preview}
+            onMouseDown={keepSelection}
+            onClick={() => hist('undo')}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M9 14 4 9l5-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="list-pad__hist"
+            title="Redo"
+            disabled={preview}
+            onMouseDown={keepSelection}
+            onClick={() => hist('redo')}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M15 14l5-5-5-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
         <button
           type="button"
           className={`list-pad__toggle${preview ? ' list-pad__toggle--on' : ''}`}
@@ -164,13 +433,20 @@ export default function MdPad({ list, onSaved }) {
           dangerouslySetInnerHTML={{ __html: renderBasicMd(content) || '<p></p>' }}
         />
       ) : (
-        <textarea
-          className="list-pad__canvas"
-          value={content}
-          onChange={onChange}
-          spellCheck
-          placeholder="# Heading&#10;**bold** *italic*&#10;- list"
+        <div
+          ref={ceRef}
+          className={`list-pad__canvas list-pad__editor${content ? '' : ' list-pad__editor--empty'}`}
           style={canvasStyle}
+          contentEditable
+          suppressContentEditableWarning
+          spellCheck
+          data-placeholder="# Heading  **bold** *italic*  - list"
+          onInput={syncFromCe}
+          onKeyDown={onKeyDown}
+          onPaste={onPaste}
+          onSelect={onSelCheck}
+          onKeyUp={onSelCheck}
+          onMouseUp={onSelCheck}
         />
       )}
     </div>

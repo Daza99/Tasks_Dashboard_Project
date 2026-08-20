@@ -7,6 +7,7 @@ const TITLES = {
   inbox: 'Inbox',
   projects: 'Projects',
   habits: 'Habits',
+  trackers: 'Trackers',
   tags: 'Tags',
   spending: 'Spending',
   bills: 'Bills',

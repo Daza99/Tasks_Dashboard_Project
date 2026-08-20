@@ -1,14 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import TagAuditLog from './TagAuditLog';
-
-/** Format ISO timestamp as yyyy-mm-dd HH:mm (local). */
-function fmtWhen(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+import { useDateFormat } from '../hooks/useDateFormat';
 
 function countLine(counts = {}) {
   const bits = [
@@ -28,6 +20,7 @@ function countLine(counts = {}) {
  * @param {{ onInspected?: () => void }} props
  */
 export default function TagInspector({ onInspected }) {
+  const { formatDateTime } = useDateFormat();
   const [last, setLast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -89,7 +82,7 @@ export default function TagInspector({ onInspected }) {
       {last ? (
         <>
           <p className="tag-inspector__meta">
-            Last run: {last.trigger || '—'} · {fmtWhen(last.ran_at)} ·{' '}
+            Last run: {last.trigger || '—'} · {formatDateTime(last.ran_at) || '—'} ·{' '}
             {countLine(last.counts)}
           </p>
           {anomalies.length ? (

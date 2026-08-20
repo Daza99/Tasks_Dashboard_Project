@@ -15,6 +15,12 @@ Read [`docs/DEV_REMINDER.md`](docs/DEV_REMINDER.md) before planning. Confirm wit
 
 Popup text is locked `#111`; fills stay light. `notif_random_bg` must be the string `'true'` or every popup is cream + slate. `INSERT OR IGNORE` does not update existing settings — migrate keys required. Keep the 3px border + box-shadow ring on the transparent window. Do not restore dark card + white text. Incident: [`docs/dev-note-notif-random-colors.md`](docs/dev-note-notif-random-colors.md).
 
+## Lists hashtags / Tag Inspector
+
+List tags use `item_tags` with `item_type = 'list'`. Tag Inspector orphan repair deletes any `item_type` not in `TAGGED_TYPES` + `PARENT_TABLE`. Register new tagged types there (and in `tags.js`) or tags vanish on the next tick and Lists filters look empty.
+
+Incident: [`docs/dev-note-lists-hashtag-orphan.md`](docs/dev-note-lists-hashtag-orphan.md).
+
 ## Dates / layout
 
 Dates: `yyyy-mm-dd`. Compact vs Focus as in `.cursorrules`. No decorative corner brackets.

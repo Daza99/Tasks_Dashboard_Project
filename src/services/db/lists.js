@@ -3,6 +3,12 @@
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
+const { addTag, getItemTagNames } = require('./tags');
+const { appendHashtag } = require('../list-hashtags');
+const {
+  normalizeTagName,
+  userTagsOnly,
+} = require('../../utils/tag-helpers.cjs');
 
 const LIST_TYPES = new Set(['todo', 'bullet', 'md']);
 
@@ -50,18 +56,28 @@ function enrichList(row) {
     row.type === 'todo'
       ? db.prepare('SELECT COUNT(*) AS c FROM list_items WHERE list_id = ?').get(row.id).c
       : lineCount(row.content);
-  return { ...row, item_count, style: parseStyle(row.style_json) };
+  const tags = userTagsOnly(getItemTagNames('list', row.id));
+  return { ...row, item_count, style: parseStyle(row.style_json), tags };
 }
 
-/** Create a list. type is todo | bullet | md. */
-function createList({ name, type }) {
+/**
+ * Create a list. type is todo | bullet | md.
+ * Optional tag (bare or #prefixed) is attached via item_tags + whitelist file.
+ */
+function createList({ name, type, tag }) {
   try {
     if (!name?.trim()) throw new Error('Name required');
     assertType(type);
     const info = getDb()
       .prepare('INSERT INTO lists (name, type) VALUES (?, ?)')
       .run(name.trim(), type);
-    return getList(Number(info.lastInsertRowid));
+    const id = Number(info.lastInsertRowid);
+    const bare = normalizeTagName(tag);
+    if (bare) {
+      addTag('list', id, bare);
+      appendHashtag(bare);
+    }
+    return getList(id);
   } catch (err) {
     logError('createList', err);
     throw err;
@@ -74,15 +90,25 @@ function getList(id) {
 }
 
 /**
- * Lists with optional type + created_date filter (yyyy-mm-dd).
- * @param {{ type?: 'todo'|'bullet'|'md'|'all', dateFrom?: string, dateTo?: string }} [opts]
+ * Lists with optional type + created_date filter (yyyy-mm-dd) + tag.
+ * @param {{ type?: 'todo'|'bullet'|'md'|'all', dateFrom?: string, dateTo?: string, tag?: string }} [opts]
  */
 function listLists(opts = {}) {
   try {
     const type = opts.type && opts.type !== 'all' ? opts.type : null;
     if (type) assertType(type);
-    const parts = [];
-    const vals = [];
+    const bareTag = normalizeTagName(opts.tag);
+    // Empty/invalid tag → no matches (filter bar always sends a tag)
+    if (!bareTag) return [];
+
+    const parts = [
+      `EXISTS (
+        SELECT 1 FROM item_tags it
+        JOIN tags t ON t.id = it.tag_id
+        WHERE it.item_type = 'list' AND it.item_id = lists.id AND t.name = ?
+      )`,
+    ];
+    const vals = [bareTag];
     if (type) {
       parts.push('type = ?');
       vals.push(type);
@@ -95,7 +121,7 @@ function listLists(opts = {}) {
       parts.push('date(created_date) <= date(?)');
       vals.push(opts.dateTo);
     }
-    const where = parts.length ? `WHERE ${parts.join(' AND ')}` : '';
+    const where = `WHERE ${parts.join(' AND ')}`;
     const rows = getDb()
       .prepare(`SELECT * FROM lists ${where} ORDER BY created_date DESC, id DESC`)
       .all(...vals);
@@ -122,6 +148,9 @@ function deleteList(id) {
     const db = getDb();
     const tx = db.transaction(() => {
       db.prepare('DELETE FROM list_items WHERE list_id = ?').run(id);
+      db.prepare(
+        `DELETE FROM item_tags WHERE item_type = 'list' AND item_id = ?`
+      ).run(id);
       db.prepare('DELETE FROM lists WHERE id = ?').run(id);
     });
     tx();

@@ -14,6 +14,7 @@ import DetailsInline from '../components/DetailsInline';
 import NudgeCustomDialog from '../components/NudgeCustomDialog';
 import { formatNudgeLine } from '../components/CalEntryLabel';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { useDateFormat } from '../hooks/useDateFormat';
 
 function fmt(iso) {
   if (!iso || String(iso).startsWith('9999')) return 'Open';
@@ -99,6 +100,7 @@ function NudgeRow({ nudge, mode, dueDate, onNudgeChange, onDayBefore, onCustom }
 
 /** Live “Nudge yyyy-MM-dd 11am” under the row; hidden when Nudge is off. */
 function NudgePreview({ nudge, mode, dueDate, dueTime, customDate, customTime }) {
+  const { dateFormat } = useDateFormat();
   if (!nudge) return null;
   let when = null;
   if (mode === 'custom') {
@@ -107,7 +109,7 @@ function NudgePreview({ nudge, mode, dueDate, dueTime, customDate, customTime })
     const due = parseISO(`${dueDate}T${dueTime || '09:00'}:00`);
     when = isValid(due) ? addDays(due, -1) : null;
   }
-  const line = formatNudgeLine(when);
+  const line = formatNudgeLine(when, dateFormat);
   if (!line) return null;
   return <div className="nudge-preview">{line}</div>;
 }

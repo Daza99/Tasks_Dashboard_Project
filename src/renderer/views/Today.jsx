@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import BillPayConfirm from '../components/BillPayConfirm';
+import { useDateFormat } from '../hooks/useDateFormat';
 
 function fmtWhen(iso) {
   if (!iso || iso.startsWith('9999')) return 'Open';
@@ -23,6 +24,7 @@ function fmtWhen(iso) {
  */
 export default function TodayView({ onEditRequest }) {
   const { brief, loading, error, refresh } = useBrief();
+  const { methodHint } = useDateFormat();
   const [payingId, setPayingId] = useState(null);
   const [payActual, setPayActual] = useState('');
 
@@ -68,7 +70,7 @@ export default function TodayView({ onEditRequest }) {
     <div className="today-view">
       <h1 className="today-view__title">Today</h1>
       <p className="today-view__meta">
-        Due today only (date method: yyyy-mm-dd)
+        Due today only (date method: {methodHint})
       </p>
 
       {loading && !brief && <p className="today-view__meta">Loading…</p>}

@@ -1,11 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO, startOfYear, startOfMonth, subDays } from 'date-fns';
 import { useDatabase } from '../context/DatabaseContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ListEditor from './ListEditor';
+import ListHashtagInput from './ListHashtagInput';
 import TodoChecklist from './TodoChecklist';
 import BulletPad from './BulletPad';
 import MdPad from './MdPad';
+import { useDateFormat } from '../hooks/useDateFormat';
+import { formatTagDisplay, normalizeTagName } from '../../utils/tag-helpers.js';
+import { invalidateListHashtagWhitelist } from '../hooks/useListHashtagWhitelist';
 
 const TABS = [
   { id: 'todo', label: 'To-Do lists' },
@@ -27,6 +31,7 @@ function createdLabel(iso) {
  */
 export default function ListsPanel() {
   const { settings } = useDatabase();
+  const { methodHint } = useDateFormat();
   const templates = useMemo(() => {
     try {
       const raw = settings?.list_naming_templates;
@@ -41,6 +46,7 @@ export default function ListsPanel() {
   const [range, setRange] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [hashtag, setHashtag] = useState('#list');
   const [lists, setLists] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -49,6 +55,7 @@ export default function ListsPanel() {
   const [mergeTarget, setMergeTarget] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [notice, setNotice] = useState('');
+  const tagDebounce = useRef(null);
 
   const dateFilter = useMemo(() => {
     const today = new Date();
@@ -67,8 +74,10 @@ export default function ListsPanel() {
     return {};
   }, [range, dateFrom, dateTo]);
 
+  const bareTag = useMemo(() => normalizeTagName(hashtag), [hashtag]);
+
   async function loadLists() {
-    const rows = await window.api.listLists({ type, ...dateFilter });
+    const rows = await window.api.listLists({ type, tag: bareTag, ...dateFilter });
     setLists(rows);
     if (selectedId && !rows.some((l) => l.id === selectedId)) {
       setSelectedId(null);
@@ -82,8 +91,12 @@ export default function ListsPanel() {
   }
 
   useEffect(() => {
-    loadLists();
-  }, [type, dateFilter]);
+    clearTimeout(tagDebounce.current);
+    tagDebounce.current = setTimeout(() => {
+      loadLists();
+    }, 150);
+    return () => clearTimeout(tagDebounce.current);
+  }, [type, dateFilter, bareTag]);
 
   useEffect(() => {
     function close() {
@@ -94,7 +107,8 @@ export default function ListsPanel() {
   }, []);
 
   async function create(name) {
-    const list = await window.api.createList({ name, type });
+    const list = await window.api.createList({ name, type, tag: bareTag || 'list' });
+    invalidateListHashtagWhitelist();
     setEditor(null);
     await loadLists();
     await openList(list.id);
@@ -148,7 +162,7 @@ export default function ListsPanel() {
       <h1>Lists</h1>
       <p className="module-view__hint">
         Checklists, bullet notes, and basic markdown. Filter by created date (date
-        method: yyyy-mm-dd).
+        method: {methodHint}).
       </p>
       {notice && <p className="stub-empty">{notice}</p>}
 
@@ -192,6 +206,10 @@ export default function ListsPanel() {
             </label>
           </>
         )}
+        <label className="module-filter-bar__field module-filter-bar__field--hashtag">
+          Hashtag
+          <ListHashtagInput value={hashtag} onChange={setHashtag} />
+        </label>
         <button type="button" className="btn-primary" onClick={() => setEditor('create')}>
           New list
         </button>
@@ -236,6 +254,9 @@ export default function ListsPanel() {
                   <div className="module-list__meta">
                     {createdLabel(l.created_date)} · {l.item_count} item
                     {l.item_count === 1 ? '' : 's'}
+                    {l.tags?.length
+                      ? ` · ${l.tags.map((t) => formatTagDisplay(t)).join(' ')}`
+                      : ''}
                   </div>
                 </span>
               </button>
@@ -251,6 +272,9 @@ export default function ListsPanel() {
               <h2>{detail.list.name}</h2>
               <p className="module-list__meta">
                 Created {createdLabel(detail.list.created_date)}
+                {detail.list.tags?.length
+                  ? ` · ${detail.list.tags.map((t) => formatTagDisplay(t)).join(' ')}`
+                  : ''}
               </p>
               {detail.list.type === 'todo' && (
                 <TodoChecklist

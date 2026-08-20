@@ -11,6 +11,7 @@ import {
   eventMatchesCombo,
   parseHotkeys,
 } from '../../utils/hotkeys.js';
+import { formatDateKey, resolveDateFormat } from '../../utils/date-format.js';
 
 /** True when Home should stay with the field (caret-to-start). */
 function isTypingTarget(el) {
@@ -20,13 +21,12 @@ function isTypingTarget(el) {
   return Boolean(el.isContentEditable);
 }
 
-/** Status-bar date: yyyy-mm-dd or never. */
-function formatStatusBackupDate(iso) {
+/** Status-bar date: display format or never. */
+function formatStatusBackupDate(iso, dateFormat) {
   if (!iso) return 'never';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'never';
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return formatDateKey(d, dateFormat) || 'never';
 }
 
 /**
@@ -120,7 +120,12 @@ export default function LayoutShell({
         <span>Sync: N/A</span>
         <span>
           Last Backup:{' '}
-          <strong>{formatStatusBackupDate(settings?.last_backup_at)}</strong>
+          <strong>
+            {formatStatusBackupDate(
+              settings?.last_backup_at,
+              resolveDateFormat(settings?.date_format)
+            )}
+          </strong>
         </span>
         <span>Mode: {isFocus ? 'Focus' : 'Compact'}</span>
       </footer>

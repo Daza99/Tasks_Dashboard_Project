@@ -1,15 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import ConfirmDialog from '../components/ConfirmDialog';
-
-/** Format ISO timestamp as yyyy-mm-dd HH:mm (local). */
-function formatBackupWhen(iso) {
-  if (!iso) return 'never';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 'never';
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+import { useDateFormat } from '../hooks/useDateFormat';
 
 /** Exclusive policy from settings (legacy daily flag if mode missing). */
 function resolveMode(settings) {
@@ -23,6 +15,7 @@ function resolveMode(settings) {
 /** Backup / restore: snapshot DB + wallpapers/sounds/themes. */
 export default function SettingsData() {
   const { settings, setSettings } = useDatabase();
+  const { formatDateTime, methodHint } = useDateFormat();
   const mode = resolveMode(settings);
   const [remindDays, setRemindDays] = useState(settings?.backup_remind_days || '5');
   const [busy, setBusy] = useState(false);
@@ -130,17 +123,17 @@ export default function SettingsData() {
     }
   }
 
-  const lastLabel = formatBackupWhen(settings?.last_backup_at);
+  const lastLabel = formatDateTime(settings?.last_backup_at) || 'never';
   const restoreWhen =
     restoreTarget?.created
-      ? formatBackupWhen(restoreTarget.created)
+      ? formatDateTime(restoreTarget.created) || 'never'
       : restoreTarget?.stamp || restoreTarget?.path;
 
   return (
     <div>
       <p className="module-view__hint">
         Snapshots include dashboard.db plus wallpapers, sounds, and themes (date method:
-        yyyy-mm-dd).
+        {methodHint}).
       </p>
 
       <div className="settings-field">

@@ -155,6 +155,7 @@
       <div class="actions">
         <button type="button" class="secondary" id="btn-view">VIEW</button>
         <button type="button" class="secondary" id="btn-snooze">Snooze</button>
+        <button type="button" class="secondary" id="btn-delete" hidden>Delete</button>
         <button type="button" id="btn-done">Done</button>
       </div>
     </div>
@@ -163,7 +164,7 @@
       const id = Number(params.get('id'));
       const rawItemType = params.get('itemType');
       // Preserve habit|bill|task|reminder (old ternary coerced habit/bill → reminder)
-      const VALID = new Set(['reminder', 'reminder_nudge', 'task', 'bill', 'habit']);
+      const VALID = new Set(['reminder', 'reminder_nudge', 'task', 'bill', 'habit', 'countdown']);
       const itemType = VALID.has(rawItemType) ? rawItemType : 'reminder';
       const payload = { id, itemType };
       const title = params.get('title') || 'Reminder';
@@ -193,6 +194,12 @@
       card.style.setProperty('--notif-border', borderColor);
       card.style.setProperty('--notif-text', textColor);
       document.getElementById('btn-snooze').textContent = 'Snooze ' + snoozeMins + 'm';
+      if (itemType === 'countdown') {
+        document.getElementById('btn-snooze').hidden = true;
+        const del = document.getElementById('btn-delete');
+        del.hidden = false;
+        del.onclick = () => window.notifApi.delete(payload);
+      }
 
       window.notifApi.getMeta().then((meta) => {
         const text = meta && meta.details ? String(meta.details).trim() : '';

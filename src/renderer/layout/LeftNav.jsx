@@ -9,6 +9,7 @@ const TABS = [
 
 const NAV_ITEMS = [
   { id: 'projects', label: 'Projects', icon: '▣' },
+  { id: 'trackers', label: 'Trackers', icon: '⊕' },
   { id: 'habits', label: 'Habits', icon: '◎' },
   { id: 'tags', label: 'Tags', icon: '#' },
   { id: 'spending', label: 'Spending', icon: '$' },
@@ -58,27 +59,29 @@ export default function LeftNav({ activeView, onNavigate }) {
         })}
       </div>
 
-      <button
-        type="button"
-        className={`nav-inbox${activeView === 'inbox' ? ' nav-inbox--active' : ''}`}
-        onClick={() => open('inbox')}
-      >
-        <span aria-hidden>✉</span> Inbox
-      </button>
+      <div className="left-nav__glance">
+        <button
+          type="button"
+          className={`nav-inbox${activeView === 'inbox' ? ' nav-inbox--active' : ''}`}
+          onClick={() => open('inbox')}
+        >
+          <span aria-hidden>✉</span> Inbox
+        </button>
 
-      <button
-        type="button"
-        className={`nav-item${activeView === 'today' ? ' nav-item--active' : ''}`}
-        onClick={() => open('today')}
-      >
-        <span className="nav-item__label">
-          <span aria-hidden>●</span>
-          Today
-        </span>
-        <span className="nav-item__chevron" aria-hidden>
-          ▾
-        </span>
-      </button>
+        <button
+          type="button"
+          className={`nav-item${activeView === 'today' ? ' nav-item--active' : ''}`}
+          onClick={() => open('today')}
+        >
+          <span className="nav-item__label">
+            <span aria-hidden>●</span>
+            Today
+          </span>
+          <span className="nav-item__chevron" aria-hidden>
+            ▾
+          </span>
+        </button>
+      </div>
 
       <div className="nav-list">
         {NAV_ITEMS.map((item) => (

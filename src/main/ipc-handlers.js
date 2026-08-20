@@ -102,8 +102,30 @@ const {
   saveListDoc,
   exportList,
 } = require('../services/db/lists');
+const { readWhitelist, appendHashtag } = require('../services/list-hashtags');
+const {
+  createTracker,
+  getTracker,
+  listTrackers,
+  updateTracker,
+  deleteTracker,
+  logValue,
+  undoLastLog,
+  timerStart,
+  timerPause,
+  timerReset,
+  resetTracker,
+  listDueThisPeriod,
+} = require('../services/db/trackers');
 const { inspectTags, listInspectLog } = require('../services/db/tag-inspector');
 const { registerNotificationIpc } = require('./notification-window');
+const {
+  registerTrackerPopoutIpc,
+  openTrackerPopout,
+  closeTrackerPopout,
+  broadcastTrackersChanged,
+  ensureTick,
+} = require('./tracker-popout');
 const { parseQuickAdd } = require('../utils/quick-add-parser');
 const { runSearch, searchFilterOptions } = require('../services/db/search');
 const {
@@ -117,6 +139,7 @@ const {
 
 function registerIpcHandlers() {
   registerNotificationIpc();
+  registerTrackerPopoutIpc();
 
   ipcMain.handle('settings:getAll', () => {
     try {
@@ -279,6 +302,60 @@ function registerIpcHandlers() {
   ipcMain.handle('habits:activate', (_e, id) => activateHabit(id));
   ipcMain.handle('habits:toggleCheckin', (_e, id, date) => toggleCheckin(id, date));
 
+  // --- Trackers ---
+  ipcMain.handle('trackers:list', () => listTrackers());
+  ipcMain.handle('trackers:get', (_e, id) => getTracker(id));
+  ipcMain.handle('trackers:create', (_e, data) => {
+    const row = createTracker(data || {});
+    if (row?.kind === 'countdown') ensureTick();
+    broadcastTrackersChanged(row?.id);
+    return row;
+  });
+  ipcMain.handle('trackers:update', (_e, id, fields) => {
+    const row = updateTracker(id, fields || {});
+    broadcastTrackersChanged(id);
+    return row;
+  });
+  ipcMain.handle('trackers:delete', (_e, id) => {
+    const ok = deleteTracker(id);
+    broadcastTrackersChanged(id);
+    return ok;
+  });
+  ipcMain.handle('trackers:log', (_e, id, value) => {
+    const row = logValue(id, value);
+    broadcastTrackersChanged(id);
+    return row;
+  });
+  ipcMain.handle('trackers:undo', (_e, id) => {
+    const row = undoLastLog(id);
+    broadcastTrackersChanged(id);
+    return row;
+  });
+  ipcMain.handle('trackers:timerStart', (_e, id) => {
+    const row = timerStart(id);
+    if (row?.kind === 'countdown') ensureTick();
+    broadcastTrackersChanged(id);
+    return row;
+  });
+  ipcMain.handle('trackers:timerPause', (_e, id) => {
+    const row = timerPause(id);
+    broadcastTrackersChanged(id);
+    return row;
+  });
+  ipcMain.handle('trackers:timerReset', (_e, id) => {
+    const row = timerReset(id);
+    broadcastTrackersChanged(id);
+    return row;
+  });
+  ipcMain.handle('trackers:reset', (_e, id) => {
+    const row = resetTracker(id);
+    broadcastTrackersChanged(id);
+    return row;
+  });
+  ipcMain.handle('trackers:due', () => listDueThisPeriod());
+  ipcMain.handle('trackers:popoutOpen', (_e, id) => openTrackerPopout(id));
+  ipcMain.handle('trackers:popoutClose', (_e, id) => closeTrackerPopout(id));
+
   // --- Bills ---
   ipcMain.handle('bills:list', (_e, opts) => listBills(opts || {}));
   ipcMain.handle('bills:get', (_e, id) => getBill(id));
@@ -364,6 +441,8 @@ function registerIpcHandlers() {
   ipcMain.handle('lists:removeEntry', (_e, id) => removeListEntry(id));
   ipcMain.handle('lists:saveDoc', (_e, id, payload) => saveListDoc(id, payload || {}));
   ipcMain.handle('lists:export', (_e, id) => exportList(id));
+  ipcMain.handle('lists:hashtagWhitelist', () => readWhitelist());
+  ipcMain.handle('lists:appendHashtag', (_e, name) => appendHashtag(name));
 
   ipcMain.handle('search:query', (_e, opts) => runSearch(opts || {}));
   ipcMain.handle('search:filterOptions', (_e, scope) =>

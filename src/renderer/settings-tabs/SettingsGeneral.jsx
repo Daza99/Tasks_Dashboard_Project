@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
+import { dateMethodHint, resolveDateFormat } from '../../utils/date-format.js';
 
 const FADE_MS = 300;
 const SAVED_HIDE_MS = 10000;
@@ -19,6 +20,7 @@ export default function SettingsGeneral() {
     settings?.notif_random_bg === 'true'
   );
   const [showTags, setShowTags] = useState(settings?.show_tags_always === 'true');
+  const [dateFormat, setDateFormat] = useState(resolveDateFormat(settings?.date_format));
   const [debutMode, setDebutMode] = useState(String(settings?.Debut_mode) === '1');
   const [retentionDays, setRetentionDays] = useState(
     settings?.retention_days_expired || '7'
@@ -44,6 +46,7 @@ export default function SettingsGeneral() {
     setSnoozeMins(settings?.notif_default_snooze_minutes || '10');
     setRandomNotifColors(settings?.notif_random_bg === 'true');
     setShowTags(settings?.show_tags_always === 'true');
+    setDateFormat(resolveDateFormat(settings?.date_format));
     setDebutMode(String(settings?.Debut_mode) === '1');
     setRetentionDays(settings?.retention_days_expired || '7');
     setAutoDelExpired(settings?.auto_delete_expired7 === 'true');
@@ -175,9 +178,40 @@ export default function SettingsGeneral() {
         </label>
       </div>
 
+      <fieldset className="settings-field settings-field--radios">
+        <legend>Date format</legend>
+        <p className="module-view__hint">
+          Display only — stored dates stay yyyy-mm-dd. Native date pickers follow the OS.
+        </p>
+        <label>
+          <input
+            type="radio"
+            name="date-format"
+            checked={dateFormat === 'ymd'}
+            onChange={async () => {
+              setDateFormat('ymd');
+              await updateSetting('date_format', 'ymd');
+            }}
+          />{' '}
+          yyyy-mm-dd
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="date-format"
+            checked={dateFormat === 'dmy'}
+            onChange={async () => {
+              setDateFormat('dmy');
+              await updateSetting('date_format', 'dmy');
+            }}
+          />{' '}
+          dd-mm-yyyy
+        </label>
+      </fieldset>
+
       <h2 className="settings-subhead">Cleanup / Archive</h2>
       <p className="module-view__hint">
-        Move-to-container delay and retention (date method: yyyy-mm-dd).
+        Move-to-container delay and retention (date method: {dateMethodHint(dateFormat)}).
       </p>
 
       <div className="settings-field">

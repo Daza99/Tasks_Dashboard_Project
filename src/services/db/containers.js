@@ -399,7 +399,13 @@ function retentionDays() {
 
 /**
  * Auto-move todo_expired (and rem_ignored) past retention into expired7.
- * @returns {{ moved: number, deletedExpired7: number, deletedArchive: number }}
+ * @returns {{
+ *   moved: number,
+ *   deletedExpired7: number,
+ *   deletedArchive: number,
+ *   movedTasks: {id:number,title:string}[],
+ *   movedReminders: {id:number,title:string}[],
+ * }}
  */
 function sweepContainers() {
   try {
@@ -409,24 +415,26 @@ function sweepContainers() {
 
     const expiredTaskIds = db
       .prepare(
-        `SELECT t.id FROM tasks t
+        `SELECT t.id, t.title FROM tasks t
          JOIN item_tags it ON it.item_id = t.id AND it.item_type = 'task'
          JOIN tags g ON g.id = it.tag_id AND g.name = 'todo_expired'
          WHERE t.archived = 0 AND t.completed_at IS NULL
            AND (t.container IS NULL OR t.container = 'active')
-           AND datetime(COALESCE(t.due_datetime, t.created_at)) <= datetime('now', ?)`
+           AND datetime(COALESCE(t.due_datetime, t.created_at)) <= datetime('now', ?)
+         GROUP BY t.id`
       )
       .all(`-${days} days`);
 
     const ignoredRemIds = db
       .prepare(
-        `SELECT r.id FROM reminders r
+        `SELECT r.id, r.title FROM reminders r
          JOIN item_tags it ON it.item_id = r.id AND it.item_type = 'reminder'
          JOIN tags g ON g.id = it.tag_id AND g.name = 'rem_ignored'
          WHERE r.archived = 0 AND r.completed_at IS NULL
            AND (r.container IS NULL OR r.container = 'active')
            AND datetime(COALESCE(r.datetime, r.created_at)) <= datetime('now', ?)
-           AND r.datetime < '9999-01-01'`
+           AND r.datetime < '9999-01-01'
+         GROUP BY r.id`
       )
       .all(`-${days} days`);
 
@@ -453,6 +461,8 @@ function sweepContainers() {
       moved: expiredTaskIds.length + ignoredRemIds.length,
       deletedExpired7,
       deletedArchive,
+      movedTasks: expiredTaskIds,
+      movedReminders: ignoredRemIds,
     };
   } catch (err) {
     logError('sweepContainers', err);

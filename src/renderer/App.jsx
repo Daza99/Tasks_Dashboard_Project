@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { DatabaseProvider, useDatabase } from './context/DatabaseContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
@@ -36,6 +36,13 @@ function AppInner() {
   const [editRequest, setEditRequest] = useState(null); // { type, id }
   const [createSeed, setCreateSeed] = useState(null); // { type, date } yyyy-MM-dd
 
+  /** Brief Edit / notif VIEW → Focus on module with item open for edit. */
+  const requestEdit = useCallback((type, id) => {
+    setCreateSeed(null);
+    setEditRequest({ type, id });
+    setActiveView(EDIT_VIEW[type] || type);
+  }, []);
+
   // Every launch: Focus Today once. Do not depend on enterFocus — its
   // identity changes when layout_mode flips and would yank Compact back.
   useEffect(() => {
@@ -43,6 +50,17 @@ function AppInner() {
     enterFocus();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- boot once on ready
   }, [ready]);
+
+  // Notification VIEW button → restore dashboard to the entity editor
+  useEffect(() => {
+    if (!window.api?.onOpenItem) return undefined;
+    return window.api.onOpenItem((payload) => {
+      const type = payload?.type;
+      const id = payload?.id;
+      if (type && id != null) requestEdit(type, id);
+      enterFocus();
+    });
+  }, [requestEdit, enterFocus]);
 
   if (error) {
     return (
@@ -67,13 +85,6 @@ function AppInner() {
 
   function clearCreateSeed() {
     setCreateSeed(null);
-  }
-
-  /** Brief Edit → Focus on module with item open for edit. */
-  function requestEdit(type, id) {
-    setCreateSeed(null);
-    setEditRequest({ type, id });
-    setActiveView(EDIT_VIEW[type] || type);
   }
 
   /** Calendar RMB → Focus create form with date prefilled. */

@@ -8,6 +8,7 @@ const { registerIpcHandlers } = require('./ipc-handlers');
 const { ensureDirs } = require('./portable-paths');
 const { logError } = require('./logger');
 const { startScheduler, stopScheduler } = require('./scheduler');
+const { setDashboardWindow } = require('./notification-window');
 const { maybeAutoBackup } = require('./backup');
 
 const isDev = !app.isPackaged;
@@ -108,6 +109,7 @@ app.whenReady().then(() => {
     registerIpcHandlers();
     startScheduler();
     mainWindow = createWindow();
+    setDashboardWindow(mainWindow);
     // Wait so the renderer can show the backup splash
     mainWindow.webContents.once('did-finish-load', () => {
       maybeAutoBackup().catch((err) => logError('maybeAutoBackup', err));
@@ -121,6 +123,7 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow();
+      setDashboardWindow(mainWindow);
     }
   });
 });

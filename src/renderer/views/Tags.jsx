@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagSearchInput from '../components/TagSearchInput';
+import TagInspector from '../inspection/TagInspector';
 import {
   formatTagDisplay,
   formatTagsDisplay,
@@ -348,6 +349,13 @@ export default function TagsView({ onEditRequest }) {
           })}
         </ul>
       )}
+
+      <TagInspector
+        onInspected={() => {
+          loadCatalog();
+          refresh();
+        }}
+      />
     </div>
   );
 }

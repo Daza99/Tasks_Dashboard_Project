@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld('notifApi', {
   snooze: (payload, minutes) => ipcRenderer.invoke('notif:snooze', payload, minutes),
   ignore: (payload) => ipcRenderer.invoke('notif:ignore', payload),
   minimize: (payload) => ipcRenderer.invoke('notif:minimize', payload),
+  getMeta: () => ipcRenderer.invoke('notif:getMeta'),
+  view: (payload) => ipcRenderer.invoke('notif:view', payload),
 });

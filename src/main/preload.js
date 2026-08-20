@@ -91,6 +91,8 @@ contextBridge.exposeInMainWorld('api', {
   listTagCatalog: () => ipcRenderer.invoke('tags:catalog'),
   listTagItems: (tagName, opts) =>
     ipcRenderer.invoke('tags:items', tagName, opts),
+  inspectTags: () => ipcRenderer.invoke('tags:inspect'),
+  listInspectLog: (opts) => ipcRenderer.invoke('tags:inspectLog', opts),
 
   listExpired7: () => ipcRenderer.invoke('containers:listExpired7'),
   listCompleted: (opts) => ipcRenderer.invoke('containers:listCompleted', opts),
@@ -146,5 +148,12 @@ contextBridge.exposeInMainWorld('api', {
     const listener = () => cb();
     ipcRenderer.on('brief:invalidate', listener);
     return () => ipcRenderer.removeListener('brief:invalidate', listener);
+  },
+
+  /** Notification VIEW → open the item's editor. */
+  onOpenItem: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('app:open-item', listener);
+    return () => ipcRenderer.removeListener('app:open-item', listener);
   },
 });

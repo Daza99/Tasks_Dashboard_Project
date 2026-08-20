@@ -18,24 +18,30 @@
         user-select: none;
       }
       .card {
+        --notif-bg: #f4f1ea;
+        --notif-border: #4a5a6a;
+        --notif-text: #111111;
         margin: 4px;
         height: calc(100% - 8px);
         border-radius: 14px;
-        background: rgba(12, 18, 28, 0.92);
-        border: 1px solid rgba(57, 255, 106, 0.35);
-        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+        background: var(--notif-bg);
+        border: 3px solid var(--notif-border);
+        /* Transparent Electron windows on Windows often drop CSS border; ring still paints. */
+        box-shadow: 0 0 0 3px var(--notif-border), 0 8px 28px rgba(0, 0, 0, 0.45);
         padding: 10px 12px 12px;
         display: flex;
         flex-direction: column;
         gap: 8px;
-        color: #fff;
+        color: var(--notif-text);
         box-sizing: border-box;
+        overflow: hidden;
       }
       .chrome {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
+        flex: 0 0 auto;
         -webkit-app-region: drag;
       }
       .label {
@@ -54,53 +60,81 @@
         height: 24px;
         padding: 0;
         border-radius: 6px;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        background: rgba(255, 255, 255, 0.06);
-        color: #ddd;
+        border: 1px solid var(--notif-border);
+        background: rgba(255, 255, 255, 0.55);
+        color: var(--notif-text);
         font-size: 12px;
         line-height: 1;
         cursor: pointer;
       }
       .chrome-btns button.close:hover {
         background: rgba(255, 92, 92, 0.35);
-        border-color: rgba(255, 92, 92, 0.6);
-        color: #fff;
+        border-color: rgba(255, 92, 92, 0.8);
+        color: var(--notif-text);
       }
       .title {
-        flex: 1;
+        flex: 0 0 auto;
         font-size: 15px;
         font-weight: 600;
         line-height: 1.35;
         overflow: hidden;
       }
       .notif-tags {
+        flex: 0 0 auto;
         font-size: 12px;
         letter-spacing: 0.02em;
-        opacity: 0.7;
-        color: #39ff6a;
+        opacity: 0.72;
+        color: var(--notif-text);
         margin-top: -4px;
       }
       .notif-tags:empty {
         display: none;
       }
+      .details {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        font-size: 12px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-break: break-word;
+        user-select: text;
+        color: var(--notif-text);
+        -webkit-app-region: no-drag;
+      }
+      .details:empty {
+        display: none;
+      }
+      .details::-webkit-scrollbar {
+        width: 5px;
+      }
+      .details::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .details::-webkit-scrollbar-thumb {
+        background: var(--notif-border);
+        border-radius: 4px;
+      }
       .actions {
         display: flex;
         gap: 8px;
         justify-content: flex-end;
+        flex: 0 0 auto;
       }
       .actions button {
         border-radius: 8px;
-        border: 1px solid rgba(57, 255, 106, 0.5);
-        background: rgba(57, 255, 106, 0.15);
-        color: #39ff6a;
+        border: 1px solid var(--notif-border);
+        background: rgba(255, 255, 255, 0.45);
+        color: var(--notif-text);
         padding: 6px 12px;
         font-size: 12px;
         cursor: pointer;
       }
       .actions button.secondary {
-        border-color: rgba(255, 255, 255, 0.2);
-        background: rgba(255, 255, 255, 0.06);
-        color: #ddd;
+        border-color: var(--notif-border);
+        background: transparent;
+        color: var(--notif-text);
       }
     </style>
   </head>
@@ -117,7 +151,9 @@
       </div>
       <div class="title" id="title">…</div>
       <div class="notif-tags" id="tags"></div>
+      <div class="details" id="details"></div>
       <div class="actions">
+        <button type="button" class="secondary" id="btn-view">VIEW</button>
         <button type="button" class="secondary" id="btn-snooze">Snooze</button>
         <button type="button" id="btn-done">Done</button>
       </div>
@@ -132,7 +168,14 @@
       const payload = { id, itemType };
       const title = params.get('title') || 'Reminder';
       const label = params.get('label') || (itemType === 'task' ? 'Task' : 'Reminder');
-      const textColor = params.get('textColor') || '#ffffff';
+      /** Query hex arrives without '#'. */
+      function toHex(raw, fallback) {
+        if (!raw) return fallback;
+        return raw.charAt(0) === '#' ? raw : '#' + raw;
+      }
+      const bgColor = toHex(params.get('bgColor'), '#F4F1EA');
+      const borderColor = toHex(params.get('borderColor'), '#4A5A6A');
+      const textColor = toHex(params.get('textColor'), '#111111');
       const snoozeMins = Number(params.get('snoozeMins') || 10);
 
       document.querySelector('.label').textContent = label;
@@ -145,14 +188,25 @@
       document.getElementById('tags').textContent = rawTags
         .map((t) => (t.startsWith('#') ? t : '#' + t))
         .join(' ');
-      document.querySelector('.card').style.color = textColor;
+      const card = document.querySelector('.card');
+      card.style.setProperty('--notif-bg', bgColor);
+      card.style.setProperty('--notif-border', borderColor);
+      card.style.setProperty('--notif-text', textColor);
       document.getElementById('btn-snooze').textContent = 'Snooze ' + snoozeMins + 'm';
+
+      window.notifApi.getMeta().then((meta) => {
+        const text = meta && meta.details ? String(meta.details).trim() : '';
+        document.getElementById('details').textContent = text;
+      }).catch(() => {});
 
       document.getElementById('btn-done').onclick = () => {
         window.notifApi.complete(payload);
       };
       document.getElementById('btn-snooze').onclick = () => {
         window.notifApi.snooze(payload, snoozeMins);
+      };
+      document.getElementById('btn-view').onclick = () => {
+        window.notifApi.view(payload);
       };
       document.getElementById('btn-min').onclick = () => {
         window.notifApi.minimize(payload);

@@ -507,24 +507,25 @@ function listDueSnoozed() {
     .map(enrich);
 }
 
-/** rem_grace past grace window → rem_ignored. */
+/** rem_grace past grace window → rem_ignored. Returns {id, title}[]. */
 function expireGraceReminders() {
   try {
     const rows = getDb()
       .prepare(
-        `SELECT r.id FROM reminders r
+        `SELECT r.id, r.title FROM reminders r
          JOIN item_tags it ON it.item_id = r.id AND it.item_type = 'reminder'
          JOIN tags t ON t.id = it.tag_id AND t.name = 'rem_grace'
          WHERE r.completed_at IS NULL
            AND (r.container IS NULL OR r.container = 'active')
            AND r.snooze_until IS NOT NULL
-           AND datetime(r.snooze_until) <= datetime('now')`
+           AND datetime(r.snooze_until) <= datetime('now')
+         GROUP BY r.id`
       )
       .all();
     for (const row of rows) {
       replaceTags('reminder', row.id, STATE_TAGS, 'rem_ignored');
     }
-    return rows.length;
+    return rows;
   } catch (err) {
     logError('expireGraceReminders', err);
     throw err;

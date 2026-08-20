@@ -2,7 +2,6 @@
  * Tag auditor + due-item poller (tasks, reminders, bills, habits).
  */
 const {
-  expireStaleTodo24,
   listDueTasksForAlert,
   markTaskAlerted,
 } = require('../services/db/tasks');
@@ -10,7 +9,6 @@ const {
   listDuePending,
   listDueSnoozed,
   markFired,
-  expireGraceReminders,
   listDueReminderNudges,
   markNudgeAlerted,
 } = require('../services/db/reminders');
@@ -19,15 +17,15 @@ const {
   markHabitNudged,
 } = require('../services/db/habits');
 const {
-  markOverdueBills,
   listDueBillAlerts,
   markBillAlerted,
 } = require('../services/db/bills');
 const { showItemNotification } = require('./notification-window');
-const { sweepContainers } = require('../services/db/containers');
 const { logError } = require('./logger');
+const { inspectTags } = require('../services/db/tag-inspector');
 
 let intervalId = null;
+let didLaunchAudit = false;
 /** Session keys: `reminder:12` | `reminder_nudge:12` | `task:4` | `bill:3` | `habit:1` */
 const firedThisSession = new Set();
 
@@ -46,14 +44,10 @@ function clearFiredSession(itemType, id) {
   firedThisSession.delete(sessionKey(itemType, id));
 }
 
-/** Run lifecycle transitions once. */
+/** Manual inspector (IPC alias). Launch/scheduler ticks call inspectTags directly. */
 function runTagAudit() {
   try {
-    const expired = expireStaleTodo24();
-    const ignored = expireGraceReminders();
-    const overdue = markOverdueBills();
-    const containers = sweepContainers();
-    return { expired, ignored, overdue, containers };
+    return inspectTags('manual');
   } catch (err) {
     logError('runTagAudit', err);
     return { expired: 0, ignored: 0, overdue: 0, error: String(err) };
@@ -97,7 +91,7 @@ function pollDueReminders() {
 }
 
 /**
- * Fire popups for due todo_24 tasks before expireStaleTodo24 runs.
+ * Fire popups for due todo_24 tasks before inspectTags expires them.
  */
 function pollDueTasks() {
   try {
@@ -163,7 +157,13 @@ function tick() {
   pollDueReminders();
   pollDueBills();
   pollHabitNudges();
-  runTagAudit();
+  const trigger = didLaunchAudit ? 'scheduler' : 'launch';
+  didLaunchAudit = true;
+  try {
+    inspectTags(trigger);
+  } catch (err) {
+    logError('tick inspectTags', err);
+  }
 }
 
 /** Start ~30s scheduler; runs immediately once. */
@@ -179,6 +179,7 @@ function stopScheduler() {
     intervalId = null;
   }
   firedThisSession.clear();
+  didLaunchAudit = false;
 }
 
 module.exports = {

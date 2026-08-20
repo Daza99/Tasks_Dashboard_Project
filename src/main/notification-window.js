@@ -11,29 +11,83 @@ const {
   snoozeReminder,
   dismissReminderNudge,
   snoozeReminderNudge,
+  getReminder,
 } = require('../services/db/reminders');
 const {
   completeTask,
   ignoreTaskAlert,
   snoozeTask,
+  getTask,
 } = require('../services/db/tasks');
 const {
   markPaid,
   snoozeBill,
   dismissBillAlert,
+  getBill,
 } = require('../services/db/bills');
 const {
   markCheckin,
   snoozeHabit,
   dismissHabitNudge,
+  getHabit,
 } = require('../services/db/habits');
 const { logError } = require('./logger');
+const { pickNotifTheme } = require('../utils/notif-colors.cjs');
 
 const VALID_TYPES = new Set(['reminder', 'reminder_nudge', 'task', 'bill', 'habit']);
 
-/** Map key → { win, resolved, itemType, id } */
+/** Unknown types / missing getter → no details block. */
+const DETAILS_GETTERS = {
+  reminder: getReminder,
+  reminder_nudge: getReminder,
+  task: getTask,
+  bill: getBill,
+  habit: getHabit,
+};
+
+/** Popup itemType → App.jsx requestEdit type. Nudge is the same reminder row. */
+const ITEM_TO_EDIT_TYPE = {
+  reminder: 'reminder',
+  reminder_nudge: 'reminder',
+  task: 'task',
+  bill: 'bill',
+  habit: 'habit',
+};
+
+/** Map key → { win, resolved, itemType, id, details } */
 const openWindows = new Map();
 let handlersRegistered = false;
+let dashboardWindow = null;
+
+/** Called from index.js after createWindow (avoids circular require). */
+function setDashboardWindow(win) {
+  dashboardWindow = win;
+}
+
+function getDashboardWindow() {
+  if (dashboardWindow && !dashboardWindow.isDestroyed()) return dashboardWindow;
+  return null;
+}
+
+/**
+ * Trimmed description or null. Future types with no getter stay hidden.
+ * @param {string} itemType
+ * @param {number} id
+ * @param {string|null|undefined} fallback already on the item
+ */
+function resolveDetails(itemType, id, fallback) {
+  const fromItem = String(fallback || '').trim();
+  if (fromItem) return fromItem;
+  const getter = DETAILS_GETTERS[itemType];
+  if (!getter) return null;
+  try {
+    const row = getter(id);
+    return String(row?.description || '').trim() || null;
+  } catch (err) {
+    logError('resolveDetails', err);
+    return null;
+  }
+}
 
 function winKey(itemType, id) {
   return `${itemType}:${id}`;
@@ -120,6 +174,47 @@ function registerNotificationIpc() {
     }
     return true;
   });
+
+  ipcMain.handle('notif:getMeta', (e) => {
+    for (const entry of openWindows.values()) {
+      if (
+        entry.win &&
+        !entry.win.isDestroyed() &&
+        entry.win.webContents === e.sender
+      ) {
+        return { details: entry.details || null };
+      }
+    }
+    return { details: null };
+  });
+
+  ipcMain.handle('notif:view', (_e, payload) => {
+    try {
+      const { id, itemType } = parsePayload(payload);
+      const dash = getDashboardWindow();
+      if (dash && !dash.isDestroyed()) {
+        if (dash.isMinimized()) {
+          dash.restore();
+          dash.maximize();
+        } else if (!dash.isVisible()) {
+          dash.show();
+        }
+        dash.show();
+        dash.focus();
+        const editType = ITEM_TO_EDIT_TYPE[itemType] || null;
+        if (!dash.webContents.isDestroyed()) {
+          dash.webContents.send('app:open-item', {
+            type: editType,
+            id: editType ? id : null,
+          });
+        }
+      }
+      return true;
+    } catch (err) {
+      logError('notif:view', err);
+      throw err;
+    }
+  });
 }
 
 function markResolved(itemType, id) {
@@ -174,12 +269,16 @@ function showItemNotification(item) {
     if (openWindows.has(key)) return;
 
     const settings = getAllSettings();
-    const textColor = settings.notif_text_color || '#ffffff';
+    const randomize = settings.notif_random_bg === 'true';
+    const theme = pickNotifTheme(randomize);
     const snoozeMins = settings.notif_default_snooze_minutes || '10';
     const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : [];
-    // Extra height when tags render under the title
-    const height = tags.length ? 200 : 180;
+    const details = resolveDetails(itemType, item.id, item.description);
+    // Extra height for tags and/or a details pane (~3 lines then scroll)
+    const height = details ? 260 : tags.length ? 200 : 180;
     const bounds = cornerBounds(settings.notif_position, 340, height);
+    // Query strings cannot carry '#' — HTML prepends it
+    const stripHash = (hex) => String(hex || '').replace(/^#/, '');
 
     const win = new BrowserWindow({
       ...bounds,
@@ -201,19 +300,26 @@ function showItemNotification(item) {
       },
     });
 
-    openWindows.set(key, { win, resolved: false, itemType, id: item.id });
-
-    win.loadFile(path.join(__dirname, 'notification.html'), {
-      query: {
-        id: String(item.id),
-        itemType,
-        title: item.title || label,
-        textColor,
-        snoozeMins: String(snoozeMins),
-        label,
-        tags: tags.join(','),
-      },
+    openWindows.set(key, {
+      win,
+      resolved: false,
+      itemType,
+      id: item.id,
+      details,
     });
+
+    const query = {
+      id: String(item.id),
+      itemType,
+      title: item.title || label,
+      bgColor: stripHash(theme.bg),
+      borderColor: stripHash(theme.border),
+      textColor: stripHash(theme.text),
+      snoozeMins: String(snoozeMins),
+      label,
+      tags: tags.join(','),
+    };
+    win.loadFile(path.join(__dirname, 'notification.html'), { query });
 
     const flash = () => {
       if (!win.isDestroyed()) win.flashFrame(true);
@@ -260,4 +366,5 @@ module.exports = {
   showItemNotification,
   showReminderNotification,
   registerNotificationIpc,
+  setDashboardWindow,
 };

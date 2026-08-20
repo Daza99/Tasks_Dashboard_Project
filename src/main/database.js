@@ -16,8 +16,8 @@ const DEFAULT_SETTINGS = {
   wallpaper_dim: '0',
   notif_position: 'br',
   notif_timeout_seconds: '15',
-  notif_text_color: '#ffffff',
-  notif_random_bg: 'false',
+  notif_text_color: '#111111',
+  notif_random_bg: 'true',
   notif_random_sfx: 'false',
   notif_volume: '50',
   notif_grace_period_hours: '1',
@@ -114,6 +114,7 @@ function initDatabase() {
 
     seedSettings();
     migrateBackupSettings();
+    migrateNotifRandomDefault();
     seedSystemTags();
     seedThemes();
     try {
@@ -249,6 +250,53 @@ function migrateSchema() {
   migrateContainerColumns();
   migrateCalendarLinks();
   migrateListsLocal();
+  migrateTagInspector();
+}
+
+/**
+ * Tag Inspector tables + unique item_tags. Dedup before the unique index
+ * (existing DBs). Flag item_tags_unique_v1 — INSERT OR IGNORE would not
+ * update live rows; CREATE TABLE IF NOT EXISTS does not add indexes.
+ */
+function migrateTagInspector() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tag_audit_runs (
+      id INTEGER PRIMARY KEY,
+      ran_at DATETIME NOT NULL,
+      trigger TEXT NOT NULL,
+      summary_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS tag_audit_events (
+      id INTEGER PRIMARY KEY,
+      run_id INTEGER NOT NULL,
+      item_type TEXT,
+      item_id INTEGER,
+      from_tag TEXT,
+      to_tag TEXT,
+      note TEXT,
+      FOREIGN KEY(run_id) REFERENCES tag_audit_runs(id) ON DELETE CASCADE
+    );
+  `);
+
+  const flag = db
+    .prepare("SELECT value FROM settings WHERE key = 'item_tags_unique_v1'")
+    .get();
+  if (flag && flag.value === '1') return;
+
+  db.prepare(
+    `DELETE FROM item_tags
+     WHERE id NOT IN (
+       SELECT MIN(id) FROM item_tags GROUP BY item_type, item_id, tag_id
+     )`
+  ).run();
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_item_tags_unique
+       ON item_tags(item_type, item_id, tag_id)`
+  );
+  db.prepare(
+    `INSERT INTO settings (key, value) VALUES ('item_tags_unique_v1', '1')
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run();
 }
 
 /** Linked calendar events + reminder appointment flag (existing DBs). */
@@ -395,6 +443,16 @@ function migrateBackupSettings() {
   if (s.backup_remind_id == null) {
     setSetting('backup_remind_id', '');
   }
+}
+
+/** One-time: feature was seeded off; turn random colors on. Later opt-out is kept. */
+function migrateNotifRandomDefault() {
+  const s = getAllSettings();
+  if (s.notif_random_bg_enable_v1 === '1') return;
+  if (s.notif_random_bg !== 'true') {
+    setSetting('notif_random_bg', 'true');
+  }
+  setSetting('notif_random_bg_enable_v1', '1');
 }
 
 function seedSystemTags() {

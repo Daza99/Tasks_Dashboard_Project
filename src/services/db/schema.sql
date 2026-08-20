@@ -141,6 +141,24 @@ CREATE TABLE IF NOT EXISTS item_tags (
     FOREIGN KEY(tag_id) REFERENCES tags(id)
 );
 
+CREATE TABLE IF NOT EXISTS tag_audit_runs (
+    id INTEGER PRIMARY KEY,
+    ran_at DATETIME NOT NULL,
+    trigger TEXT NOT NULL,
+    summary_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tag_audit_events (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL,
+    item_type TEXT,
+    item_id INTEGER,
+    from_tag TEXT,
+    to_tag TEXT,
+    note TEXT,
+    FOREIGN KEY(run_id) REFERENCES tag_audit_runs(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS lists (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,

@@ -102,7 +102,7 @@ const {
   saveListDoc,
   exportList,
 } = require('../services/db/lists');
-const { runTagAudit } = require('./scheduler');
+const { inspectTags, listInspectLog } = require('../services/db/tag-inspector');
 const { registerNotificationIpc } = require('./notification-window');
 const { parseQuickAdd } = require('../utils/quick-add-parser');
 const { runSearch, searchFilterOptions } = require('../services/db/search');
@@ -327,6 +327,8 @@ function registerIpcHandlers() {
   ipcMain.handle('tags:items', (_e, tagName, opts) =>
     listTagItems(tagName, opts || {})
   );
+  ipcMain.handle('tags:inspect', () => inspectTags('manual'));
+  ipcMain.handle('tags:inspectLog', (_e, opts) => listInspectLog(opts || {}));
 
   // --- Cleanup containers + padlock ---
   ipcMain.handle('containers:listExpired7', () => listExpired7());
@@ -370,7 +372,7 @@ function registerIpcHandlers() {
 
   // --- Today + Quick Add ---
   ipcMain.handle('today:getBrief', () => getTodayBrief());
-  ipcMain.handle('today:runAudit', () => runTagAudit());
+  ipcMain.handle('today:runAudit', () => inspectTags('manual'));
 
   ipcMain.handle('quickAdd:submit', (_e, text) => {
     try {

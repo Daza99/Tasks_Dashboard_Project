@@ -184,25 +184,26 @@ function deleteTask(id) {
   }
 }
 
-/** Mark todo_24 items past due as todo_expired. Returns count. */
+/** Mark todo_24 items past due as todo_expired. Returns {id, title}[]. */
 function expireStaleTodo24() {
   try {
     const db = getDb();
     const rows = db
       .prepare(
-        `SELECT t.id FROM tasks t
+        `SELECT t.id, t.title FROM tasks t
          JOIN item_tags it ON it.item_id = t.id AND it.item_type = 'task'
          JOIN tags g ON g.id = it.tag_id AND g.name = 'todo_24'
          WHERE t.completed_at IS NULL AND t.archived = 0
            AND (t.container IS NULL OR t.container = 'active')
            AND t.due_datetime IS NOT NULL
-           AND datetime(t.due_datetime) <= datetime('now')`
+           AND datetime(t.due_datetime) <= datetime('now')
+         GROUP BY t.id`
       )
       .all();
     for (const row of rows) {
       replaceTags('task', row.id, TASK_LIFECYCLE, 'todo_expired');
     }
-    return rows.length;
+    return rows;
   } catch (err) {
     logError('expireStaleTodo24', err);
     throw err;

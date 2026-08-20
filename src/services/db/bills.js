@@ -367,17 +367,24 @@ function deleteBillPayment(id) {
   }
 }
 
-/** Flip pending → overdue when past due. */
+/** Flip pending → overdue when past due. Returns {id, name}[]. */
 function markOverdueBills() {
   try {
     const today = dateKey();
-    const info = getDb()
+    const db = getDb();
+    const rows = db
       .prepare(
-        `UPDATE bills SET paid_status = 'overdue'
+        `SELECT id, name FROM bills
          WHERE paid_status = 'pending' AND due_date < ?`
       )
-      .run(today);
-    return info.changes;
+      .all(today);
+    if (rows.length) {
+      db.prepare(
+        `UPDATE bills SET paid_status = 'overdue'
+         WHERE paid_status = 'pending' AND due_date < ?`
+      ).run(today);
+    }
+    return rows;
   } catch (err) {
     logError('markOverdueBills', err);
     throw err;

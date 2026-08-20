@@ -54,7 +54,7 @@ Renderer never opens popups — only main does, after DB queries.
 
 - Window map key: `` `${itemType}:${id}` `` — **must match** the `itemType` sent back on Done/Snooze/Min/X
 - IPC payload: `{ id, itemType }` (legacy bare id = reminder)
-- Settings: `notif_position`, `notif_text_color`, `notif_default_snooze_minutes`, …
+- Settings: `notif_position`, `notif_random_bg` (`'true'` to randomize fill+border), `notif_default_snooze_minutes`, … (`notif_text_color` is unused; popup text is locked `#111`)
 - Always-on-top, `skipTaskbar: false`, `flashFrame`, stays until Done / Snooze / X (Min = hide only)
 
 ### Critical: `notification.html` must not coerce `itemType`
@@ -119,3 +119,8 @@ Tasks with due times were expired to `todo_expired` with **no** popup. Only remi
 **Symptom:** Habit (or bill) popup appears and flashes; Done / Snooze / Minimize / ✕ appear clickable (hover styles work) but nothing happens — window stays open.  
 **Cause:** `notification.html` used `params.get('itemType') === 'task' ? 'task' : 'reminder'`, so `habit`/`bill` became `reminder`. Main stored the window as `habit:1`; IPC called reminder handlers and `closeNotif`/`minimize` looked up `reminder:1` → miss.  
 **Fix:** HTML validates against the same set as main (`reminder` | `task` | `bill` | `habit`). When adding a new type, update **both** files.
+
+### Random colors never changed (cream + same slate border)
+**Symptom:** Every popup is off-white with black text and the same dull-blue border.  
+**Cause:** `notif_random_bg` stayed `'false'` (seeded off; `INSERT OR IGNORE` never updates). Picker always returned `#F4F1EA` / `#4A5A6A`.  
+**Fix:** default on + `migrateNotifRandomDefault` (`notif_random_bg_enable_v1`); toggle persists immediately. Incident: [`dev-note-notif-random-colors.md`](dev-note-notif-random-colors.md).

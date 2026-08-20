@@ -14,6 +14,14 @@ Dark Glass `--text-primary` is `#f2f5f8`. Windows native buttons, date/time, and
 
 Incident: [`dev-note-dialog-contrast.md`](dev-note-dialog-contrast.md).
 
+## Notification random colors
+
+Popup text is locked `#111`. Fills stay light pastels. `notif_random_bg` must be the string `'true'` or every popup is cream `#F4F1EA` + slate `#4A5A6A` (looks like “white + dull blue”). `seedSettings()` is `INSERT OR IGNORE` — changing a JS default does not update existing rows; use a migrate key.
+
+Transparent Electron windows often drop a thin CSS border; keep the 3px stroke + `box-shadow` ring. Do not restore dark card + white text.
+
+Incident: [`dev-note-notif-random-colors.md`](dev-note-notif-random-colors.md).
+
 ## Dates
 
 Storage and display: `yyyy-mm-dd` only. Module hints that mention dates get `(date method: yyyy-mm-dd)`.

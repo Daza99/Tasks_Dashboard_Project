@@ -528,6 +528,21 @@
   margin: 0 0 12px;
 }
 
+.settings-save-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.settings-save-status--visible {
+  opacity: 1;
+}
+
+.settings-save-status--saved {
+  color: var(--accent);
+}
+
 .settings-data__err {
   font-size: 12px;
   color: var(--danger);
@@ -867,6 +882,74 @@
   border-radius: 8px;
   color: var(--text-primary);
   cursor: pointer;
+}
+
+.tag-inspector {
+  margin-top: 24px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tag-inspector__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tag-inspector__title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tag-inspector__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 48em;
+}
+.tag-inspector__meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.tag-inspector__err {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+.tag-inspector__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tag-inspector__anomalies {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.tag-audit-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow: auto;
+}
+.tag-audit-log__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.tag-audit-log__tags {
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* Ghost tag autocomplete (TagInput / TagSearchInput / Quick Add) */

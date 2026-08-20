@@ -11,6 +11,10 @@ Read [`docs/DEV_REMINDER.md`](docs/DEV_REMINDER.md) before planning. Confirm wit
 
 `.confirm-dialog` is solid `#fff` with `#111` text (nested glass + Windows native chrome are light; `--text-primary` is light). Unclassed Cancel in `.confirm-dialog__actions` stays `#111`. Do not restore themed light text on that shell. Do not blanket-recolor every `<select>` (dark `--input-bg` would invert).
 
+## Notification random colors (do not re-break)
+
+Popup text is locked `#111`; fills stay light. `notif_random_bg` must be the string `'true'` or every popup is cream + slate. `INSERT OR IGNORE` does not update existing settings — migrate keys required. Keep the 3px border + box-shadow ring on the transparent window. Do not restore dark card + white text. Incident: [`docs/dev-note-notif-random-colors.md`](docs/dev-note-notif-random-colors.md).
+
 ## Dates / layout
 
 Dates: `yyyy-mm-dd`. Compact vs Focus as in `.cursorrules`. No decorative corner brackets.

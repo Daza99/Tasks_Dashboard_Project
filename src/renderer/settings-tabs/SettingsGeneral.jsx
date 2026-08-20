@@ -1,12 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 
-/** General prefs: display name, snooze, tags, cleanup/archive. */
+const FADE_MS = 300;
+const SAVED_HIDE_MS = 10000;
+
+/** General prefs: display name, snooze, notif colors, tags, cleanup/archive. */
 export default function SettingsGeneral() {
   const { settings, updateSetting } = useDatabase();
+  const [saveStatus, setSaveStatus] = useState(null);
+  const [statusVisible, setStatusVisible] = useState(false);
+  const hideTimerRef = useRef(null);
+  const fadeTimerRef = useRef(null);
   const [name, setName] = useState(settings?.display_name || '');
   const [snoozeMins, setSnoozeMins] = useState(
     settings?.notif_default_snooze_minutes || '10'
+  );
+  const [randomNotifColors, setRandomNotifColors] = useState(
+    settings?.notif_random_bg === 'true'
   );
   const [showTags, setShowTags] = useState(settings?.show_tags_always === 'true');
   const [debutMode, setDebutMode] = useState(String(settings?.Debut_mode) === '1');
@@ -32,6 +42,7 @@ export default function SettingsGeneral() {
   useEffect(() => {
     setName(settings?.display_name || '');
     setSnoozeMins(settings?.notif_default_snooze_minutes || '10');
+    setRandomNotifColors(settings?.notif_random_bg === 'true');
     setShowTags(settings?.show_tags_always === 'true');
     setDebutMode(String(settings?.Debut_mode) === '1');
     setRetentionDays(settings?.retention_days_expired || '7');
@@ -42,22 +53,65 @@ export default function SettingsGeneral() {
     setArchiveLimitMb(settings?.archive_filesize_limit_mb || '500');
   }, [settings]);
 
+  /** Clear pending fade/hide timers for save status text. */
+  function clearStatusTimers() {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    hideTimerRef.current = null;
+    fadeTimerRef.current = null;
+  }
+
+  useEffect(() => () => clearStatusTimers(), []);
+
+  /** Fade out, swap text, fade in; pass null to hide and remove. */
+  function fadeStatus(nextStatus, onHidden) {
+    setStatusVisible(false);
+    fadeTimerRef.current = setTimeout(() => {
+      if (nextStatus === null) {
+        setSaveStatus(null);
+        return;
+      }
+      setSaveStatus(nextStatus);
+      if (onHidden) onHidden();
+      else requestAnimationFrame(() => setStatusVisible(true));
+    }, FADE_MS);
+  }
+
   async function save() {
+    clearStatusTimers();
+    setSaveStatus('saving');
+    setStatusVisible(true);
+
     const mins = Math.max(1, Number(snoozeMins) || 10);
     const days = Math.min(30, Math.max(1, Number(retentionDays) || 7));
     const expKeep = Math.max(1, Number(autoDelExpiredDays) || 30);
     const years = Math.max(1, Number(archiveYears) || 3);
     const limit = Math.max(1, Number(archiveLimitMb) || 500);
-    await updateSetting('display_name', name);
-    await updateSetting('notif_default_snooze_minutes', String(mins));
-    await updateSetting('show_tags_always', showTags ? 'true' : 'false');
-    await updateSetting('Debut_mode', debutMode ? '1' : '0');
-    await updateSetting('retention_days_expired', String(days));
-    await updateSetting('auto_delete_expired7', autoDelExpired ? 'true' : 'false');
-    await updateSetting('auto_delete_expired7_days', String(expKeep));
-    await updateSetting('archive_retention_years', String(years));
-    await updateSetting('auto_delete_archive', autoDelArchive ? 'true' : 'false');
-    await updateSetting('archive_filesize_limit_mb', String(limit));
+
+    try {
+      await updateSetting('display_name', name);
+      await updateSetting('notif_default_snooze_minutes', String(mins));
+      await updateSetting('notif_random_bg', randomNotifColors ? 'true' : 'false');
+      await updateSetting('show_tags_always', showTags ? 'true' : 'false');
+      await updateSetting('Debut_mode', debutMode ? '1' : '0');
+      await updateSetting('retention_days_expired', String(days));
+      await updateSetting('auto_delete_expired7', autoDelExpired ? 'true' : 'false');
+      await updateSetting('auto_delete_expired7_days', String(expKeep));
+      await updateSetting('archive_retention_years', String(years));
+      await updateSetting('auto_delete_archive', autoDelArchive ? 'true' : 'false');
+      await updateSetting('archive_filesize_limit_mb', String(limit));
+
+      fadeStatus('saved', () => {
+        requestAnimationFrame(() => setStatusVisible(true));
+        hideTimerRef.current = setTimeout(() => {
+          fadeStatus(null);
+        }, SAVED_HIDE_MS);
+      });
+    } catch {
+      clearStatusTimers();
+      setSaveStatus(null);
+      setStatusVisible(false);
+    }
   }
 
   return (
@@ -82,6 +136,21 @@ export default function SettingsGeneral() {
           value={snoozeMins}
           onChange={(e) => setSnoozeMins(e.target.value)}
         />
+      </div>
+
+      <div className="settings-field settings-field--check">
+        <label>
+          <input
+            type="checkbox"
+            checked={randomNotifColors}
+            onChange={async (e) => {
+              const checked = e.target.checked;
+              setRandomNotifColors(checked);
+              await updateSetting('notif_random_bg', checked ? 'true' : 'false');
+            }}
+          />{' '}
+          Random notification background and border
+        </label>
       </div>
 
       <div className="settings-field settings-field--check">
@@ -182,9 +251,30 @@ export default function SettingsGeneral() {
         />
       </div>
 
-      <button type="button" className="btn-primary" onClick={save}>
-        Save
-      </button>
+      <div className="settings-row">
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={save}
+          disabled={saveStatus === 'saving'}
+        >
+          Save
+        </button>
+        {saveStatus && (
+          <span
+            className={[
+              'settings-save-status',
+              statusVisible && 'settings-save-status--visible',
+              saveStatus === 'saved' && 'settings-save-status--saved',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            aria-live="polite"
+          >
+            {saveStatus === 'saving' ? '...saving' : 'Saved!'}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

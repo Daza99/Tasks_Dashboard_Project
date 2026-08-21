@@ -1,0 +1,29 @@
+# Per-user NSIS installer — data default in AppData (not beside the exe)
+appId: com.lumo.personal-dashboard
+productName: Personal Dashboard
+directories:
+  output: release/desktop
+files:
+  - dist/**/*
+  - src/main/**/*
+  - src/services/**/*
+  - src/utils/**/*
+  - package.json
+extraResources:
+  - from: src/services/db/schema.sql
+    to: schema.sql
+asarUnpack:
+  - node_modules/better-sqlite3/**
+  - "**/*.node"
+extraMetadata:
+  flavor: desktop
+win:
+  target:
+    - nsis
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: Personal Dashboard
+  uninstallDisplayName: Personal Dashboard

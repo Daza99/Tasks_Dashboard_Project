@@ -1,5 +1,5 @@
 /**
- * Lists — todo checklists + bullet/md notepad docs (list-local).
+ * Lists — todo checklists + bullet notepad docs (list-local).
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
@@ -11,7 +11,7 @@ const {
 } = require('../../utils/tag-helpers.cjs');
 const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
-const LIST_TYPES = new Set(['todo', 'bullet', 'md']);
+const LIST_TYPES = new Set(['todo', 'bullet']);
 
 const DEFAULT_STYLE = {
   bulletMode: 'mixed',
@@ -23,7 +23,7 @@ const DEFAULT_STYLE = {
 
 function assertType(type) {
   if (!LIST_TYPES.has(type)) {
-    throw new Error('list type must be todo, bullet, or md');
+    throw new Error('list type must be todo or bullet');
   }
 }
 
@@ -62,7 +62,7 @@ function enrichList(row) {
 }
 
 /**
- * Create a list. type is todo | bullet | md.
+ * Create a list. type is todo | bullet.
  * Optional tag (bare or #prefixed) is attached via item_tags + whitelist file.
  */
 function createList({ name, type, tag }) {
@@ -92,7 +92,7 @@ function getList(id) {
 
 /**
  * Lists with optional type + created_date filter (yyyy-mm-dd) + tag.
- * @param {{ type?: 'todo'|'bullet'|'md'|'all', dateFrom?: string, dateTo?: string, tag?: string }} [opts]
+ * @param {{ type?: 'todo'|'bullet'|'all', dateFrom?: string, dateTo?: string, tag?: string }} [opts]
  */
 function listLists(opts = {}) {
   try {
@@ -280,7 +280,7 @@ function removeListEntry(id) {
 }
 
 /**
- * Save bullet/md body + style.
+ * Save bullet notepad body + style.
  * @param {number} id
  * @param {{ content?: string, style?: object }} payload
  */

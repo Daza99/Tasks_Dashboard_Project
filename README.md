@@ -35,10 +35,22 @@ Quick Add examples:
 ## Portable build
 
 ```bash
-npm run dist:dir
+npm run dist:portable
 ```
 
-Output under `release/` — copy the unpacked folder to a USB stick. Data lives in `data/` beside the exe.
+(`dist:dir` is an alias.) Output: `release/portable/win-unpacked/`. Copy that **entire** folder to a USB stick (NTFS or exFAT — not FAT32; SQLite WAL locking fails on FAT32).
+
+First run creates `data/` beside the exe: `dashboard.db`, Chromium userData (`data/chromium/`), plus `wallpapers/`, `sounds/`, `exports/`, `themes/`, `backups/`. Nothing is written to `%APPDATA%`. Menubar: **V1.05 (Portable)**.
+
+## Desktop install
+
+```bash
+npm run dist:desktop
+```
+
+Output: `release/desktop/Personal Dashboard Setup 1.0.5.exe` (per-user NSIS, no admin). Data default: `%APPDATA%\personal-dashboard\data`. Chromium cache stays in AppData. Settings → Data can move the data folder (copy + relaunch; old folder is left in place). Menubar: **V1.05 (Desktop)**.
+
+To preview the data-folder picker in dev (PowerShell): `$env:DASHBOARD_FLAVOR='desktop'; npm run dev`.
 
 ## Layout
 

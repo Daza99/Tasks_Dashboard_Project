@@ -550,6 +550,13 @@
   font-size: 11px;
   color: var(--text-muted);
   word-break: break-all;
+  display: block;
+}
+
+.settings-data__location {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .settings-data__ok {

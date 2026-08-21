@@ -6,7 +6,6 @@ import ListEditor from './ListEditor';
 import ListHashtagInput from './ListHashtagInput';
 import TodoChecklist from './TodoChecklist';
 import BulletPad from './BulletPad';
-import MdPad from './MdPad';
 import { useDateFormat } from '../hooks/useDateFormat';
 import { formatTagDisplay, normalizeTagName } from '../../utils/tag-helpers.js';
 import { invalidateListHashtagWhitelist } from '../hooks/useListHashtagWhitelist';
@@ -14,7 +13,6 @@ import { invalidateListHashtagWhitelist } from '../hooks/useListHashtagWhitelist
 const TABS = [
   { id: 'todo', label: 'To-Do lists' },
   { id: 'bullet', label: 'Bullet lists' },
-  { id: 'md', label: 'MD lists' },
 ];
 
 function createdLabel(iso) {
@@ -161,7 +159,7 @@ export default function ListsPanel() {
     <div className="module-view lists-view">
       <h1>Lists</h1>
       <p className="module-view__hint">
-        Checklists, bullet notes, and basic markdown. Filter by created date (date
+        Checklists and bullet notes. Filter by created date (date
         method: {methodHint}).
       </p>
       {notice && <p className="stub-empty">{notice}</p>}
@@ -285,9 +283,6 @@ export default function ListsPanel() {
               )}
               {detail.list.type === 'bullet' && (
                 <BulletPad list={detail.list} onSaved={onDocSaved} />
-              )}
-              {detail.list.type === 'md' && (
-                <MdPad list={detail.list} onSaved={onDocSaved} />
               )}
             </>
           )}

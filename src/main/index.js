@@ -5,7 +5,7 @@ const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const { initDatabase, closeDatabase } = require('./database');
 const { registerIpcHandlers } = require('./ipc-handlers');
-const { ensureDirs } = require('./portable-paths');
+const { ensureDirs, applyPortableUserData, getFlavor } = require('./portable-paths');
 const { logError } = require('./logger');
 const { startScheduler, stopScheduler } = require('./scheduler');
 const { setDashboardWindow } = require('./notification-window');
@@ -14,6 +14,9 @@ const { closeAllNotePopouts, requestFlushAllNotePopouts } = require('./note-popo
 const { maybeAutoBackup } = require('./backup');
 
 const isDev = !app.isPackaged;
+
+// Packaged portable: Chromium cache/session live in data/chromium beside the exe
+applyPortableUserData();
 
 let mainWindow = null;
 
@@ -36,7 +39,10 @@ function applyAppMenu() {
       { role: 'viewMenu' },
       { role: 'windowMenu' },
       { role: 'help' },
-      { label: formatDashboardVersion(app.getVersion()), enabled: false },
+      {
+        label: `${formatDashboardVersion(app.getVersion())} (${getFlavor() === 'desktop' ? 'Desktop' : 'Portable'})`,
+        enabled: false,
+      },
     ])
   );
 }

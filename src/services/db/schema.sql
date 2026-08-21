@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS tag_audit_events (
 CREATE TABLE IF NOT EXISTS lists (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL, -- todo | bullet | md
+    type TEXT NOT NULL, -- todo | bullet
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     parent_id INTEGER,
     content TEXT,

@@ -13,7 +13,7 @@ function todayShort() {
  * Create / rename list. Default name = today's long date.
  * @param {{
  *   mode: 'create'|'rename',
- *   type: 'todo'|'bullet'|'md',
+ *   type: 'todo'|'bullet',
  *   initialName?: string,
  *   templates?: string[],
  *   onSave: (name: string) => void|Promise<void>,
@@ -95,7 +95,7 @@ export default function ListEditor({
       />
       <p className="module-list__meta">Created {todayShort()} · Ctrl+; inserts date</p>
       <p className="module-list__meta">
-        {type === 'todo' ? 'To-Do list' : type === 'bullet' ? 'Bullet list' : 'MD list'}
+        {type === 'todo' ? 'To-Do list' : 'Bullet list'}
       </p>
       <div className="item-row__actions">
         <button type="submit" className="btn-primary">

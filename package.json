@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "concurrently -k \"vite --port 5173\" \"wait-on tcp:5173 && electron .\"",
     "build": "vite build",
-    "dist:dir": "npm run build && electron-builder --dir",
+    "dist:dir": "npm run dist:portable",
+    "dist:portable": "npm run build && electron-builder --config electron-builder.portable.yml --dir",
+    "dist:desktop": "npm run build && electron-builder --config electron-builder.desktop.yml --win nsis",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -44,8 +46,12 @@
         "to": "schema.sql"
       }
     ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**",
+      "**/*.node"
+    ],
     "win": {
-      "target": ["dir"]
+      "signAndEditExecutable": false
     }
   }
 }

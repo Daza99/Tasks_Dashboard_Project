@@ -2,7 +2,7 @@
 appId: com.lumo.personal-dashboard
 productName: Personal Dashboard
 directories:
-  output: release
+  output: release/portable
 files:
   - dist/**/*
   - src/main/**/*
@@ -12,6 +12,12 @@ files:
 extraResources:
   - from: src/services/db/schema.sql
     to: schema.sql
+asarUnpack:
+  - node_modules/better-sqlite3/**
+  - "**/*.node"
+extraMetadata:
+  flavor: portable
 win:
   target:
     - dir
+  signAndEditExecutable: false

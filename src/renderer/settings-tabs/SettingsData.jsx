@@ -22,10 +22,25 @@ export default function SettingsData() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [restoreTarget, setRestoreTarget] = useState(null);
+  const [paths, setPaths] = useState(null);
+  const [migrateTarget, setMigrateTarget] = useState(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   useEffect(() => {
     if (settings?.backup_remind_days) setRemindDays(String(settings.backup_remind_days));
   }, [settings?.backup_remind_days]);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.api.getPaths().then((info) => {
+      if (!cancelled) setPaths(info);
+    }).catch((err) => {
+      if (!cancelled) setError(err?.message || String(err));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** Tick one mode (unticks the rest); ticking the active box turns all off. */
   async function onToggleMode(next) {
@@ -107,6 +122,49 @@ export default function SettingsData() {
     }
   }
 
+  async function onChooseDataDir() {
+    setError('');
+    setMessage('');
+    try {
+      const picked = await window.api.chooseDataDir();
+      if (picked?.cancelled) return;
+      setMigrateTarget(picked);
+    } catch (err) {
+      setError(err?.message || String(err));
+    }
+  }
+
+  async function onConfirmMigrate() {
+    const dest = migrateTarget?.path;
+    const overwrite = Boolean(migrateTarget?.hasExistingDb);
+    setMigrateTarget(null);
+    if (!dest) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await window.api.migrateDataDir(dest, { overwrite });
+      setMessage('Moving data — app will relaunch.');
+    } catch (err) {
+      setError(err?.message || String(err));
+      setBusy(false);
+    }
+  }
+
+  async function onConfirmReset() {
+    setResetOpen(false);
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await window.api.resetDataDir();
+      setMessage('Moving data — app will relaunch.');
+    } catch (err) {
+      setError(err?.message || String(err));
+      setBusy(false);
+    }
+  }
+
   async function onConfirmRestore() {
     const folder = restoreTarget?.path;
     setRestoreTarget(null);
@@ -128,9 +186,49 @@ export default function SettingsData() {
     restoreTarget?.created
       ? formatDateTime(restoreTarget.created) || 'never'
       : restoreTarget?.stamp || restoreTarget?.path;
+  const desktop = paths?.flavor === 'desktop';
+  const migrateMsg = migrateTarget?.hasExistingDb
+    ? `That folder already has a dashboard.db. Copy current data over it and relaunch? The old folder is left in place.`
+    : `Copy all data to ${migrateTarget?.path} and relaunch? The old folder is left in place — delete it yourself after you confirm the new location works.`;
 
   return (
     <div>
+      {desktop ? (
+        <div className="settings-data__location">
+          <p className="module-view__hint">
+            Database and assets (wallpapers, sounds, themes, backups). Do not put this folder on
+            OneDrive or other synced drives — SQLite WAL can corrupt. (date method: {methodHint})
+          </p>
+          <div className="settings-field">
+            <label>Data folder</label>
+            <span className="settings-data__path">{paths.dataDir}</span>
+            {paths.custom ? <span className="settings-data__path">Custom location</span> : (
+              <span className="settings-data__path">Default (AppData)</span>
+            )}
+          </div>
+          <div className="settings-row settings-data__actions">
+            <button
+              type="button"
+              className="btn-light"
+              onClick={onChooseDataDir}
+              disabled={busy}
+            >
+              Change location…
+            </button>
+            {paths.custom ? (
+              <button
+                type="button"
+                className="btn-light"
+                onClick={() => setResetOpen(true)}
+                disabled={busy}
+              >
+                Use default location
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       <p className="module-view__hint">
         Snapshots include dashboard.db plus wallpapers, sounds, and themes (date method:
         {methodHint}).
@@ -219,6 +317,23 @@ export default function SettingsData() {
         danger
         onConfirm={onConfirmRestore}
         onCancel={() => setRestoreTarget(null)}
+      />
+      <ConfirmDialog
+        open={Boolean(migrateTarget)}
+        title={migrateTarget?.hasExistingDb ? 'Overwrite existing database?' : 'Move data folder?'}
+        message={migrateMsg}
+        confirmLabel={migrateTarget?.hasExistingDb ? 'Overwrite and move' : 'Move'}
+        danger={Boolean(migrateTarget?.hasExistingDb)}
+        onConfirm={onConfirmMigrate}
+        onCancel={() => setMigrateTarget(null)}
+      />
+      <ConfirmDialog
+        open={resetOpen}
+        title="Use default location?"
+        message={`Copy data back to ${paths?.defaultDataDir} and relaunch? The current folder is left in place.`}
+        confirmLabel="Use default"
+        onConfirm={onConfirmReset}
+        onCancel={() => setResetOpen(false)}
       />
     </div>
   );

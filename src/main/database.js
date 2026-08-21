@@ -667,6 +667,12 @@ function setThemeBase(base) {
 
 function closeDatabase() {
   if (db) {
+    try {
+      // Flush WAL onto dashboard.db so USB eject is less likely to leave a dirty journal
+      db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch (err) {
+      logError('closeDatabase:wal_checkpoint', err);
+    }
     db.close();
     db = null;
   }

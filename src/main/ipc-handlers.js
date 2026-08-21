@@ -8,7 +8,7 @@ const {
   getActiveTheme,
   setThemeBase,
 } = require('./database');
-const { getDataDir } = require('./portable-paths');
+const { getPathInfo } = require('./portable-paths');
 const { logError } = require('./logger');
 const {
   createTask,
@@ -148,6 +148,7 @@ const {
   pickRestoreFolder,
   restoreFromFolder,
 } = require('./backup');
+const { chooseDataDir, migrateDataDir, resetDataDir } = require('./data-dir-migrate');
 
 function registerIpcHandlers() {
   registerNotificationIpc();
@@ -191,14 +192,39 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('app:getPaths', () => ({
-    dataDir: getDataDir(),
-  }));
+  ipcMain.handle('app:getPaths', () => getPathInfo());
 
   ipcMain.handle('app:health', () => ({
     ok: true,
     offline: true,
   }));
+
+  ipcMain.handle('dataDir:choose', async () => {
+    try {
+      return await chooseDataDir();
+    } catch (err) {
+      logError('dataDir:choose', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('dataDir:migrate', async (_e, dest, opts) => {
+    try {
+      return await migrateDataDir(dest, opts || {});
+    } catch (err) {
+      logError('dataDir:migrate', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('dataDir:reset', async () => {
+    try {
+      return await resetDataDir();
+    } catch (err) {
+      logError('dataDir:reset', err);
+      throw err;
+    }
+  });
 
   ipcMain.handle('backup:now', async () => {
     try {

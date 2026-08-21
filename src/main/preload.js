@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('api', {
   setThemeBase: (base) => ipcRenderer.invoke('theme:setBase', base),
   getPaths: () => ipcRenderer.invoke('app:getPaths'),
   health: () => ipcRenderer.invoke('app:health'),
+  chooseDataDir: () => ipcRenderer.invoke('dataDir:choose'),
+  migrateDataDir: (dest, opts) => ipcRenderer.invoke('dataDir:migrate', dest, opts),
+  resetDataDir: () => ipcRenderer.invoke('dataDir:reset'),
 
   backupNow: () => ipcRenderer.invoke('backup:now'),
   backupStatus: () => ipcRenderer.invoke('backup:status'),

@@ -1,5 +1,5 @@
 /**
- * Tiny markdown subset for MD list preview. Escape first, then format.
+ * Tiny markdown subset for MD list / Notes preview. Escape first, then format.
  */
 
 function escapeHtml(s) {
@@ -34,13 +34,30 @@ function nodeColor(el) {
   return el.style?.color ? rgbToHex(el.style.color) : null;
 }
 
+/** Highlight from data-md-hl or background-color (skip transparent). */
+function nodeHighlight(el) {
+  if (!el || el.nodeType !== 1) return null;
+  if (el.dataset?.mdHl) return rgbToHex(el.dataset.mdHl);
+  const bg = el.style?.backgroundColor;
+  if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') return null;
+  return rgbToHex(bg);
+}
+
 function colorMarkRe() {
   return /\{#([0-9a-fA-F]{6})\}(.*?)\{\/\}/gs;
 }
 
-/** Inline: color, code, strike, bold, italic, links (display only — no navigation). */
+function hlMarkRe() {
+  return /\{hl:#([0-9a-fA-F]{6})\}(.*?)\{\/hl\}/gs;
+}
+
+/** Wrap escaped text with highlight then color, then inline MD. */
 function inline(s) {
   return escapeHtml(s)
+    .replace(
+      hlMarkRe(),
+      '<span style="background-color:#$1">$2</span>'
+    )
     .replace(colorMarkRe(), '<span style="color:#$1">$2</span>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
@@ -50,26 +67,32 @@ function inline(s) {
 }
 
 /**
- * Render basic MD: # / ##, {#rrggbb}color{/}, ~~strike~~, **bold**, *italic*, lists, `code`, links.
+ * Render basic MD: # / ## / ###, color, highlight, strike, bold, italic, ul/ol, code, links.
  * @param {string} src
  * @returns {string} HTML
  */
 export function renderBasicMd(src) {
   const lines = String(src || '').split('\n');
   const out = [];
-  let inList = false;
+  let listKind = null; // 'ul' | 'ol'
 
   function closeList() {
-    if (inList) {
-      out.push('</ul>');
-      inList = false;
-    }
+    if (listKind === 'ul') out.push('</ul>');
+    if (listKind === 'ol') out.push('</ol>');
+    listKind = null;
   }
 
   for (const line of lines) {
+    const h3 = line.match(/^###\s+(.*)$/);
     const h2 = line.match(/^##\s+(.*)$/);
     const h1 = line.match(/^#\s+(.*)$/);
-    const li = line.match(/^[-*]\s+(.*)$/);
+    const ul = line.match(/^[-*]\s+(.*)$/);
+    const ol = line.match(/^\d+\.\s+(.*)$/);
+    if (h3) {
+      closeList();
+      out.push(`<h3>${inline(h3[1])}</h3>`);
+      continue;
+    }
     if (h2) {
       closeList();
       out.push(`<h2>${inline(h2[1])}</h2>`);
@@ -80,12 +103,22 @@ export function renderBasicMd(src) {
       out.push(`<h1>${inline(h1[1])}</h1>`);
       continue;
     }
-    if (li) {
-      if (!inList) {
+    if (ul) {
+      if (listKind === 'ol') closeList();
+      if (listKind !== 'ul') {
         out.push('<ul>');
-        inList = true;
+        listKind = 'ul';
       }
-      out.push(`<li>${inline(li[1])}</li>`);
+      out.push(`<li>${inline(ul[1])}</li>`);
+      continue;
+    }
+    if (ol) {
+      if (listKind === 'ul') closeList();
+      if (listKind !== 'ol') {
+        out.push('<ol>');
+        listKind = 'ol';
+      }
+      out.push(`<li>${inline(ol[1])}</li>`);
       continue;
     }
     closeList();
@@ -97,12 +130,16 @@ export function renderBasicMd(src) {
 }
 
 /**
- * Markdown → contenteditable HTML. Color marks become spans; other MD stays literal.
+ * Markdown → contenteditable HTML. Color/highlight marks become spans.
  * @param {string} src
  * @returns {string}
  */
 export function mdToEditHtml(src) {
   return escapeHtml(String(src || ''))
+    .replace(
+      hlMarkRe(),
+      '<span data-md-hl="#$1" style="background-color:#$1">$2</span>'
+    )
     .replace(
       colorMarkRe(),
       '<span data-md-color="#$1" style="color:#$1">$2</span>'
@@ -125,15 +162,29 @@ function serializeNode(node, afterSibling) {
   if (tag === 'BR') return '\n';
   const inner = serializeNodes(node.childNodes);
   const color = nodeColor(node);
-  if (color) return `{#${color.slice(1)}}${inner}{/}`;
-  if (tag === 'DIV' || tag === 'P') {
-    return (afterSibling ? '\n' : '') + inner;
+  const hl = nodeHighlight(node);
+  let out = inner;
+  // Split at newlines so preview (per-line inline) does not leak raw marks
+  if (color) {
+    out = out
+      .split('\n')
+      .map((part) => `{#${color.slice(1)}}${part}{/}`)
+      .join('\n');
   }
-  return inner;
+  if (hl) {
+    out = out
+      .split('\n')
+      .map((part) => `{hl:${hl}}${part}{/hl}`)
+      .join('\n');
+  }
+  if (tag === 'DIV' || tag === 'P') {
+    return (afterSibling ? '\n' : '') + out;
+  }
+  return out;
 }
 
 /**
- * Contenteditable root → markdown with {#rrggbb}…{/} color marks.
+ * Contenteditable root → markdown with color + highlight marks.
  * @param {ParentNode} root
  * @returns {string}
  */
@@ -148,4 +199,21 @@ export function editHtmlToMd(root) {
     return '';
   }
   return serializeNodes(root.childNodes);
+}
+
+/** Strip MD / color / highlight marks for .txt export. */
+export function mdToPlainText(src) {
+  return String(src || '')
+    .replace(/\{hl:#[0-9a-fA-F]{6}\}/g, '')
+    .replace(/\{\/hl\}/g, '')
+    .replace(/\{#[0-9a-fA-F]{6}\}/g, '')
+    .replace(/\{\/\}/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '$1')
+    .replace(/^#{1,3}\s+/gm, '')
+    .replace(/^[-*]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '');
 }

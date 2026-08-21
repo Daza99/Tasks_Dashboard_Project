@@ -1,7 +1,7 @@
 /**
  * Electron main entry — window, DB init, portable paths.
  */
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const { initDatabase, closeDatabase } = require('./database');
 const { registerIpcHandlers } = require('./ipc-handlers');
@@ -10,16 +10,43 @@ const { logError } = require('./logger');
 const { startScheduler, stopScheduler } = require('./scheduler');
 const { setDashboardWindow } = require('./notification-window');
 const { closeAllTrackerPopouts } = require('./tracker-popout');
+const { closeAllNotePopouts, requestFlushAllNotePopouts } = require('./note-popout');
 const { maybeAutoBackup } = require('./backup');
 
 const isDev = !app.isPackaged;
 
 let mainWindow = null;
+
+/**
+ * Map semver x.y.z to display label Vx.yz (1.0.5 → V1.05).
+ * @param {string} semver
+ * @returns {string}
+ */
+function formatDashboardVersion(semver) {
+  const [major = '0', minor = '0', patch = '0'] = String(semver).split('.');
+  return `V${major}.${minor}${patch}`;
+}
+
+/** Native menubar: File/Edit/View/Window/Help + grey non-clickable version. */
+function applyAppMenu() {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: 'fileMenu' },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      { role: 'windowMenu' },
+      { role: 'help' },
+      { label: formatDashboardVersion(app.getVersion()), enabled: false },
+    ])
+  );
+}
+
 let allowQuit = false;
 let flushing = false;
 
 function shutdown() {
   stopScheduler();
+  closeAllNotePopouts();
   closeAllTrackerPopouts();
   closeDatabase();
 }
@@ -64,6 +91,8 @@ function requestFlushThenQuit() {
   }, 2000);
 
   ipcMain.once('app:flushed', onFlushed);
+
+  requestFlushAllNotePopouts();
 
   const win = mainWindow;
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
@@ -110,6 +139,7 @@ app.whenReady().then(() => {
     initDatabase();
     registerIpcHandlers();
     startScheduler();
+    applyAppMenu();
     mainWindow = createWindow();
     setDashboardWindow(mainWindow);
     // Wait so the renderer can show the backup splash

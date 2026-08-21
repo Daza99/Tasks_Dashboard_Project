@@ -14,6 +14,7 @@ import BillsView from './views/Bills';
 import CalendarView from './views/Calendar';
 import SpendingView from './views/Spending';
 import TagsView from './views/Tags';
+import NotesView from './views/Notes';
 import StubView from './views/StubView';
 import Expired7Plus from './containers/Expired7Plus';
 import CompletedView from './containers/Completed';
@@ -29,6 +30,7 @@ const EDIT_VIEW = {
   tracker: 'trackers',
   transaction: 'spending',
   list: 'lists',
+  note: 'notes',
 };
 
 function AppInner() {
@@ -163,6 +165,13 @@ function AppInner() {
     focusContent = <TagsView onEditRequest={requestEdit} />;
   } else if (activeView === 'lists') {
     focusContent = <ListsPanel />;
+  } else if (activeView === 'notes') {
+    focusContent = (
+      <NotesView
+        editId={editRequest?.type === 'note' ? editRequest.id : null}
+        onEditConsumed={clearEditRequest}
+      />
+    );
   } else if (activeView === 'expired') {
     focusContent = <Expired7Plus />;
   } else if (activeView === 'completed') {

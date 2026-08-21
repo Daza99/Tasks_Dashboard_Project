@@ -107,8 +107,16 @@ CREATE TABLE IF NOT EXISTS notes (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
     content TEXT,
+    style_json TEXT,
+    category TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS note_categories (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Trackers: counts, scales, mood, energy, stopwatch, countdown (not the timers stub)

@@ -6,6 +6,7 @@ const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { dateKey } = require('./habits');
 const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
+const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const STATUSES = ['pending', 'paid', 'overdue'];
 const AMOUNT_MODES = ['fixed', 'estimate', 'average'];
@@ -51,7 +52,7 @@ function createBill({
   description = null,
 }) {
   try {
-    if (!name?.trim()) throw new Error('Name required');
+    const billName = uniqueTitleFor('bill', name);
     const amt = Number(amount);
     if (!Number.isFinite(amt)) throw new Error('Amount required');
     if (!due_date) throw new Error('due_date required (YYYY-MM-DD)');
@@ -67,7 +68,7 @@ function createBill({
         `INSERT INTO bills (name, amount, amount_mode, due_date, recurrence, paid_status, category, priority, description)
          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
       )
-      .run(name.trim(), amt, mode, due_date, rec, category || null, prio, details);
+      .run(billName, amt, mode, due_date, rec, category || null, prio, details);
     const row = getBill(Number(info.lastInsertRowid));
     require('./calendar-sync').syncBill(row);
     return row;
@@ -102,8 +103,10 @@ function updateBill(id, fields) {
   try {
     const cur = getDb().prepare('SELECT * FROM bills WHERE id = ?').get(id);
     if (!cur) throw new Error('Bill not found');
-    const name = fields.name !== undefined ? String(fields.name).trim() : cur.name;
-    if (!name) throw new Error('Name required');
+    const name =
+      fields.name !== undefined
+        ? uniqueTitleFor('bill', fields.name, id)
+        : cur.name;
     const amount =
       fields.amount !== undefined ? Number(fields.amount) : cur.amount;
     if (!Number.isFinite(amount)) throw new Error('Invalid amount');

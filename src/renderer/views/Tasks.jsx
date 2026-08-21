@@ -177,7 +177,6 @@ export default function TasksView({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Task title"
-          required
         />
         <div className="reminder-meta-row">
           <div className="reminder-meta-row__left">
@@ -244,7 +243,6 @@ export default function TasksView({
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  required
                 />
                 <div className="reminder-meta-row">
                   <div className="reminder-meta-row__left">

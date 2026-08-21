@@ -142,6 +142,35 @@ contextBridge.exposeInMainWorld('api', {
   removeListEntry: (id) => ipcRenderer.invoke('lists:removeEntry', id),
   saveListDoc: (id, payload) => ipcRenderer.invoke('lists:saveDoc', id, payload),
   exportList: (id) => ipcRenderer.invoke('lists:export', id),
+
+  listNotes: (opts) => ipcRenderer.invoke('notes:list', opts),
+  getNote: (id) => ipcRenderer.invoke('notes:get', id),
+  createNote: (data) => ipcRenderer.invoke('notes:create', data),
+  updateNote: (id, fields) => ipcRenderer.invoke('notes:update', id, fields),
+  saveNoteDoc: (id, payload) => ipcRenderer.invoke('notes:saveDoc', id, payload),
+  deleteNote: (id) => ipcRenderer.invoke('notes:delete', id),
+  listNoteCategories: () => ipcRenderer.invoke('notes:categories'),
+  createNoteCategory: (name) => ipcRenderer.invoke('notes:createCategory', name),
+  exportNote: (id, format) => ipcRenderer.invoke('notes:export', id, format),
+  printNote: (id) => ipcRenderer.invoke('notes:print', id),
+  openNotePopout: (id) => ipcRenderer.invoke('notes:popoutOpen', id),
+  focusNotePopout: (id) => ipcRenderer.invoke('notes:popoutFocus', id),
+  listNotePopouts: () => ipcRenderer.invoke('notes:popoutList'),
+  closeNotePopoutSelf: () => ipcRenderer.invoke('notes:popoutCloseSelf'),
+  onNotePopouts: (cb) => {
+    const listener = (_e, ids) => cb(ids);
+    ipcRenderer.on('notes:popouts', listener);
+    return () => ipcRenderer.removeListener('notes:popouts', listener);
+  },
+  onNotePopoutFlushClose: (cb) => {
+    const listener = () => {
+      Promise.resolve(cb()).catch(() => {}).finally(() => {
+        ipcRenderer.invoke('notes:popoutCloseSelf').catch(() => {});
+      });
+    };
+    ipcRenderer.on('notes:popout-flush-close', listener);
+    return () => ipcRenderer.removeListener('notes:popout-flush-close', listener);
+  },
   listHashtagWhitelist: () => ipcRenderer.invoke('lists:hashtagWhitelist'),
   appendListHashtag: (name) => ipcRenderer.invoke('lists:appendHashtag', name),
 

@@ -58,10 +58,6 @@ export default function ListEditor({
     if (template === 'Project' && project.trim()) {
       finalName = `${project.trim()} — ${todayLong()}`;
     }
-    if (!finalName) {
-      setError('Name required');
-      return;
-    }
     try {
       await onSave(finalName);
     } catch (err) {
@@ -96,7 +92,6 @@ export default function ListEditor({
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="List name"
-        required={template !== 'Project'}
       />
       <p className="module-list__meta">Created {todayShort()} · Ctrl+; inserts date</p>
       <p className="module-list__meta">

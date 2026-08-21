@@ -255,6 +255,21 @@ function migrateSchema() {
   migrateListsHashtagBackfill();
   migrateListsHashtagRetagAfterInspector();
   migrateTagInspector();
+  migrateNotesModule();
+}
+
+/** Notes pad columns + category dropdown table (existing DBs). */
+function migrateNotesModule() {
+  const noteCols = db.prepare('PRAGMA table_info(notes)').all().map((c) => c.name);
+  if (!noteCols.includes('style_json')) db.exec('ALTER TABLE notes ADD COLUMN style_json TEXT');
+  if (!noteCols.includes('category')) db.exec('ALTER TABLE notes ADD COLUMN category TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS note_categories (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 }
 
 /**

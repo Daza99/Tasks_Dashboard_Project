@@ -10,6 +10,7 @@ import { useTagCatalog } from '../hooks/useTagCatalog';
 /**
  * Multi-tag input with grey ghost suffix; Space/Tab accepts prediction.
  * Value is display string (`#a #b`); parent normalizes on submit.
+ * @param {{ onBlur?: () => void }} props
  */
 export default function TagInput({
   value,
@@ -18,6 +19,7 @@ export default function TagInput({
   disabled = false,
   'aria-label': ariaLabel = 'Tags',
   id,
+  onBlur,
 }) {
   const inputRef = useRef(null);
   const { catalog, refresh } = useTagCatalog();
@@ -57,8 +59,8 @@ export default function TagInput({
   }
 
   function handleBlur() {
-    // Refresh catalog after edits so new tags appear elsewhere
     refresh();
+    onBlur?.();
   }
 
   return (

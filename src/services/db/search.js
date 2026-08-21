@@ -18,6 +18,7 @@ const VIEW_PROVIDERS = {
   calendar: ['event'],
   spending: ['transaction'],
   lists: ['list'],
+  notes: ['note'],
   expired: ['task', 'reminder'],
   completed: ['task', 'reminder'],
   archive: ['task', 'reminder'],
@@ -31,6 +32,7 @@ const ALL_PROVIDERS = [
   'event',
   'transaction',
   'list',
+  'note',
 ];
 
 /** Escape LIKE wildcards. */
@@ -44,7 +46,7 @@ function isSet(v) {
 
 /** True when any dropdown is constraining results. */
 function hasActiveFilters(f = {}) {
-  return ['year', 'month', 'repeat', 'status', 'module', 'locked', 'priority', 'paid', 'snoozed'].some(
+  return ['year', 'month', 'repeat', 'status', 'module', 'locked', 'priority', 'paid', 'snoozed', 'category'].some(
     (k) => isSet(f[k])
   );
 }
@@ -532,6 +534,57 @@ function searchLists(parsed, filters) {
   );
 }
 
+function searchNotes(parsed, filters) {
+  if (
+    isSet(filters.repeat) ||
+    isSet(filters.paid) ||
+    isSet(filters.status) ||
+    isSet(filters.locked) ||
+    isSet(filters.priority) ||
+    filters.snoozed === 'snoozed'
+  ) {
+    return [];
+  }
+  const db = getDb();
+  const m = matchSql(parsed, {
+    alias: 'n',
+    itemType: 'note',
+    textCols: ['n.title', 'n.content', 'n.category'],
+    hasTags: true,
+  });
+  const ym = yearMonthSql('n.created_at', filters);
+  const extra = [];
+  const extraVals = [];
+  if (isSet(filters.category)) {
+    if (filters.category === 'uncategorized') {
+      extra.push("(n.category IS NULL OR trim(n.category) = '')");
+    } else {
+      extra.push('n.category = ?');
+      extraVals.push(filters.category);
+    }
+  }
+  const where = combine(m, ym);
+  const extraSql = extra.length ? ` AND ${extra.join(' AND ')}` : '';
+  const rows = db
+    .prepare(
+      `SELECT n.* FROM notes n WHERE ${where.sql}${extraSql}
+       ORDER BY n.updated_at DESC, n.id DESC LIMIT ?`
+    )
+    .all(...where.vals, ...extraVals, HIT_CAP);
+  return rows.map((r) =>
+    hit({
+      type: 'note',
+      id: r.id,
+      title: r.title,
+      subtitle: r.category || 'Uncategorized',
+      date: r.created_at,
+      tags: getItemTagNames('note', r.id),
+      status: '',
+      locked: false,
+    })
+  );
+}
+
 const PROVIDERS = {
   task: searchTasks,
   reminder: searchReminders,
@@ -540,6 +593,7 @@ const PROVIDERS = {
   event: searchEvents,
   transaction: searchTransactions,
   list: searchLists,
+  note: searchNotes,
 };
 
 const YEAR_SOURCES = [
@@ -550,6 +604,7 @@ const YEAR_SOURCES = [
   { table: 'events', expr: 'start_datetime' },
   { table: 'transactions', expr: 'date' },
   { table: 'lists', expr: 'created_date' },
+  { table: 'notes', expr: 'created_at' },
 ];
 
 const PROVIDER_YEAR_TABLE = {
@@ -560,6 +615,7 @@ const PROVIDER_YEAR_TABLE = {
   event: YEAR_SOURCES[4],
   transaction: YEAR_SOURCES[5],
   list: YEAR_SOURCES[6],
+  note: YEAR_SOURCES[7],
 };
 
 /** Distinct years from scoped tables (drops 9999 open-sentinel). */
@@ -614,7 +670,12 @@ function runSearch(opts = {}) {
  */
 function searchFilterOptions(scope = {}) {
   try {
-    return { years: collectYears(resolveProviders(scope)) };
+    const ids = resolveProviders(scope);
+    const out = { years: collectYears(ids) };
+    if (ids.includes('note')) {
+      out.noteCategories = require('./notes').listNoteCategories();
+    }
+    return out;
   } catch (err) {
     logError('searchFilterOptions', err);
     throw err;

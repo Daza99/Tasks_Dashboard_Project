@@ -19,7 +19,7 @@ const SORT_OPTS = [
   { value: 'popular', label: 'Popular' },
 ];
 
-const TYPE_ORDER = ['task', 'reminder', 'habit', 'tracker', 'transaction'];
+const TYPE_ORDER = ['task', 'reminder', 'habit', 'tracker', 'transaction', 'note'];
 
 const TYPE_LABEL = {
   task: 'Tasks',
@@ -27,6 +27,7 @@ const TYPE_LABEL = {
   habit: 'Habits',
   tracker: 'Trackers',
   transaction: 'Spending',
+  note: 'Notes',
 };
 
 function fmtDateTime(iso) {
@@ -444,6 +445,14 @@ function TagAttachedRow({
   } else if (type === 'transaction') {
     title = `$${Number(item.amount).toFixed(2)} · ${item.category}`;
     meta = [item.date, userTags.length ? formatTagsDisplay(userTags) : null]
+      .filter(Boolean)
+      .join(' · ');
+  } else if (type === 'note') {
+    title = item.title;
+    meta = [
+      item.category || 'Uncategorized',
+      userTags.length ? formatTagsDisplay(userTags) : null,
+    ]
       .filter(Boolean)
       .join(' · ');
   }

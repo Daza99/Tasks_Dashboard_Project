@@ -85,7 +85,6 @@ function parseQuickAdd(input) {
     } else if (/\bdaily\b/i.test(body)) {
       body = body.replace(/\bdaily\b/i, '').trim();
     }
-    if (!body) throw new Error('Habit name required');
     return {
       type: 'habit',
       payload: { name: body, frequency },
@@ -130,8 +129,6 @@ function parseQuickAdd(input) {
         body = body.replace(/\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(am|pm)?\b/i, '').trim();
       }
     }
-
-    if (!body) body = 'Reminder';
 
     return {
       type: 'reminder',

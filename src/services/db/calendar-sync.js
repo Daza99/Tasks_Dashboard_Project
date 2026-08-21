@@ -10,6 +10,7 @@ const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { dateKey } = require('./habits');
 const { createEvent, getEvent, deleteEvent } = require('./events');
+const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const OPEN_SENTINEL = '9999';
 
@@ -78,16 +79,17 @@ function upsertLinkedEvent({
   description = null,
 }) {
   try {
-    if (!source_type || source_id == null || !occurrence_date || !title) return null;
+    if (!source_type || source_id == null || !occurrence_date) return null;
     const details = normDesc(description);
     const existing = findLinked(source_type, source_id, occurrence_date);
     if (existing) {
       if (Number(existing.hidden) === 1) return getEvent(existing.id);
+      const eventTitle = uniqueTitleFor('event', title, existing.id);
       getDb()
         .prepare(
           `UPDATE events SET title = ?, start_datetime = ?, description = ? WHERE id = ?`
         )
-        .run(title.trim(), start_datetime, details, existing.id);
+        .run(eventTitle, start_datetime, details, existing.id);
       return getEvent(existing.id);
     }
     return createEvent({
@@ -142,20 +144,22 @@ function moveLinkedEvent(sourceType, sourceId, fromDate, toDate, title, startIso
     const dest = findLinked(sourceType, sourceId, toDate);
     if (dest) {
       if (Number(dest.hidden) !== 1) {
+        const destTitle = uniqueTitleFor('event', title, dest.id);
         getDb()
           .prepare(
             `UPDATE events SET title = ?, start_datetime = ?, description = ? WHERE id = ?`
           )
-          .run(title.trim(), startIso, details, dest.id);
+          .run(destTitle, startIso, details, dest.id);
       }
       getDb().prepare('DELETE FROM events WHERE id = ?').run(src.id);
       return getEvent(dest.id);
     }
+    const srcTitle = uniqueTitleFor('event', title, src.id);
     getDb()
       .prepare(
         `UPDATE events SET title = ?, start_datetime = ?, occurrence_date = ?, description = ? WHERE id = ?`
       )
-      .run(title.trim(), startIso, toDate, details, src.id);
+      .run(srcTitle, startIso, toDate, details, src.id);
     return getEvent(src.id);
   } catch (err) {
     logError('moveLinkedEvent', err);

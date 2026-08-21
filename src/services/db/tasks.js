@@ -11,6 +11,7 @@ const {
   hasTag,
 } = require('./tags');
 const { clampPriority } = require('../../utils/priority.cjs');
+const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const TASK_LIFECYCLE = [
   'todo_24',
@@ -33,7 +34,7 @@ function enrich(row) {
 /** Create task. kind must be todo_24 | todo_open. */
 function createTask({ title, description = null, priority = 3, kind, due_datetime = null }) {
   try {
-    if (!title?.trim()) throw new Error('Title required');
+    const taskTitle = uniqueTitleFor('task', title);
     if (kind !== 'todo_24' && kind !== 'todo_open') {
       throw new Error('kind must be todo_24 or todo_open');
     }
@@ -48,7 +49,7 @@ function createTask({ title, description = null, priority = 3, kind, due_datetim
         `INSERT INTO tasks (title, description, priority, due_datetime)
          VALUES (?, ?, ?, ?)`
       )
-      .run(title.trim(), description, prio, due);
+      .run(taskTitle, description, prio, due);
     const id = Number(info.lastInsertRowid);
     addTag('task', id, kind);
     return getTask(id);
@@ -85,13 +86,15 @@ function listTasks({ includeCompleted = false } = {}) {
 
 function updateTask(id, fields) {
   try {
+    const next = { ...fields };
+    if (next.title !== undefined) next.title = uniqueTitleFor('task', next.title, id);
     const allowed = ['title', 'description', 'priority', 'due_datetime'];
     const sets = [];
     const vals = [];
     for (const key of allowed) {
-      if (fields[key] !== undefined) {
+      if (next[key] !== undefined) {
         sets.push(`${key} = ?`);
-        vals.push(key === 'priority' ? clampPriority(fields[key]) : fields[key]);
+        vals.push(key === 'priority' ? clampPriority(next[key]) : next[key]);
       }
     }
     const db = getDb();

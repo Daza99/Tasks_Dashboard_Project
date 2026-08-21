@@ -710,7 +710,6 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Tracker name"
-          required
         />
         <div className="kind-toggle kind-toggle--labels" role="group" aria-label="Kind">
           {KINDS.map((k) => (
@@ -843,7 +842,6 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  required
                 />
                 <div className="kind-toggle kind-toggle--labels" role="group" aria-label="Period">
                   {PERIODS.map((p) => (

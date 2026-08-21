@@ -8,6 +8,7 @@ const TYPE_LABEL = {
   event: 'Event',
   transaction: 'Spending',
   list: 'List',
+  note: 'Note',
 };
 
 /**

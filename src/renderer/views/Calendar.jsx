@@ -382,7 +382,6 @@ export default function CalendarView({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Event title"
-          required
         />
         <input
           type="datetime-local"
@@ -411,7 +410,6 @@ export default function CalendarView({
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  required
                 />
                 <input
                   type="datetime-local"

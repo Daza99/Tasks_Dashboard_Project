@@ -43,6 +43,7 @@ const MODULES = [
   { id: 'event', label: 'Events' },
   { id: 'transaction', label: 'Spending' },
   { id: 'list', label: 'Lists' },
+  { id: 'note', label: 'Notes' },
 ];
 
 /**
@@ -54,7 +55,7 @@ const MODULES = [
  *   onChange: (next: object) => void
  * }} props
  */
-export default function SearchFilters({ filters, years, show, onChange }) {
+export default function SearchFilters({ filters, years, noteCategories = [], show, onChange }) {
   function set(key, value) {
     onChange({ ...filters, [key]: value });
   }
@@ -166,6 +167,24 @@ export default function SearchFilters({ filters, years, show, onChange }) {
           <select value={filters.snoozed} onChange={(e) => set('snoozed', e.target.value)}>
             <option value="all">All</option>
             <option value="snoozed">Snoozed</option>
+          </select>
+        </label>
+      )}
+
+      {show.category && (
+        <label className="search-filters__field">
+          Category
+          <select
+            value={filters.category || 'all'}
+            onChange={(e) => set('category', e.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="uncategorized">Uncategorized</option>
+            {noteCategories.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
           </select>
         </label>
       )}

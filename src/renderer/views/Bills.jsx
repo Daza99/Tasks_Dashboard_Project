@@ -456,7 +456,6 @@ export default function BillsView({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Bill name"
-            required
           />
           <div className="settings-row bill-amount-row">
             <input
@@ -580,7 +579,6 @@ export default function BillsView({
                     type="text"
                     value={edit.name}
                     onChange={(e) => setEdit({ ...edit, name: e.target.value })}
-                    required
                   />
                   <div className="settings-row bill-amount-row">
                     <input

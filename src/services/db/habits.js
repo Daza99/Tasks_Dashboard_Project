@@ -13,6 +13,7 @@ const {
   normalizeTagNames,
 } = require('./tags');
 const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
+const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const FREQUENCIES = ['daily', 'weekly', 'monthly'];
 /** System-managed habit tags — UI / exports. */
@@ -87,7 +88,7 @@ function createHabit({
   priority = DEFAULT_PRIORITY,
 }) {
   try {
-    if (!name?.trim()) throw new Error('Name required');
+    const habitName = uniqueTitleFor('habit', name);
     if (!FREQUENCIES.includes(frequency)) {
       throw new Error('frequency must be daily, weekly, or monthly');
     }
@@ -100,7 +101,7 @@ function createHabit({
         `INSERT INTO habits (name, frequency, color, nudge_time, description, priority)
          VALUES (?, ?, ?, ?, ?, ?)`
       )
-      .run(name.trim(), frequency, color, nudge, details, prio);
+      .run(habitName, frequency, color, nudge, details, prio);
     const id = Number(info.lastInsertRowid);
     syncNudgeTag(id, nudge);
     if (tags !== undefined) syncUserTags(id, tags);
@@ -158,8 +159,9 @@ function updateHabit(id, fields) {
     const cur = getDb().prepare('SELECT * FROM habits WHERE id = ?').get(id);
     if (!cur) throw new Error('Habit not found');
     const name =
-      fields.name !== undefined ? String(fields.name).trim() : cur.name;
-    if (!name) throw new Error('Name required');
+      fields.name !== undefined
+        ? uniqueTitleFor('habit', fields.name, id)
+        : cur.name;
     const frequency =
       fields.frequency !== undefined ? fields.frequency : cur.frequency;
     if (!FREQUENCIES.includes(frequency)) {

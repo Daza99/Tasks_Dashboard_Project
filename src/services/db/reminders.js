@@ -10,6 +10,7 @@ const {
   hasTag,
   removeTag,
 } = require('./tags');
+const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const SCOPE_TAGS = ['rem_today', 'rem_tomorrow', 'rem_dated', 'rem_open'];
 const STATE_TAGS = [
@@ -132,7 +133,7 @@ function createReminder({
   nudge_datetime = null,
 }) {
   try {
-    if (!title?.trim()) throw new Error('Title required');
+    const remTitle = uniqueTitleFor('reminder', title);
     const resolved = resolveScope(scope, datetime);
     const appointment = scope === 'open' ? 0 : is_appointment ? 1 : 0;
     const rec = scope === 'open' ? null : recurrence || null;
@@ -150,7 +151,7 @@ function createReminder({
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        title.trim(),
+        remTitle,
         resolved.datetime,
         rec,
         appointment,
@@ -214,6 +215,9 @@ function updateReminder(id, fields) {
     const sets = [];
     const vals = [];
     const nextFields = { ...fields };
+    if (nextFields.title !== undefined) {
+      nextFields.title = uniqueTitleFor('reminder', nextFields.title, id);
+    }
     if (nextFields.scope === 'open') {
       nextFields.is_appointment = 0;
       nextFields.recurrence = null;

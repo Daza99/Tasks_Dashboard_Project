@@ -349,7 +349,6 @@ export default function RemindersView({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Reminder title"
-          required
         />
         <div className="kind-toggle" role="group" aria-label="Reminder scope">
           {['today', 'tomorrow', 'dated', 'open'].map((s) => (
@@ -465,7 +464,6 @@ export default function RemindersView({
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  required
                 />
                 <div className="kind-toggle" role="group" aria-label="Edit scope">
                   {['today', 'tomorrow', 'dated', 'open'].map((s) => (

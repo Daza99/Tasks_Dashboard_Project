@@ -219,7 +219,6 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Habit name"
-            required
           />
           <div className="kind-toggle" role="group" aria-label="Frequency">
             {FREQS.map((f) => (
@@ -288,7 +287,6 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  required
                 />
                 <div className="kind-toggle">
                   {FREQS.map((f) => (

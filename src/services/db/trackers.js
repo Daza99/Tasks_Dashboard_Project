@@ -6,6 +6,7 @@ const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { getItemTagNames, syncUserTags } = require('./tags');
 const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
+const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const KINDS = ['count', 'scale', 'mood', 'energy', 'stopwatch', 'countdown'];
 const PERIODS = ['daily', 'weekly', 'monthly', 'bimonthly', 'as_needed'];
@@ -316,7 +317,7 @@ function createTracker({
   priority = DEFAULT_PRIORITY,
 }) {
   try {
-    if (!name?.trim()) throw new Error('Name required');
+    const trackerName = uniqueTitleFor('tracker', name);
     requireKind(kind);
     requirePeriod(period);
     const cfg = normalizeConfig(kind, config);
@@ -328,7 +329,7 @@ function createTracker({
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        name.trim(),
+        trackerName,
         kind,
         period,
         JSON.stringify(cfg),
@@ -380,8 +381,9 @@ function updateTracker(id, fields) {
     const cur = getDb().prepare('SELECT * FROM trackers WHERE id = ?').get(id);
     if (!cur) throw new Error('Tracker not found');
     const name =
-      fields.name !== undefined ? String(fields.name).trim() : cur.name;
-    if (!name) throw new Error('Name required');
+      fields.name !== undefined
+        ? uniqueTitleFor('tracker', fields.name, id)
+        : cur.name;
     const period = fields.period !== undefined ? fields.period : cur.period;
     requirePeriod(period);
     const kind = cur.kind;

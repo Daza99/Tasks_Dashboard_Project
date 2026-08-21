@@ -88,6 +88,16 @@ const {
   sweepContainers,
 } = require('../services/db/containers');
 const {
+  createNote,
+  getNote,
+  listNotes,
+  updateNote,
+  saveNoteDoc,
+  deleteNote,
+  listNoteCategories,
+  createNoteCategory,
+} = require('../services/db/notes');
+const {
   createList,
   getList,
   listLists,
@@ -126,6 +136,8 @@ const {
   broadcastTrackersChanged,
   ensureTick,
 } = require('./tracker-popout');
+const { registerNotePopoutIpc, closeNotePopoutById } = require('./note-popout');
+const { printNote, exportNote } = require('./notes-export');
 const { parseQuickAdd } = require('../utils/quick-add-parser');
 const { runSearch, searchFilterOptions } = require('../services/db/search');
 const {
@@ -140,6 +152,7 @@ const {
 function registerIpcHandlers() {
   registerNotificationIpc();
   registerTrackerPopoutIpc();
+  registerNotePopoutIpc();
 
   ipcMain.handle('settings:getAll', () => {
     try {
@@ -443,6 +456,21 @@ function registerIpcHandlers() {
   ipcMain.handle('lists:export', (_e, id) => exportList(id));
   ipcMain.handle('lists:hashtagWhitelist', () => readWhitelist());
   ipcMain.handle('lists:appendHashtag', (_e, name) => appendHashtag(name));
+
+  // --- Notes ---
+  ipcMain.handle('notes:list', (_e, opts) => listNotes(opts || {}));
+  ipcMain.handle('notes:get', (_e, id) => getNote(id));
+  ipcMain.handle('notes:create', (_e, data) => createNote(data || {}));
+  ipcMain.handle('notes:update', (_e, id, fields) => updateNote(id, fields || {}));
+  ipcMain.handle('notes:saveDoc', (_e, id, payload) => saveNoteDoc(id, payload || {}));
+  ipcMain.handle('notes:delete', (_e, id) => {
+    closeNotePopoutById(id);
+    return deleteNote(id);
+  });
+  ipcMain.handle('notes:categories', () => listNoteCategories());
+  ipcMain.handle('notes:createCategory', (_e, name) => createNoteCategory(name));
+  ipcMain.handle('notes:export', (_e, id, format) => exportNote(id, format));
+  ipcMain.handle('notes:print', (_e, id) => printNote(id));
 
   ipcMain.handle('search:query', (_e, opts) => runSearch(opts || {}));
   ipcMain.handle('search:filterOptions', (_e, scope) =>

@@ -6,7 +6,6 @@ import SearchResults from './SearchResults';
 
 const DISABLED_VIEWS = new Set([
   'settings',
-  'notes',
   'inbox',
   'projects',
   'tags',
@@ -23,6 +22,7 @@ const EMPTY_FILTERS = {
   priority: 'all',
   paid: 'all',
   snoozed: 'all',
+  category: 'all',
 };
 
 const PLACEHOLDER = {
@@ -35,6 +35,7 @@ const PLACEHOLDER = {
   calendar: 'Search events…',
   spending: 'Search spending…',
   lists: 'Search lists…',
+  notes: 'Search notes…',
   expired: 'Search expired…',
   completed: 'Search completed…',
   archive: 'Search archive…',
@@ -67,6 +68,7 @@ export default function SearchBar({ activeView, onEditRequest }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [hits, setHits] = useState([]);
   const [years, setYears] = useState([]);
+  const [noteCategories, setNoteCategories] = useState([]);
   const [busy, setBusy] = useState(false);
 
   const disabled = !isCompact && DISABLED_VIEWS.has(activeView);
@@ -77,7 +79,7 @@ export default function SearchBar({ activeView, onEditRequest }) {
 
   const providerIds = useMemo(() => {
     if (isCompact) {
-      return filters.module !== 'all' ? [filters.module] : ['task', 'reminder', 'bill', 'habit', 'event', 'transaction', 'list'];
+      return filters.module !== 'all' ? [filters.module] : ['task', 'reminder', 'bill', 'habit', 'event', 'transaction', 'list', 'note'];
     }
     const map = {
       today: ['task', 'reminder'],
@@ -88,6 +90,7 @@ export default function SearchBar({ activeView, onEditRequest }) {
       calendar: ['event'],
       spending: ['transaction'],
       lists: ['list'],
+      notes: ['note'],
       expired: ['task', 'reminder'],
       completed: ['task', 'reminder'],
       archive: ['task', 'reminder'],
@@ -103,6 +106,9 @@ export default function SearchBar({ activeView, onEditRequest }) {
     priority: providerIds.some((id) => id === 'task' || id === 'habit' || id === 'bill'),
     paid: providerIds.includes('bill'),
     snoozed: providerIds.includes('reminder'),
+    category:
+      (!isCompact && activeView === 'notes') ||
+      (isCompact && filters.module === 'note'),
   };
 
   // Reset status default when the Focus view changes
@@ -116,7 +122,10 @@ export default function SearchBar({ activeView, onEditRequest }) {
     (async () => {
       try {
         const opts = await window.api.searchFilterOptions(scope);
-        if (!cancelled) setYears(opts.years || []);
+        if (!cancelled) {
+          setYears(opts.years || []);
+          setNoteCategories(opts.noteCategories || []);
+        }
       } catch {
         if (!cancelled) setYears([]);
       }
@@ -140,6 +149,7 @@ export default function SearchBar({ activeView, onEditRequest }) {
         const res = await window.api.search({ query: q, scope, filters });
         setHits(res.hits || []);
         if (res.years) setYears(res.years);
+        if (res.noteCategories) setNoteCategories(res.noteCategories);
       } catch {
         setHits([]);
       } finally {
@@ -215,6 +225,7 @@ export default function SearchBar({ activeView, onEditRequest }) {
           <SearchFilters
             filters={filters}
             years={years}
+            noteCategories={noteCategories}
             show={show}
             onChange={setFilters}
           />

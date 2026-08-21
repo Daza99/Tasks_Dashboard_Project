@@ -5,6 +5,7 @@ const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { startOfDay, endOfDay } = require('./reminders');
 const { dateKey } = require('./habits');
+const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 function enrich(row) {
   if (!row) return null;
@@ -79,7 +80,7 @@ function createEvent({
   hidden = 0,
 }) {
   try {
-    if (!title?.trim()) throw new Error('Title required');
+    const eventTitle = uniqueTitleFor('event', title);
     if (!start_datetime) throw new Error('start_datetime required');
     const info = getDb()
       .prepare(
@@ -88,7 +89,7 @@ function createEvent({
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        title.trim(),
+        eventTitle,
         start_datetime,
         end_datetime,
         description,
@@ -114,8 +115,9 @@ function updateEvent(id, fields) {
     const cur = getDb().prepare('SELECT * FROM events WHERE id = ?').get(id);
     if (!cur) throw new Error('Event not found');
     const title =
-      fields.title !== undefined ? String(fields.title).trim() : cur.title;
-    if (!title) throw new Error('Title required');
+      fields.title !== undefined
+        ? uniqueTitleFor('event', fields.title, id)
+        : cur.title;
     const start_datetime =
       fields.start_datetime !== undefined
         ? fields.start_datetime

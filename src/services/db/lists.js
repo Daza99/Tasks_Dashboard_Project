@@ -9,6 +9,7 @@ const {
   normalizeTagName,
   userTagsOnly,
 } = require('../../utils/tag-helpers.cjs');
+const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const LIST_TYPES = new Set(['todo', 'bullet', 'md']);
 
@@ -66,11 +67,11 @@ function enrichList(row) {
  */
 function createList({ name, type, tag }) {
   try {
-    if (!name?.trim()) throw new Error('Name required');
+    const listName = uniqueTitleFor('list', name);
     assertType(type);
     const info = getDb()
       .prepare('INSERT INTO lists (name, type) VALUES (?, ?)')
-      .run(name.trim(), type);
+      .run(listName, type);
     const id = Number(info.lastInsertRowid);
     const bare = normalizeTagName(tag);
     if (bare) {
@@ -134,8 +135,8 @@ function listLists(opts = {}) {
 
 function renameList(id, name) {
   try {
-    if (!name?.trim()) throw new Error('Name required');
-    getDb().prepare('UPDATE lists SET name = ? WHERE id = ?').run(name.trim(), id);
+    const listName = uniqueTitleFor('list', name, id);
+    getDb().prepare('UPDATE lists SET name = ? WHERE id = ?').run(listName, id);
     return getList(id);
   } catch (err) {
     logError('renameList', err);

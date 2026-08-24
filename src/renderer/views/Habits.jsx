@@ -9,9 +9,11 @@ import {
   userTagsDisplay,
 } from '../../utils/tag-helpers.js';
 import DetailsInline from '../components/DetailsInline';
+import DetailsPreview from '../components/DetailsPreview';
 import PrioritySelect from '../components/PrioritySelect';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
 const FREQS = ['daily', 'weekly', 'monthly'];
 const FILTER_OPTS = ['all', 'daily', 'weekly', 'monthly'];
@@ -341,18 +343,16 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
               </form>
             ) : (
               <>
-                <div className="module-list__row">
+                <div
+                  className="module-list__row"
+                  onDoubleClick={rowDblClick(() => beginEdit(h))}
+                >
                   <div>
                     <strong>
                       <span className="priority-badge" data-p={h.priority ?? DEFAULT_PRIORITY}>
                         P{h.priority ?? DEFAULT_PRIORITY}
                       </span>{' '}
                       {h.name}
-                      {h.description?.trim() ? (
-                        <span className="details-mark" title="Has details">
-                          details
-                        </span>
-                      ) : null}
                     </strong>
                     <div className="module-list__meta">
                       {h.frequency}
@@ -363,6 +363,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
                     {h.tags?.length > 0 && (
                       <div className="item-row__tags">{formatTagsDisplay(h.tags)}</div>
                     )}
+                    <DetailsPreview text={h.description} />
                   </div>
                   <div className="item-row__actions">
                     {isArchive ? (

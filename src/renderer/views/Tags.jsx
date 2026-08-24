@@ -9,6 +9,8 @@ import {
   normalizeTagName,
   userTagsOnly,
 } from '../../utils/tag-helpers.js';
+import { rowDblClick } from '../../utils/row-dblclick.js';
+import DetailsPreview from '../components/DetailsPreview';
 
 const PAGE = 10;
 
@@ -457,21 +459,16 @@ function TagAttachedRow({
       .join(' · ');
   }
 
-  const hasDetails = Boolean(String(item.description || '').trim());
-
   return (
-    <li className="module-list__item glass-inset module-list__item--col">
+    <li
+      className="module-list__item glass-inset module-list__item--col"
+      onDoubleClick={rowDblClick(() => onEditRequest?.(type, item.id))}
+    >
       <div className="module-list__row">
         <div>
-          <strong>
-            {title}
-            {hasDetails ? (
-              <span className="details-mark" title="Has details">
-                details
-              </span>
-            ) : null}
-          </strong>
+          <strong>{title}</strong>
           {meta ? <div className="module-list__meta">{meta}</div> : null}
+          <DetailsPreview text={item.description} />
         </div>
         <div className="item-row__actions">
           {type === 'task' && !done ? (

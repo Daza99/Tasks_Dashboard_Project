@@ -10,6 +10,7 @@ const WORD_LIMIT = 300;
  *   onChange: (text: string) => void,
  *   ariaLabel?: string,
  *   placeholder?: string,
+ *   compact?: boolean,
  * }} props
  */
 export default function DetailsInline({
@@ -17,6 +18,7 @@ export default function DetailsInline({
   onChange,
   ariaLabel = 'Details',
   placeholder = 'Details (optional)',
+  compact = false,
 }) {
   const words = countWords(value);
 
@@ -25,12 +27,12 @@ export default function DetailsInline({
   }
 
   return (
-    <div className="details-inline">
+    <div className={`details-inline${compact ? ' details-inline--compact' : ''}`}>
       <textarea
         className="details-inline__textarea"
         value={value}
         onChange={handleChange}
-        rows={4}
+        rows={compact ? 3 : 4}
         placeholder={placeholder}
         aria-label={ariaLabel}
       />

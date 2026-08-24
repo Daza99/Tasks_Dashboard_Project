@@ -11,10 +11,11 @@ import {
   userTagsOnly,
 } from '../../utils/tag-helpers.js';
 import DetailsInline from '../components/DetailsInline';
+import DetailsPreview from '../components/DetailsPreview';
 import NudgeCustomDialog from '../components/NudgeCustomDialog';
-import { formatNudgeLine } from '../components/CalEntryLabel';
+import { NudgePreview, NudgeRow, todayKey } from '../components/NudgeRow';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
-import { useDateFormat } from '../hooks/useDateFormat';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
 function fmt(iso) {
   if (!iso || String(iso).startsWith('9999')) return 'Open';
@@ -44,10 +45,6 @@ function scopeFromTags(tags = []) {
   return 'today';
 }
 
-function todayKey() {
-  return format(new Date(), 'yyyy-MM-dd');
-}
-
 /** Local yyyy-MM-dd for the create-form scope. */
 function createDueDate(scope, date) {
   if (scope === 'today') return todayKey();
@@ -59,59 +56,6 @@ function createDueDate(scope, date) {
 function localToIso(date, time) {
   const base = parseISO(`${date}T${time || '09:00'}:00`);
   return isValid(base) ? base.toISOString() : null;
-}
-
-function NudgeRow({ nudge, mode, dueDate, onNudgeChange, onDayBefore, onCustom }) {
-  const dayBeforeOff = dueDate === todayKey();
-  const bright = Boolean(nudge);
-  return (
-    <div className="nudge-row">
-      <label className="cal-appt-check">
-        <input
-          type="checkbox"
-          checked={nudge}
-          onChange={(e) => onNudgeChange(e.target.checked)}
-        />
-        Nudge
-      </label>
-      <button
-        type="button"
-        className={`btn-primary${bright && !dayBeforeOff ? '' : ' btn-primary--muted'}${
-          bright && mode === 'day_before' && !dayBeforeOff ? ' active' : ''
-        }`}
-        disabled={dayBeforeOff}
-        title={dayBeforeOff ? 'Reminder is today' : 'Same time, one day before'}
-        onClick={onDayBefore}
-      >
-        Day Before
-      </button>
-      <button
-        type="button"
-        className={`btn-primary${bright ? '' : ' btn-primary--muted'}${
-          bright && mode === 'custom' ? ' active' : ''
-        }`}
-        onClick={onCustom}
-      >
-        Custom
-      </button>
-    </div>
-  );
-}
-
-/** Live “Nudge yyyy-MM-dd 11am” under the row; hidden when Nudge is off. */
-function NudgePreview({ nudge, mode, dueDate, dueTime, customDate, customTime }) {
-  const { dateFormat } = useDateFormat();
-  if (!nudge) return null;
-  let when = null;
-  if (mode === 'custom') {
-    when = parseISO(`${customDate}T${customTime || '09:00'}:00`);
-  } else if (dueDate) {
-    const due = parseISO(`${dueDate}T${dueTime || '09:00'}:00`);
-    when = isValid(due) ? addDays(due, -1) : null;
-  }
-  const line = formatNudgeLine(when, dateFormat);
-  if (!line) return null;
-  return <div className="nudge-preview">{line}</div>;
 }
 
 /**
@@ -572,15 +516,13 @@ export default function RemindersView({
                 {editError && <span style={{ color: 'var(--danger)' }}>{editError}</span>}
               </form>
             ) : (
-              <div className="module-list__row">
+              <div
+                className="module-list__row"
+                onDoubleClick={rowDblClick(() => beginEdit(r))}
+              >
                 <div>
                   <strong>
                     {r.title}
-                    {r.description?.trim() ? (
-                      <span className="details-mark" title="Has details">
-                        details
-                      </span>
-                    ) : null}
                   </strong>
                   <div className="module-list__meta">
                     {scopeFromTags(r.tags)}
@@ -591,6 +533,7 @@ export default function RemindersView({
                     {r.recurrence === 'daily' ? ' · daily' : ''}{' '}
                     · {fmt(r.datetime)}
                   </div>
+                  <DetailsPreview text={r.description} />
                 </div>
                 <div className="item-row__actions">
                   <LockButton

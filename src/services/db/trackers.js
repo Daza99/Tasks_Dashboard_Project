@@ -433,6 +433,38 @@ function deleteTracker(id) {
 }
 
 /**
+ * Bulk-delete trackers (and their tags/logs) in one transaction.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteTrackers(ids) {
+  try {
+    const list = [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+    if (!list.length) return 0;
+    const db = getDb();
+    const delTags = db.prepare(
+      `DELETE FROM item_tags WHERE item_type = 'tracker' AND item_id = ?`
+    );
+    const delLogs = db.prepare('DELETE FROM tracker_logs WHERE tracker_id = ?');
+    const delRow = db.prepare('DELETE FROM trackers WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        delTags.run(id);
+        delLogs.run(id);
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteTrackers', err);
+    throw err;
+  }
+}
+
+/**
  * Append a log. Count uses signed step; scale/mood/energy store the chosen value.
  * @param {number} id
  * @param {number|string} value
@@ -624,6 +656,7 @@ function toPopoutPayload(tracker) {
         period_log_count: tracker.period_log_count,
         last_value: tracker.last_value,
         logged_this_period: tracker.logged_this_period,
+        created_at: tracker.created_at,
       },
     ],
   };
@@ -640,6 +673,7 @@ module.exports = {
   listTrackers,
   updateTracker,
   deleteTracker,
+  deleteTrackers,
   logValue,
   undoLastLog,
   timerStart,

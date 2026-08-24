@@ -76,7 +76,11 @@ CREATE TABLE IF NOT EXISTS bills (
     alerted_due INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     priority INTEGER DEFAULT 3,
-    description TEXT
+    description TEXT,
+    show_on_calendar INTEGER DEFAULT 1,
+    nudge_datetime TEXT,
+    nudge_mode TEXT,
+    nudge_alerted INTEGER DEFAULT 0
 );
 
 -- Actual amounts paid per cycle; average keyed by bill_name
@@ -217,6 +221,13 @@ CREATE TABLE IF NOT EXISTS wallpaper_library (
     filepath TEXT NOT NULL,
     added_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     eligible_for_random BOOLEAN DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS wallpaper_colors (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL,
+    created_date DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS sound_library (

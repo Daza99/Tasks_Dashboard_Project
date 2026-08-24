@@ -7,6 +7,13 @@ const {
   setSetting,
   getActiveTheme,
   setThemeBase,
+  listCustomThemes,
+  saveCustomTheme,
+  getThemeDefaults,
+  resetThemeDefaults,
+  listWallpaperColors,
+  saveWallpaperColor,
+  resetWallpaperDefaults,
 } = require('./database');
 const { getPathInfo } = require('./portable-paths');
 const { logError } = require('./logger');
@@ -119,6 +126,7 @@ const {
   listTrackers,
   updateTracker,
   deleteTracker,
+  deleteTrackers,
   logValue,
   undoLastLog,
   timerStart,
@@ -128,7 +136,10 @@ const {
   listDueThisPeriod,
 } = require('../services/db/trackers');
 const { inspectTags, listInspectLog } = require('../services/db/tag-inspector');
-const { registerNotificationIpc } = require('./notification-window');
+const {
+  registerNotificationIpc,
+  refreshOpenNotifications,
+} = require('./notification-window');
 const {
   registerTrackerPopoutIpc,
   openTrackerPopout,
@@ -188,6 +199,69 @@ function registerIpcHandlers() {
       return setThemeBase(base);
     } catch (err) {
       logError('theme:setBase', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('theme:listCustom', () => {
+    try {
+      return listCustomThemes();
+    } catch (err) {
+      logError('theme:listCustom', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('theme:saveCustom', (_e, payload) => {
+    try {
+      return saveCustomTheme(payload || {});
+    } catch (err) {
+      logError('theme:saveCustom', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('theme:getDefaults', (_e, base) => {
+    try {
+      return getThemeDefaults(base);
+    } catch (err) {
+      logError('theme:getDefaults', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('theme:resetDefaults', () => {
+    try {
+      return resetThemeDefaults();
+    } catch (err) {
+      logError('theme:resetDefaults', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('wallpaper:listColors', () => {
+    try {
+      return listWallpaperColors();
+    } catch (err) {
+      logError('wallpaper:listColors', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('wallpaper:saveColor', (_e, payload) => {
+    try {
+      return saveWallpaperColor(payload || {});
+    } catch (err) {
+      logError('wallpaper:saveColor', err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('wallpaper:resetDefaults', () => {
+    try {
+      return resetWallpaperDefaults();
+    } catch (err) {
+      logError('wallpaper:resetDefaults', err);
       throw err;
     }
   });
@@ -296,6 +370,7 @@ function registerIpcHandlers() {
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession('task', id);
     }
+    refreshOpenNotifications('task', id);
     return row;
   });
   ipcMain.handle('tasks:complete', (_e, id) => completeTask(id));
@@ -318,6 +393,7 @@ function registerIpcHandlers() {
       clearFiredSession('reminder', id);
       clearFiredSession('reminder_nudge', id);
     }
+    refreshOpenNotifications('reminder', id);
     return row;
   });
   ipcMain.handle('reminders:complete', (_e, id) => completeReminder(id));
@@ -334,6 +410,7 @@ function registerIpcHandlers() {
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession('habit', id);
     }
+    refreshOpenNotifications('habit', id);
     return row;
   });
   ipcMain.handle('habits:delete', (_e, id) => deleteHabit(id));
@@ -353,12 +430,19 @@ function registerIpcHandlers() {
   ipcMain.handle('trackers:update', (_e, id, fields) => {
     const row = updateTracker(id, fields || {});
     broadcastTrackersChanged(id);
+    refreshOpenNotifications('tracker', id);
     return row;
   });
   ipcMain.handle('trackers:delete', (_e, id) => {
     const ok = deleteTracker(id);
     broadcastTrackersChanged(id);
     return ok;
+  });
+  ipcMain.handle('trackers:deleteMany', (_e, ids) => {
+    const n = deleteTrackers(ids || []);
+    // No id → refresh all popouts; missing rows close themselves
+    broadcastTrackersChanged();
+    return n;
   });
   ipcMain.handle('trackers:log', (_e, id, value) => {
     const row = logValue(id, value);
@@ -401,10 +485,19 @@ function registerIpcHandlers() {
   ipcMain.handle('bills:create', (_e, data) => createBill(data));
   ipcMain.handle('bills:update', (_e, id, fields) => {
     const row = updateBill(id, fields);
-    if (fields?.due_date !== undefined) {
+    if (
+      fields?.due_date !== undefined ||
+      fields?.nudge !== undefined ||
+      fields?.nudge_datetime !== undefined ||
+      fields?.nudge_mode !== undefined
+    ) {
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession('bill', id);
+      clearFiredSession('bill', `${id}:due`);
+      clearFiredSession('bill', `${id}:before`);
+      clearFiredSession('bill_nudge', id);
     }
+    refreshOpenNotifications('bill', id);
     return row;
   });
   ipcMain.handle('bills:markPaid', (_e, id, opts) => markPaid(id, opts || {}));

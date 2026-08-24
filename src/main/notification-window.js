@@ -1,6 +1,6 @@
 /**
  * Custom due popup — BrowserWindow with taskbar presence (not OS toast).
- * itemType: reminder | reminder_nudge | task | bill | habit
+ * itemType: reminder | reminder_nudge | task | bill | habit | countdown
  */
 const { BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
@@ -23,6 +23,8 @@ const {
   markPaid,
   snoozeBill,
   dismissBillAlert,
+  dismissBillNudge,
+  snoozeBillNudge,
   getBill,
 } = require('../services/db/bills');
 const {
@@ -40,6 +42,7 @@ const VALID_TYPES = new Set([
   'reminder_nudge',
   'task',
   'bill',
+  'bill_nudge',
   'habit',
   'countdown',
 ]);
@@ -50,24 +53,36 @@ const DETAILS_GETTERS = {
   reminder_nudge: getReminder,
   task: getTask,
   bill: getBill,
+  bill_nudge: getBill,
   habit: getHabit,
   countdown: getTracker,
 };
 
-/** Popup itemType → App.jsx requestEdit type. Nudge is the same reminder row. */
+/** Popup itemType → App.jsx requestEdit type. Nudge is the same reminder/bill row. */
 const ITEM_TO_EDIT_TYPE = {
   reminder: 'reminder',
   reminder_nudge: 'reminder',
   task: 'task',
   bill: 'bill',
+  bill_nudge: 'bill',
   habit: 'habit',
   countdown: 'tracker',
 };
 
-/** Map key → { win, resolved, itemType, id, details } */
+/** Map key → { win, resolved, itemType, id, details, createdAt } */
 const openWindows = new Map();
 let handlersRegistered = false;
 let dashboardWindow = null;
+
+const TYPE_LABELS = {
+  reminder: 'Reminder',
+  reminder_nudge: 'Nudge',
+  task: 'Task',
+  bill: 'Bill',
+  bill_nudge: 'Nudge',
+  habit: 'Habit',
+  countdown: 'Countdown',
+};
 
 /** Called from index.js after createWindow (avoids circular require). */
 function setDashboardWindow(win) {
@@ -77,6 +92,20 @@ function setDashboardWindow(win) {
 function getDashboardWindow() {
   if (dashboardWindow && !dashboardWindow.isDestroyed()) return dashboardWindow;
   return null;
+}
+
+/** Local yyyy-mm-dd from ISO / SQLite datetime. */
+function toDateKey(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    const s = String(iso).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  }
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /**
@@ -99,8 +128,90 @@ function resolveDetails(itemType, id, fallback) {
   }
 }
 
+/** created_at → yyyy-mm-dd for popup chrome. */
+function resolveCreatedAt(itemType, id, fallback) {
+  const fromItem = toDateKey(fallback);
+  if (fromItem) return fromItem;
+  const getter = DETAILS_GETTERS[itemType];
+  if (!getter) return null;
+  try {
+    const row = getter(id);
+    return toDateKey(row?.created_at) || null;
+  } catch (err) {
+    logError('resolveCreatedAt', err);
+    return null;
+  }
+}
+
+/** Display title from a DB row (tasks/reminders use title; others name). */
+function titleFromRow(row) {
+  if (!row) return null;
+  return String(row.title || row.name || '').trim() || null;
+}
+
 function winKey(itemType, id) {
   return `${itemType}:${id}`;
+}
+
+/**
+ * Which popup keys may mirror a dashboard entity edit.
+ * @param {string} editType reminder|task|bill|habit|tracker
+ * @param {number} id
+ */
+function popupKeysForEdit(editType, id) {
+  if (editType === 'reminder') {
+    return [winKey('reminder', id), winKey('reminder_nudge', id)];
+  }
+  if (editType === 'bill') {
+    return [winKey('bill', id), winKey('bill_nudge', id)];
+  }
+  if (editType === 'tracker') return [winKey('countdown', id)];
+  if (VALID_TYPES.has(editType)) return [winKey(editType, id)];
+  return [];
+}
+
+/**
+ * Push title / details / created into an open due popup after entity save.
+ * @param {string} editType App edit type (reminder|task|bill|habit|tracker)
+ * @param {number} id
+ */
+function refreshOpenNotifications(editType, id) {
+  try {
+    const keys = popupKeysForEdit(editType, id);
+    for (const key of keys) {
+      const entry = openWindows.get(key);
+      if (!entry?.win || entry.win.isDestroyed()) continue;
+      const itemType = entry.itemType;
+      const getter = DETAILS_GETTERS[itemType];
+      let row = null;
+      try {
+        row = getter ? getter(id) : null;
+      } catch (err) {
+        logError('refreshOpenNotifications get', err);
+      }
+      const title = titleFromRow(row);
+      const details = resolveDetails(itemType, id, row?.description);
+      const createdAt = resolveCreatedAt(itemType, id, row?.created_at);
+      entry.details = details;
+      entry.createdAt = createdAt;
+      if (title) {
+        try {
+          entry.win.setTitle(`${TYPE_LABELS[itemType] || 'Alert'}: ${title}`);
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!entry.win.webContents.isDestroyed()) {
+        entry.win.webContents.send('notif:refresh', {
+          title: title || undefined,
+          details,
+          createdAt,
+        });
+      }
+    }
+  } catch (err) {
+    logError('refreshOpenNotifications', err);
+  }
 }
 
 /** Normalize IPC payload: object `{ id, itemType }` or legacy bare id (reminder). */
@@ -126,6 +237,7 @@ function registerNotificationIpc() {
         /* already done — Done just dismisses */
       } else if (itemType === 'task') completeTask(id);
       else if (itemType === 'bill') markPaid(id);
+      else if (itemType === 'bill_nudge') dismissBillNudge(id);
       else if (itemType === 'habit') markCheckin(id);
       else if (itemType === 'reminder_nudge') dismissReminderNudge(id);
       else completeReminder(id);
@@ -144,6 +256,7 @@ function registerNotificationIpc() {
       markResolved(itemType, id);
       if (itemType === 'task') snoozeTask(id, minutes);
       else if (itemType === 'bill') snoozeBill(id, minutes);
+      else if (itemType === 'bill_nudge') snoozeBillNudge(id, minutes);
       else if (itemType === 'habit') snoozeHabit(id, minutes);
       else if (itemType === 'reminder_nudge') snoozeReminderNudge(id, minutes);
       else snoozeReminder(id, minutes);
@@ -170,6 +283,7 @@ function registerNotificationIpc() {
         /* dismiss only — tracker stays */
       } else if (itemType === 'task') ignoreTaskAlert(id);
       else if (itemType === 'bill') dismissBillAlert(id);
+      else if (itemType === 'bill_nudge') dismissBillNudge(id);
       else if (itemType === 'habit') dismissHabitNudge(id);
       else if (itemType === 'reminder_nudge') dismissReminderNudge(id);
       else ignoreReminder(id);
@@ -218,10 +332,13 @@ function registerNotificationIpc() {
         !entry.win.isDestroyed() &&
         entry.win.webContents === e.sender
       ) {
-        return { details: entry.details || null };
+        return {
+          details: entry.details || null,
+          createdAt: entry.createdAt || null,
+        };
       }
     }
-    return { details: null };
+    return { details: null, createdAt: null };
   });
 
   ipcMain.handle('notif:view', (_e, payload) => {
@@ -283,18 +400,9 @@ function cornerBounds(position, width, height) {
   return { x, y, width, height };
 }
 
-const TYPE_LABELS = {
-  reminder: 'Reminder',
-  reminder_nudge: 'Nudge',
-  task: 'Task',
-  bill: 'Bill',
-  habit: 'Habit',
-  countdown: 'Countdown',
-};
-
 /**
  * Show always-on-top popup with taskbar entry + flash until action.
- * @param {{ id: number, title: string, itemType?: string, tags?: string[] }} item
+ * @param {{ id: number, title: string, itemType?: string, tags?: string[], description?: string, created_at?: string }} item
  */
 function showItemNotification(item) {
   const itemType = VALID_TYPES.has(item.itemType) ? item.itemType : 'reminder';
@@ -311,8 +419,9 @@ function showItemNotification(item) {
     const snoozeMins = settings.notif_default_snooze_minutes || '10';
     const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : [];
     const details = resolveDetails(itemType, item.id, item.description);
-    // Extra height for tags and/or a details pane (~3 lines then scroll)
-    const height = details ? 260 : tags.length ? 200 : 180;
+    const createdAt = resolveCreatedAt(itemType, item.id, item.created_at);
+    // Extra height for Created line (~18px) vs prior 180/200/260
+    const height = details ? 278 : tags.length ? 218 : 198;
     const bounds = cornerBounds(settings.notif_position, 340, height);
     // Query strings cannot carry '#' — HTML prepends it
     const stripHash = (hex) => String(hex || '').replace(/^#/, '');
@@ -343,6 +452,7 @@ function showItemNotification(item) {
       itemType,
       id: item.id,
       details,
+      createdAt,
     });
 
     const query = {
@@ -380,6 +490,7 @@ function showItemNotification(item) {
           /* leave tracker in the list */
         } else if (itemType === 'task') ignoreTaskAlert(item.id);
         else if (itemType === 'bill') dismissBillAlert(item.id);
+        else if (itemType === 'bill_nudge') dismissBillNudge(item.id);
         else if (itemType === 'habit') dismissHabitNudge(item.id);
         else if (itemType === 'reminder_nudge') dismissReminderNudge(item.id);
         else ignoreReminder(item.id);
@@ -404,6 +515,7 @@ function showReminderNotification(reminder) {
 module.exports = {
   showItemNotification,
   showReminderNotification,
+  refreshOpenNotifications,
   registerNotificationIpc,
   setDashboardWindow,
   getDashboardWindow,

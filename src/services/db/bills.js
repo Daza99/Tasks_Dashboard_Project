@@ -10,6 +10,7 @@ const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const STATUSES = ['pending', 'paid', 'overdue'];
 const AMOUNT_MODES = ['fixed', 'estimate', 'average'];
+const RECURRENCES = ['monthly', 'fortnight', 'quarterly', 'yearly'];
 /** Min payment history rows (by name) before Calc Average unlocks. */
 const AVG_MIN_SAMPLES = 6;
 
@@ -20,8 +21,22 @@ function addMonthsIso(isoDate, months) {
   return dateKey(dt);
 }
 
+/** Add days to YYYY-MM-DD. */
+function addDaysIso(isoDate, days) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return dateKey(dt);
+}
+
+/** Local due date at 09:00 → ISO (matches calendar dateAtNine). */
+function dueAtNine(dueDate) {
+  const [y, m, d] = String(dueDate).split('-').map(Number);
+  return new Date(y, m - 1, d, 9, 0, 0).toISOString();
+}
+
 function advanceDue(dueDate, recurrence) {
   if (recurrence === 'monthly') return addMonthsIso(dueDate, 1);
+  if (recurrence === 'fortnight') return addDaysIso(dueDate, 14);
   if (recurrence === 'quarterly') return addMonthsIso(dueDate, 3);
   if (recurrence === 'yearly') return addMonthsIso(dueDate, 12);
   return null;
@@ -31,12 +46,56 @@ function normalizeAmountMode(mode) {
   return AMOUNT_MODES.includes(mode) ? mode : 'fixed';
 }
 
+/**
+ * Resolve nudge columns from create/update payload + due date.
+ * Off → all null. day_before = due 09:00 minus 1 calendar day.
+ */
+function resolveNudgeFields(dueDate, { nudge, nudge_mode, nudge_datetime } = {}) {
+  if (!nudge) {
+    return { nudge_datetime: null, nudge_mode: null, nudge_alerted: 0 };
+  }
+  const mode = nudge_mode === 'custom' ? 'custom' : 'day_before';
+  if (mode === 'custom') {
+    if (!nudge_datetime) throw new Error('nudge_datetime required for custom nudge');
+    const at = new Date(nudge_datetime);
+    if (Number.isNaN(at.getTime())) throw new Error('Invalid nudge_datetime');
+    return {
+      nudge_datetime: at.toISOString(),
+      nudge_mode: 'custom',
+      nudge_alerted: 0,
+    };
+  }
+  if (!dueDate) {
+    return { nudge_datetime: null, nudge_mode: null, nudge_alerted: 0 };
+  }
+  const due = new Date(dueAtNine(dueDate));
+  due.setDate(due.getDate() - 1);
+  return {
+    nudge_datetime: due.toISOString(),
+    nudge_mode: 'day_before',
+    nudge_alerted: 0,
+  };
+}
+
+/** Shift custom nudge by the same day delta as a due-date advance. */
+function shiftNudgeWithDue(nudgeIso, fromDue, toDue) {
+  if (!nudgeIso || !fromDue || !toDue) return nudgeIso;
+  const [fy, fm, fd] = String(fromDue).split('-').map(Number);
+  const [ty, tm, td] = String(toDue).split('-').map(Number);
+  const deltaMs =
+    new Date(ty, tm - 1, td).getTime() - new Date(fy, fm - 1, fd).getTime();
+  const at = new Date(nudgeIso);
+  if (Number.isNaN(at.getTime())) return nudgeIso;
+  return new Date(at.getTime() + deltaMs).toISOString();
+}
+
 function enrich(row) {
   if (!row) return null;
   return {
     ...row,
     title: row.name,
     amount_mode: normalizeAmountMode(row.amount_mode),
+    show_on_calendar: Number(row.show_on_calendar) !== 0 ? 1 : 0,
   };
 }
 
@@ -50,6 +109,10 @@ function createBill({
   amount_mode = 'fixed',
   priority = DEFAULT_PRIORITY,
   description = null,
+  show_on_calendar = 1,
+  nudge = false,
+  nudge_mode = null,
+  nudge_datetime = null,
 }) {
   try {
     const billName = uniqueTitleFor('bill', name);
@@ -57,18 +120,38 @@ function createBill({
     if (!Number.isFinite(amt)) throw new Error('Amount required');
     if (!due_date) throw new Error('due_date required (YYYY-MM-DD)');
     const rec = recurrence || null;
-    if (rec && !['monthly', 'quarterly', 'yearly'].includes(rec)) {
-      throw new Error('recurrence must be monthly, quarterly, yearly, or null');
+    if (rec && !RECURRENCES.includes(rec)) {
+      throw new Error('recurrence must be monthly, fortnight, quarterly, yearly, or null');
     }
     const mode = normalizeAmountMode(amount_mode);
     const prio = clampPriority(priority);
     const details = description != null ? String(description).trim() || null : null;
+    const onCal = show_on_calendar ? 1 : 0;
+    const nudgeFields = resolveNudgeFields(due_date, {
+      nudge,
+      nudge_mode,
+      nudge_datetime,
+    });
     const info = getDb()
       .prepare(
-        `INSERT INTO bills (name, amount, amount_mode, due_date, recurrence, paid_status, category, priority, description)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+        `INSERT INTO bills (name, amount, amount_mode, due_date, recurrence, paid_status, category,
+           priority, description, show_on_calendar, nudge_datetime, nudge_mode, nudge_alerted)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(billName, amt, mode, due_date, rec, category || null, prio, details);
+      .run(
+        billName,
+        amt,
+        mode,
+        due_date,
+        rec,
+        category || null,
+        prio,
+        details,
+        onCal,
+        nudgeFields.nudge_datetime,
+        nudgeFields.nudge_mode,
+        nudgeFields.nudge_alerted
+      );
     const row = getBill(Number(info.lastInsertRowid));
     require('./calendar-sync').syncBill(row);
     return row;
@@ -111,8 +194,11 @@ function updateBill(id, fields) {
       fields.amount !== undefined ? Number(fields.amount) : cur.amount;
     if (!Number.isFinite(amount)) throw new Error('Invalid amount');
     const due_date = fields.due_date !== undefined ? fields.due_date : cur.due_date;
-    const recurrence =
+    let recurrence =
       fields.recurrence !== undefined ? fields.recurrence || null : cur.recurrence;
+    if (recurrence && !RECURRENCES.includes(recurrence)) {
+      throw new Error('recurrence must be monthly, fortnight, quarterly, yearly, or null');
+    }
     const category =
       fields.category !== undefined ? fields.category : cur.category;
     const amount_mode =
@@ -130,12 +216,51 @@ function updateBill(id, fields) {
       fields.description !== undefined
         ? String(fields.description || '').trim() || null
         : cur.description;
+    const show_on_calendar =
+      fields.show_on_calendar !== undefined
+        ? fields.show_on_calendar
+          ? 1
+          : 0
+        : Number(cur.show_on_calendar) !== 0
+          ? 1
+          : 0;
 
     const dueChanged = fields.due_date !== undefined && fields.due_date !== cur.due_date;
+    const nudgeTouched =
+      fields.nudge !== undefined ||
+      fields.nudge_mode !== undefined ||
+      fields.nudge_datetime !== undefined ||
+      (dueChanged && cur.nudge_mode === 'day_before');
+
+    let nudge_datetime = cur.nudge_datetime;
+    let nudge_mode = cur.nudge_mode;
+    let nudge_alerted = cur.nudge_alerted;
+    if (nudgeTouched) {
+      const nudgeOn =
+        fields.nudge !== undefined
+          ? Boolean(fields.nudge)
+          : Boolean(cur.nudge_datetime);
+      const mode =
+        fields.nudge_mode !== undefined ? fields.nudge_mode : cur.nudge_mode;
+      const customAt =
+        fields.nudge_datetime !== undefined
+          ? fields.nudge_datetime
+          : cur.nudge_datetime;
+      const resolved = resolveNudgeFields(due_date, {
+        nudge: nudgeOn,
+        nudge_mode: mode,
+        nudge_datetime: customAt,
+      });
+      nudge_datetime = resolved.nudge_datetime;
+      nudge_mode = resolved.nudge_mode;
+      nudge_alerted = resolved.nudge_alerted;
+    }
+
     const db = getDb();
     db.prepare(
       `UPDATE bills SET name = ?, amount = ?, amount_mode = ?, due_date = ?, recurrence = ?,
-       category = ?, paid_status = ?, priority = ?, description = ?
+       category = ?, paid_status = ?, priority = ?, description = ?,
+       show_on_calendar = ?, nudge_datetime = ?, nudge_mode = ?, nudge_alerted = ?
        ${dueChanged ? ', alerted_before = 0, alerted_due = 0, snooze_until = NULL' : ''}
        WHERE id = ?`
     ).run(
@@ -148,6 +273,10 @@ function updateBill(id, fields) {
       paid_status,
       priority,
       description,
+      show_on_calendar,
+      nudge_datetime,
+      nudge_mode,
+      nudge_alerted,
       id
     );
 
@@ -204,11 +333,29 @@ function markPaid(id, opts = {}) {
 
       const next = advanceDue(cur.due_date, cur.recurrence);
       if (next) {
+        let nextNudge = cur.nudge_datetime;
+        let nextNudgeMode = cur.nudge_mode;
+        let nextNudgeAlerted = 0;
+        if (cur.nudge_mode === 'day_before' && cur.nudge_datetime) {
+          const resolved = resolveNudgeFields(next, {
+            nudge: true,
+            nudge_mode: 'day_before',
+          });
+          nextNudge = resolved.nudge_datetime;
+          nextNudgeMode = resolved.nudge_mode;
+        } else if (cur.nudge_mode === 'custom' && cur.nudge_datetime) {
+          nextNudge = shiftNudgeWithDue(cur.nudge_datetime, cur.due_date, next);
+        } else {
+          nextNudge = null;
+          nextNudgeMode = null;
+          nextNudgeAlerted = 0;
+        }
         db.prepare(
           `UPDATE bills SET paid_status = 'pending', due_date = ?,
-           alerted_before = 0, alerted_due = 0, snooze_until = NULL
+           alerted_before = 0, alerted_due = 0, snooze_until = NULL,
+           nudge_datetime = ?, nudge_mode = ?, nudge_alerted = ?
            WHERE id = ?`
-        ).run(next, id);
+        ).run(next, nextNudge, nextNudgeMode, nextNudgeAlerted, id);
       } else {
         db.prepare(
           `UPDATE bills SET paid_status = 'paid',
@@ -394,7 +541,7 @@ function markOverdueBills() {
   }
 }
 
-/** Bills due today or overdue (brief). */
+/** Bills due today or overdue (Today Focus brief). */
 function listBillsForBrief() {
   try {
     const today = dateKey();
@@ -422,17 +569,43 @@ function listBillsForBrief() {
 }
 
 /**
- * Pending/overdue bills needing day-before or day-of popup.
- * @returns {{ id, name, title, amount, due_date, alertKind: 'before'|'due' }[]}
+ * Unpaid bills due this calendar week plus leftover overdue before Monday.
+ * @param {string} weekStartKey yyyy-mm-dd (Monday)
+ * @param {string} weekEndKey yyyy-mm-dd (Sunday)
+ */
+function listBillsForWeekBrief(weekStartKey, weekEndKey) {
+  try {
+    const dueThisWeek = getDb()
+      .prepare(
+        `SELECT * FROM bills
+         WHERE paid_status IN ('pending', 'overdue')
+           AND due_date >= ? AND due_date <= ?
+         ORDER BY due_date ASC, name COLLATE NOCASE`
+      )
+      .all(weekStartKey, weekEndKey)
+      .map(enrich);
+    const overdue = getDb()
+      .prepare(
+        `SELECT * FROM bills
+         WHERE paid_status = 'overdue' AND due_date < ?
+         ORDER BY due_date ASC`
+      )
+      .all(weekStartKey)
+      .map(enrich);
+    return { billsDueThisWeek: dueThisWeek, billsOverdue: overdue };
+  } catch (err) {
+    logError('listBillsForWeekBrief', err);
+    throw err;
+  }
+}
+
+/**
+ * Pending/overdue bills needing due-day popup (day-before is optional Nudge).
+ * @returns {{ id, name, title, amount, due_date, alertKind: 'due' }[]}
  */
 function listDueBillAlerts() {
   try {
     const today = dateKey();
-    const tomorrow = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() + 1);
-      return dateKey(d);
-    })();
     const rows = getDb()
       .prepare(
         `SELECT * FROM bills
@@ -444,8 +617,6 @@ function listDueBillAlerts() {
     for (const b of rows) {
       if (b.due_date === today && !b.alerted_due) {
         out.push({ ...enrich(b), alertKind: 'due' });
-      } else if (b.due_date === tomorrow && !b.alerted_before) {
-        out.push({ ...enrich(b), alertKind: 'before' });
       }
     }
     return out;
@@ -453,6 +624,56 @@ function listDueBillAlerts() {
     logError('listDueBillAlerts', err);
     throw err;
   }
+}
+
+/** Pending bills whose nudge_datetime has arrived and not yet alerted. */
+function listDueBillNudges() {
+  try {
+    return getDb()
+      .prepare(
+        `SELECT * FROM bills
+         WHERE paid_status IN ('pending', 'overdue')
+           AND nudge_datetime IS NOT NULL
+           AND COALESCE(nudge_alerted, 0) = 0
+           AND datetime(nudge_datetime) <= datetime('now')`
+      )
+      .all()
+      .map(enrich);
+  } catch (err) {
+    logError('listDueBillNudges', err);
+    throw err;
+  }
+}
+
+function markBillNudgeAlerted(id) {
+  getDb().prepare('UPDATE bills SET nudge_alerted = 1 WHERE id = ?').run(id);
+  return getBill(id);
+}
+
+/** Snooze only the nudge; bill due is unchanged. */
+function snoozeBillNudge(id, minutes = 10) {
+  try {
+    const settingsMins = Number(
+      getDb()
+        .prepare(`SELECT value FROM settings WHERE key = 'notif_default_snooze_minutes'`)
+        .get()?.value || 10
+    );
+    const mins = Number(minutes);
+    const useMins = Number.isFinite(mins) && mins > 0 ? mins : settingsMins;
+    const until = new Date(Date.now() + useMins * 60 * 1000).toISOString();
+    getDb()
+      .prepare(`UPDATE bills SET nudge_datetime = ?, nudge_alerted = 0 WHERE id = ?`)
+      .run(until, id);
+    return getBill(id);
+  } catch (err) {
+    logError('snoozeBillNudge', err);
+    throw err;
+  }
+}
+
+/** X / Done on nudge popup — drop this nudge only. */
+function dismissBillNudge(id) {
+  return markBillNudgeAlerted(id);
 }
 
 function markBillAlerted(id, alertKind) {
@@ -517,10 +738,15 @@ module.exports = {
   deleteBillPayment,
   markOverdueBills,
   listBillsForBrief,
+  listBillsForWeekBrief,
   listDueBillAlerts,
+  listDueBillNudges,
   markBillAlerted,
+  markBillNudgeAlerted,
   snoozeBill,
+  snoozeBillNudge,
   dismissBillAlert,
+  dismissBillNudge,
   advanceDue,
   STATUSES,
   AMOUNT_MODES,

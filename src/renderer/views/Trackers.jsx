@@ -9,9 +9,11 @@ import {
   userTagsDisplay,
 } from '../../utils/tag-helpers.js';
 import DetailsInline from '../components/DetailsInline';
+import DetailsPreview from '../components/DetailsPreview';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { useDateFormat } from '../hooks/useDateFormat';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
 const KINDS = ['count', 'scale', 'mood', 'energy', 'stopwatch', 'countdown'];
 const PERIODS = ['daily', 'weekly', 'monthly', 'bimonthly', 'as_needed'];
@@ -257,6 +259,7 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
   const [editTags, setEditTags] = useState('');
   const [editDetails, setEditDetails] = useState('');
   const [deleteId, setDeleteId] = useState(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [resetId, setResetId] = useState(null);
   const [dateFilter, setDateFilter] = useState('any');
   const [customFrom, setCustomFrom] = useState('');
@@ -264,6 +267,10 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
   const [customOpen, setCustomOpen] = useState(false);
   const [customDraftFrom, setCustomDraftFrom] = useState('');
   const [customDraftTo, setCustomDraftTo] = useState('');
+  /** Newest first by created_at */
+  const [sortDir, setSortDir] = useState('desc');
+  const [selected, setSelected] = useState(() => new Set());
+  const selectAllRef = useRef(null);
   const [now, setNow] = useState(() => Date.now());
   const settlingRef = useRef(new Set());
 
@@ -316,7 +323,7 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
     const q = search.trim().toLowerCase();
     const tagQuery = q.startsWith('#') ? q.slice(1) : null;
     const win = dateFilterWindow(dateFilter, customFrom, customTo);
-    return rows.filter((t) => {
+    const list = rows.filter((t) => {
       if (kindFilter !== 'all' && t.kind !== kindFilter) return false;
       if (periodFilter !== 'all' && t.period !== periodFilter) return false;
       if (win) {
@@ -331,7 +338,48 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
         .toLowerCase()
         .includes(q);
     });
-  }, [rows, kindFilter, periodFilter, search, dateFilter, customFrom, customTo]);
+    // Sort by created_at (+ id tiebreak); desc = newest on top
+    const mul = sortDir === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      const ca = String(a.created_at || '');
+      const cb = String(b.created_at || '');
+      if (ca !== cb) return ca < cb ? -mul : mul;
+      return (a.id - b.id) * mul;
+    });
+    return list;
+  }, [rows, kindFilter, periodFilter, search, dateFilter, customFrom, customTo, sortDir]);
+
+  const visibleIds = useMemo(() => filtered.map((t) => t.id), [filtered]);
+
+  // Drop selection for rows no longer visible (filters / deletes)
+  useEffect(() => {
+    const visible = new Set(visibleIds);
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [visibleIds]);
+
+  const selectedVisibleCount = useMemo(() => {
+    let n = 0;
+    for (const id of visibleIds) if (selected.has(id)) n += 1;
+    return n;
+  }, [visibleIds, selected]);
+
+  const allVisibleSelected =
+    visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (!el) return;
+    el.indeterminate =
+      selectedVisibleCount > 0 && selectedVisibleCount < visibleIds.length;
+  }, [selectedVisibleCount, visibleIds.length]);
 
   function setKindAndFields(next) {
     setKind(next);
@@ -415,6 +463,35 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
   async function remove(id) {
     await window.api.deleteTracker(id);
     setDeleteId(null);
+    await load();
+  }
+
+  function toggleSelected(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function onSelectAllChange(checked) {
+    if (checked) {
+      setSelected(new Set(visibleIds));
+    } else {
+      setSelected(new Set());
+    }
+  }
+
+  async function removeSelected() {
+    const ids = visibleIds.filter((id) => selected.has(id));
+    if (!ids.length) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    await window.api.deleteTrackers(ids);
+    setSelected(new Set());
+    setBulkDeleteOpen(false);
     await load();
   }
 
@@ -827,6 +904,50 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
         </label>
       </div>
 
+      <div className="tracker-list-toolbar">
+        <div className="kind-toggle kind-toggle--labels" role="group" aria-label="Sort by created date">
+          <button
+            type="button"
+            className={sortDir === 'asc' ? 'active' : ''}
+            title="Oldest first"
+            aria-label="Oldest first"
+            onClick={() => setSortDir('asc')}
+          >
+            ^
+          </button>
+          <button
+            type="button"
+            className={sortDir === 'desc' ? 'active' : ''}
+            title="Newest first"
+            aria-label="Newest first"
+            onClick={() => setSortDir('desc')}
+          >
+            v
+          </button>
+        </div>
+        <div className="tracker-list-toolbar__right">
+          <label className="bill-check">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              checked={allVisibleSelected}
+              disabled={!visibleIds.length}
+              onChange={(e) => onSelectAllChange(e.target.checked)}
+              aria-label="Select all visible trackers"
+            />
+            Select all
+          </label>
+          <button
+            type="button"
+            className="danger"
+            disabled={!selectedVisibleCount}
+            onClick={() => setBulkDeleteOpen(true)}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+
       <ul className="module-list">
         {filtered.map((t) => (
           <li
@@ -880,23 +1001,32 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
               </form>
             ) : (
               <>
-                <div className="module-list__row">
-                  <div>
-                    <strong>
-                      {t.name}
-                      <span className="tracker-created">
-                        ({createdBadge(t.created_at, now, formatDate)})
-                      </span>
-                      {t.description?.trim() ? (
-                        <span className="details-mark" title="Has details">
-                          details
+                <div
+                  className="module-list__row"
+                  onDoubleClick={rowDblClick(() => beginEdit(t))}
+                >
+                  <div className="tracker-list__main">
+                    <label className="bill-check tracker-list__check">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(t.id)}
+                        onChange={() => toggleSelected(t.id)}
+                        aria-label={`Select ${t.name}`}
+                      />
+                    </label>
+                    <div>
+                      <strong>
+                        {t.name}
+                        <span className="tracker-created">
+                          ({createdBadge(t.created_at, now, formatDate)})
                         </span>
-                      ) : null}
-                    </strong>
-                    <div className="module-list__meta">{metaLine(t)}</div>
-                    {t.tags?.length > 0 && (
-                      <div className="item-row__tags">{formatTagsDisplay(t.tags)}</div>
-                    )}
+                      </strong>
+                      <div className="module-list__meta">{metaLine(t)}</div>
+                      {t.tags?.length > 0 && (
+                        <div className="item-row__tags">{formatTagsDisplay(t.tags)}</div>
+                      )}
+                      <DetailsPreview text={t.description} />
+                    </div>
                   </div>
                   <div className="item-row__actions">
                     <button type="button" onClick={() => setResetId(t.id)}>
@@ -967,6 +1097,16 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
         danger
         onConfirm={() => remove(deleteId)}
         onCancel={() => setDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${selectedVisibleCount} tracker${selectedVisibleCount === 1 ? '' : 's'}?`}
+        message="Removes the selected trackers and their logs. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
       />
     </div>
   );

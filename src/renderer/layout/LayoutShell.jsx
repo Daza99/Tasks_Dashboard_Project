@@ -94,16 +94,22 @@ export default function LayoutShell({
         {isCompact ? (
           <CenterBrief onEditRequest={handleEditRequest} onNavigate={onNavigate} />
         ) : (
-          <div className="center-panel glass-panel focus-host">
-            <button
-              type="button"
-              className="btn-focus-back"
-              onClick={enterCompact}
-              aria-label="Back to Compact"
-              title="Compact (Home)"
-            >
-              ←
-            </button>
+          <div
+            className={`center-panel glass-panel focus-host${
+              activeView === 'today' ? ' focus-host--today' : ''
+            }`}
+          >
+            {activeView !== 'today' && (
+              <button
+                type="button"
+                className="btn-focus-back"
+                onClick={enterCompact}
+                aria-label="Back to Compact"
+                title="Compact (Home)"
+              >
+                ←
+              </button>
+            )}
             {focusContent}
           </div>
         )}

@@ -18,10 +18,12 @@ function enrich(row) {
 
 const VISIBLE = 'AND COALESCE(e.hidden, 0) = 0';
 
-/** Event row plus reminder nudge_datetime when the source is a reminder. */
-const EVENT_WITH_NUDGE = `SELECT e.*, r.nudge_datetime AS nudge_datetime
+/** Event row plus reminder/bill nudge_datetime when the source is linked. */
+const EVENT_WITH_NUDGE = `SELECT e.*,
+       COALESCE(r.nudge_datetime, b.nudge_datetime) AS nudge_datetime
        FROM events e
-       LEFT JOIN reminders r ON e.source_type = 'reminder' AND e.source_id = r.id`;
+       LEFT JOIN reminders r ON e.source_type = 'reminder' AND e.source_id = r.id
+       LEFT JOIN bills b ON e.source_type = 'bill' AND e.source_id = b.id`;
 
 function getEvent(id) {
   const row = getDb().prepare(`${EVENT_WITH_NUDGE} WHERE e.id = ?`).get(id);

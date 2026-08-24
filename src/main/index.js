@@ -114,7 +114,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#0a1628',
+    backgroundColor: '#3e5679',
     title: 'Personal Dashboard',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

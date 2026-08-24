@@ -18,7 +18,9 @@ const {
 } = require('../services/db/habits');
 const {
   listDueBillAlerts,
+  listDueBillNudges,
   markBillAlerted,
+  markBillNudgeAlerted,
 } = require('../services/db/bills');
 const { showItemNotification } = require('./notification-window');
 const { logError } = require('./logger');
@@ -26,7 +28,7 @@ const { inspectTags } = require('../services/db/tag-inspector');
 
 let intervalId = null;
 let didLaunchAudit = false;
-/** Session keys: `reminder:12` | `reminder_nudge:12` | `task:4` | `bill:3` | `habit:1` */
+/** Session keys: `reminder:12` | `reminder_nudge:12` | `task:4` | `bill:3:due` | `bill_nudge:3` | `habit:1` */
 const firedThisSession = new Set();
 
 function sessionKey(itemType, id) {
@@ -108,7 +110,7 @@ function pollDueTasks() {
   }
 }
 
-/** Day-before / day-of bill alerts. */
+/** Day-of bill alerts (day-before is optional Nudge). */
 function pollDueBills() {
   try {
     const due = listDueBillAlerts();
@@ -117,15 +119,34 @@ function pollDueBills() {
       if (firedThisSession.has(key)) continue;
       markBillAlerted(bill.id, bill.alertKind);
       firedThisSession.add(key);
-      const prefix = bill.alertKind === 'before' ? 'Tomorrow: ' : 'Due: ';
       showItemNotification({
         id: bill.id,
-        title: `${prefix}${bill.name} ($${Number(bill.amount).toFixed(2)})`,
+        title: `Due: ${bill.name} ($${Number(bill.amount).toFixed(2)})`,
         itemType: 'bill',
       });
     }
   } catch (err) {
     logError('pollDueBills', err);
+  }
+}
+
+/** Pre-bill nudge popup — does not mark paid. */
+function pollBillNudges() {
+  try {
+    const due = listDueBillNudges();
+    for (const bill of due) {
+      const key = sessionKey('bill_nudge', bill.id);
+      if (firedThisSession.has(key)) continue;
+      markBillNudgeAlerted(bill.id);
+      firedThisSession.add(key);
+      showItemNotification({
+        id: bill.id,
+        title: bill.name,
+        itemType: 'bill_nudge',
+      });
+    }
+  } catch (err) {
+    logError('pollBillNudges', err);
   }
 }
 
@@ -155,6 +176,7 @@ function tick() {
   pollDueTasks();
   pollReminderNudges();
   pollDueReminders();
+  pollBillNudges();
   pollDueBills();
   pollHabitNudges();
   const trigger = didLaunchAudit ? 'scheduler' : 'launch';
@@ -190,6 +212,7 @@ module.exports = {
   pollReminderNudges,
   pollDueTasks,
   pollDueBills,
+  pollBillNudges,
   pollHabitNudges,
   clearFiredSession,
   sessionKey,

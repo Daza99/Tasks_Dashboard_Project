@@ -18,12 +18,13 @@ function datesThrough(endDate) {
 }
 
 /**
- * Custom nudge: date dropdown (today → reminder date) + time.
+ * Custom nudge: date dropdown (today → due date) + time.
  * @param {{
  *   open: boolean,
  *   dueDate: string,
  *   time: string,
  *   initialDate?: string,
+ *   prompt?: string,
  *   onSave: (date: string, time: string) => void,
  *   onCancel: () => void,
  * }} props
@@ -33,6 +34,7 @@ export default function NudgeCustomDialog({
   dueDate,
   time,
   initialDate,
+  prompt,
   onSave,
   onCancel,
 }) {
@@ -61,7 +63,9 @@ export default function NudgeCustomDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="nudge-custom-title">Custom nudge</h2>
-        <p>When to ping before the reminder (date method: {methodHint}).</p>
+        <p>
+          {prompt || `When to ping before the reminder (date method: ${methodHint}).`}
+        </p>
         <div className="nudge-custom-fields">
           <label className="edit-label">
             Date

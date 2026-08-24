@@ -4,9 +4,11 @@ import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
 import TagSearchInput from '../components/TagSearchInput';
 import DetailsInline from '../components/DetailsInline';
+import DetailsPreview from '../components/DetailsPreview';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import { formatTagsDisplay, normalizeUserTagNames, userTagsDisplay } from '../../utils/tag-helpers.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
 const FILTER_OPTS = [
   { value: 'all', label: 'All' },
@@ -337,20 +339,19 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
                 </div>
               </form>
             ) : (
-              <div className="module-list__row">
+              <div
+                className="module-list__row"
+                onDoubleClick={rowDblClick(() => beginEdit(tx))}
+              >
                 <div>
                   <strong>
                     ${Number(tx.amount).toFixed(2)} · {tx.category}
-                    {tx.description?.trim() ? (
-                      <span className="details-mark" title="Has details">
-                        details
-                      </span>
-                    ) : null}
                   </strong>
                   <div className="module-list__meta">
                     {tx.date}
                     {tx.tags?.length ? ` · ${formatTagsDisplay(tx.tags)}` : ''}
                   </div>
+                  <DetailsPreview text={tx.description} />
                 </div>
                 <div className="item-row__actions">
                   <button type="button" onClick={() => beginEdit(tx)}>

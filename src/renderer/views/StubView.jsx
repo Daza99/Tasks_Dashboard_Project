@@ -4,7 +4,6 @@ const TITLES = {
   tasks: 'Tasks',
   reminders: 'Reminders',
   notes: 'Notes',
-  inbox: 'Inbox',
   projects: 'Projects',
   habits: 'Habits',
   trackers: 'Trackers',

@@ -10,7 +10,8 @@ let db = null;
 
 const DEFAULT_SETTINGS = {
   wallpaper_mode: 'color',
-  wallpaper_color: '#0a1628',
+  wallpaper_color: '#3e5679',
+  wallpaper_color_id: '',
   wallpaper_image_path: '',
   wallpaper_fit: 'fill',
   wallpaper_dim: '0',
@@ -31,6 +32,9 @@ const DEFAULT_SETTINGS = {
   list_naming_templates: JSON.stringify(['Current Date', 'Project', 'Other']),
   theme_base: 'dark',
   active_theme_id: '1',
+  theme_brightness_dark: '50',
+  theme_brightness_light: '50',
+  theme_custom_id: '',
   layout_mode: 'compact',
   display_name: '',
   date_format: 'ymd',
@@ -61,22 +65,27 @@ const SYSTEM_TAGS = [
 const DEFAULT_DARK_THEME = {
   name: 'Dark Glass',
   '--bg': 'transparent',
-  '--panel-bg': 'rgba(12, 18, 28, 0.72)',
+  '--panel-bg': 'rgba(62, 86, 121, 0.72)',
   '--panel-border': 'rgba(255, 255, 255, 0.08)',
   '--text-primary': '#f2f5f8',
   '--text-secondary': 'rgba(242, 245, 248, 0.55)',
   '--text-muted': 'rgba(242, 245, 248, 0.35)',
   '--accent': '#39ff6a',
   '--accent-dim': 'rgba(57, 255, 106, 0.25)',
-  '--sidebar-bg': 'rgba(10, 14, 22, 0.78)',
+  '--sidebar-bg': 'rgba(62, 86, 121, 0.78)',
   '--sidebar-active-bg': 'rgba(57, 255, 106, 0.12)',
   '--sidebar-active-text': '#39ff6a',
   '--input-bg': 'rgba(0, 0, 0, 0.35)',
   '--input-border': 'rgba(255, 255, 255, 0.12)',
   '--progress-fill': '#39ff6a',
   '--progress-track': 'rgba(255, 255, 255, 0.1)',
-  '--topbar-bg': 'rgba(8, 12, 20, 0.65)',
+  '--topbar-bg': 'rgba(62, 86, 121, 0.65)',
   '--danger': '#ff5c5c',
+  '--button-bg': 'rgba(57, 255, 106, 0.25)',
+  '--button-text': '#39ff6a',
+  '--action-text': 'rgba(242, 245, 248, 0.55)',
+  '--clock-color': '#39ff6a',
+  '--font-clock': '"Cascadia Mono", "Consolas", "Courier New", monospace',
 };
 
 const DEFAULT_LIGHT_THEME = {
@@ -87,18 +96,52 @@ const DEFAULT_LIGHT_THEME = {
   '--text-primary': '#12181f',
   '--text-secondary': 'rgba(18, 24, 31, 0.6)',
   '--text-muted': 'rgba(18, 24, 31, 0.4)',
-  '--accent': '#0d9f4a',
-  '--accent-dim': 'rgba(13, 159, 74, 0.18)',
+  '--accent': '#056b32',
+  '--accent-dim': 'rgba(46, 196, 102, 0.30)',
   '--sidebar-bg': 'rgba(245, 248, 250, 0.85)',
-  '--sidebar-active-bg': 'rgba(13, 159, 74, 0.12)',
-  '--sidebar-active-text': '#0d9f4a',
+  '--sidebar-active-bg': 'rgba(46, 196, 102, 0.20)',
+  '--sidebar-active-text': '#056b32',
   '--input-bg': 'rgba(255, 255, 255, 0.9)',
   '--input-border': 'rgba(0, 0, 0, 0.12)',
-  '--progress-fill': '#0d9f4a',
+  '--progress-fill': '#056b32',
   '--progress-track': 'rgba(0, 0, 0, 0.08)',
   '--topbar-bg': 'rgba(255, 255, 255, 0.7)',
   '--danger': '#d93838',
+  '--button-bg': 'rgba(46, 196, 102, 0.30)',
+  '--button-text': '#056b32',
+  '--action-text': 'rgba(18, 24, 31, 0.6)',
+  '--clock-color': '#056b32',
+  '--font-clock': '"Cascadia Mono", "Consolas", "Courier New", monospace',
 };
+
+/** In-memory Custom / New starter — not a themes row. */
+const DEFAULT_NEUTRAL_THEME = {
+  name: 'Neutral',
+  '--bg': 'transparent',
+  '--panel-bg': 'rgba(40, 42, 46, 0.72)',
+  '--panel-border': 'rgba(255, 255, 255, 0.1)',
+  '--text-primary': '#ececec',
+  '--text-secondary': 'rgba(236, 236, 236, 0.55)',
+  '--text-muted': 'rgba(236, 236, 236, 0.35)',
+  '--accent': '#c4c8ce',
+  '--accent-dim': 'rgba(196, 200, 206, 0.25)',
+  '--sidebar-bg': 'rgba(32, 34, 38, 0.78)',
+  '--sidebar-active-bg': 'rgba(196, 200, 206, 0.12)',
+  '--sidebar-active-text': '#c4c8ce',
+  '--input-bg': 'rgba(0, 0, 0, 0.35)',
+  '--input-border': 'rgba(255, 255, 255, 0.12)',
+  '--progress-fill': '#c4c8ce',
+  '--progress-track': 'rgba(255, 255, 255, 0.1)',
+  '--topbar-bg': 'rgba(28, 30, 34, 0.65)',
+  '--danger': '#ff5c5c',
+  '--button-bg': 'rgba(196, 200, 206, 0.22)',
+  '--button-text': '#c4c8ce',
+  '--action-text': 'rgba(236, 236, 236, 0.55)',
+  '--clock-color': '#c4c8ce',
+  '--font-clock': '"Cascadia Mono", "Consolas", "Courier New", monospace',
+};
+
+const BUILTIN_THEME_NAMES = ['Dark Glass', 'Light Glass'];
 
 /** Open DB, run schema, seed defaults. Call once on app ready. */
 function initDatabase() {
@@ -115,8 +158,12 @@ function initDatabase() {
     migrateSchema();
 
     seedSettings();
+    migrateThemeBrightness();
+    migrateWallpaperColorId();
     migrateBackupSettings();
     migrateNotifRandomDefault();
+    migrateLightGlassGreenContrast();
+    migrateDarkGlassBg();
     seedSystemTags();
     seedThemes();
     try {
@@ -153,6 +200,10 @@ function migrateSchema() {
   addBill('amount_mode', "amount_mode TEXT NOT NULL DEFAULT 'fixed'");
   addBill('priority', 'priority INTEGER DEFAULT 3');
   addBill('description', 'description TEXT');
+  addBill('show_on_calendar', 'show_on_calendar INTEGER DEFAULT 1');
+  addBill('nudge_datetime', 'nudge_datetime TEXT');
+  addBill('nudge_mode', 'nudge_mode TEXT');
+  addBill('nudge_alerted', 'nudge_alerted INTEGER DEFAULT 0');
 
   const remCols = db.prepare('PRAGMA table_info(reminders)').all().map((c) => c.name);
   if (!remCols.includes('description')) {
@@ -256,6 +307,7 @@ function migrateSchema() {
   migrateListsHashtagRetagAfterInspector();
   migrateTagInspector();
   migrateNotesModule();
+  migrateWallpaperColors();
 }
 
 /** Notes pad columns + category dropdown table (existing DBs). */
@@ -553,6 +605,99 @@ function migrateNotifRandomDefault() {
   setSetting('notif_random_bg_enable_v1', '1');
 }
 
+/** One-time: Light Glass mid-green washed out; brighter fill + darker ink. */
+function migrateLightGlassGreenContrast() {
+  const s = getAllSettings();
+  if (s.theme_light_green_v1 === '1') return;
+  const row = getDb()
+    .prepare("SELECT id, theme_json FROM themes WHERE name = 'Light Glass' LIMIT 1")
+    .get();
+  if (row) {
+    let parsed = {};
+    try {
+      parsed = JSON.parse(row.theme_json) || {};
+    } catch {
+      parsed = {};
+    }
+    const greens = {
+      '--accent': DEFAULT_LIGHT_THEME['--accent'],
+      '--accent-dim': DEFAULT_LIGHT_THEME['--accent-dim'],
+      '--sidebar-active-bg': DEFAULT_LIGHT_THEME['--sidebar-active-bg'],
+      '--sidebar-active-text': DEFAULT_LIGHT_THEME['--sidebar-active-text'],
+      '--progress-fill': DEFAULT_LIGHT_THEME['--progress-fill'],
+      '--button-bg': DEFAULT_LIGHT_THEME['--button-bg'],
+      '--button-text': DEFAULT_LIGHT_THEME['--button-text'],
+      '--clock-color': DEFAULT_LIGHT_THEME['--clock-color'],
+    };
+    getDb()
+      .prepare('UPDATE themes SET theme_json = ? WHERE id = ?')
+      .run(JSON.stringify({ ...parsed, ...greens }), row.id);
+  }
+  setSetting('theme_light_green_v1', '1');
+}
+
+/** One-time: Dark Glass fills + factory wallpaper navy → #3e5679. */
+function migrateDarkGlassBg() {
+  const s = getAllSettings();
+  if (s.theme_dark_bg_v1 === '1') return;
+  const row = getDb()
+    .prepare("SELECT id, theme_json FROM themes WHERE name = 'Dark Glass' LIMIT 1")
+    .get();
+  if (row) {
+    let parsed = {};
+    try {
+      parsed = JSON.parse(row.theme_json) || {};
+    } catch {
+      parsed = {};
+    }
+    const fills = {
+      '--panel-bg': DEFAULT_DARK_THEME['--panel-bg'],
+      '--sidebar-bg': DEFAULT_DARK_THEME['--sidebar-bg'],
+      '--topbar-bg': DEFAULT_DARK_THEME['--topbar-bg'],
+    };
+    getDb()
+      .prepare('UPDATE themes SET theme_json = ? WHERE id = ?')
+      .run(JSON.stringify({ ...parsed, ...fills }), row.id);
+  }
+  const hex = String(s.wallpaper_color || '').trim().toLowerCase();
+  if (hex === '#0a1628') {
+    setSetting('wallpaper_color', '#3e5679');
+    const id = String(s.wallpaper_color_id || '').trim();
+    if (!id) setSetting('wallpaper_color_id', '');
+  }
+  setSetting('theme_dark_bg_v1', '1');
+}
+
+/** Existing DBs: INSERT OR IGNORE won't add brightness keys. */
+function migrateThemeBrightness() {
+  const s = getAllSettings();
+  if (s.theme_brightness_dark == null || s.theme_brightness_dark === '') {
+    setSetting('theme_brightness_dark', '50');
+  }
+  if (s.theme_brightness_light == null || s.theme_brightness_light === '') {
+    setSetting('theme_brightness_light', '50');
+  }
+  if (s.theme_custom_id == null) setSetting('theme_custom_id', '');
+}
+
+/** Existing DBs: INSERT OR IGNORE will not add wallpaper_color_id. */
+function migrateWallpaperColorId() {
+  const s = getAllSettings();
+  if (s.wallpaper_color_id == null) setSetting('wallpaper_color_id', '');
+}
+
+/** Named wallpaper color presets (existing DBs). */
+function migrateWallpaperColors() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS wallpaper_colors (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      created_date DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+
 function seedSystemTags() {
   const insert = db.prepare(
     'INSERT OR IGNORE INTO tags (name, color, is_system) VALUES (?, ?, 1)'
@@ -608,6 +753,45 @@ function setSetting(key, value) {
   }
 }
 
+/** CSS custom properties only (skip `name` and junk). */
+function cssVarsOnly(obj) {
+  const out = {};
+  if (!obj || typeof obj !== 'object') return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (k.startsWith('--') && v != null && v !== '') out[k] = v;
+  }
+  return out;
+}
+
+function isBuiltinThemeName(name) {
+  return BUILTIN_THEME_NAMES.includes(name);
+}
+
+function fallbackDefaults(row, base) {
+  if (base === 'light' || (row && row.name === 'Light Glass')) return DEFAULT_LIGHT_THEME;
+  return DEFAULT_DARK_THEME;
+}
+
+function parseThemeJson(raw, fallback) {
+  let parsed = {};
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+  return { ...cssVarsOnly(fallback), ...cssVarsOnly(parsed) };
+}
+
+function themeFromRow(row, base) {
+  return {
+    id: row.id,
+    name: row.name,
+    vars: parseThemeJson(row.theme_json, fallbackDefaults(row, base)),
+    theme_base: base,
+    builtin: isBuiltinThemeName(row.name),
+  };
+}
+
 /** Active theme JSON merged with theme_base preference. */
 function getActiveTheme() {
   try {
@@ -620,7 +804,6 @@ function getActiveTheme() {
         .prepare('SELECT * FROM themes WHERE is_default = 1 LIMIT 1')
         .get();
     }
-    // If light base requested and we have Light Glass, prefer it when active_theme_id still default
     if (base === 'light') {
       const light = getDb()
         .prepare("SELECT * FROM themes WHERE name = 'Light Glass' LIMIT 1")
@@ -632,19 +815,14 @@ function getActiveTheme() {
         .get();
       if (dark) row = dark;
     }
-    return {
-      id: row.id,
-      name: row.name,
-      vars: JSON.parse(row.theme_json),
-      theme_base: base,
-    };
+    return themeFromRow(row, base);
   } catch (err) {
     logError('getActiveTheme', err);
     throw err;
   }
 }
 
-/** Switch light/dark base and point active_theme_id at matching preset. */
+/** Switch light/dark/custom base. Custom does not apply last saved until Confirm. */
 function setThemeBase(base) {
   try {
     if (base !== 'light' && base !== 'dark' && base !== 'custom') {
@@ -661,6 +839,204 @@ function setThemeBase(base) {
     return getActiveTheme();
   } catch (err) {
     logError('setThemeBase', err);
+    throw err;
+  }
+}
+
+/** User-named presets (not Dark/Light Glass). */
+function listCustomThemes() {
+  try {
+    const rows = getDb()
+      .prepare(
+        `SELECT id, name, theme_json FROM themes
+         WHERE name NOT IN ('Dark Glass', 'Light Glass')
+         ORDER BY name COLLATE NOCASE`
+      )
+      .all();
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      vars: parseThemeJson(r.theme_json, DEFAULT_DARK_THEME),
+    }));
+  } catch (err) {
+    logError('listCustomThemes', err);
+    throw err;
+  }
+}
+
+/**
+ * Insert (New) or overwrite an existing user preset, then activate it.
+ * @param {{ id?: number, name?: string, vars: Record<string, string> }} payload
+ */
+function saveCustomTheme(payload) {
+  try {
+    const json = JSON.stringify({ ...cssVarsOnly(DEFAULT_DARK_THEME), ...cssVarsOnly(payload?.vars) });
+    const id = payload && payload.id != null ? Number(payload.id) : null;
+    if (id) {
+      const row = getDb().prepare('SELECT * FROM themes WHERE id = ?').get(id);
+      if (!row || isBuiltinThemeName(row.name)) {
+        throw new Error('Cannot overwrite built-in theme');
+      }
+      const name = payload?.name != null ? String(payload.name).trim().slice(0, 40) : '';
+      if (name && isBuiltinThemeName(name)) throw new Error('Reserved theme name');
+      if (name) {
+        getDb()
+          .prepare('UPDATE themes SET theme_json = ?, name = ? WHERE id = ?')
+          .run(json, name, row.id);
+      } else {
+        getDb().prepare('UPDATE themes SET theme_json = ? WHERE id = ?').run(json, row.id);
+      }
+      setSetting('active_theme_id', String(row.id));
+      setSetting('theme_custom_id', String(row.id));
+      setSetting('theme_base', 'custom');
+    } else {
+      const name = String(payload?.name || '').trim().slice(0, 40);
+      if (!name) throw new Error('Name required');
+      if (isBuiltinThemeName(name)) throw new Error('Reserved theme name');
+      const info = getDb()
+        .prepare('INSERT INTO themes (name, theme_json, is_default) VALUES (?, ?, 0)')
+        .run(name, json);
+      const newId = Number(info.lastInsertRowid);
+      setSetting('active_theme_id', String(newId));
+      setSetting('theme_custom_id', String(newId));
+      setSetting('theme_base', 'custom');
+    }
+    return getActiveTheme();
+  } catch (err) {
+    logError('saveCustomTheme', err);
+    throw err;
+  }
+}
+
+/** Built-in CSS vars; Custom / New uses in-memory Neutral. */
+function getThemeDefaults(base) {
+  let src = DEFAULT_DARK_THEME;
+  if (base === 'light') src = DEFAULT_LIGHT_THEME;
+  else if (base === 'neutral') src = DEFAULT_NEUTRAL_THEME;
+  return cssVarsOnly(src);
+}
+
+/**
+ * Insert or restore a built-in Glass row from the in-code default.
+ * @param {object} def DEFAULT_DARK_THEME | DEFAULT_LIGHT_THEME
+ * @param {boolean} isDefault
+ * @returns {number} row id
+ */
+function ensureBuiltinTheme(def, isDefault) {
+  const json = JSON.stringify(def);
+  const row = getDb().prepare('SELECT id FROM themes WHERE name = ? LIMIT 1').get(def.name);
+  if (row) {
+    getDb()
+      .prepare('UPDATE themes SET theme_json = ?, is_default = ? WHERE id = ?')
+      .run(json, isDefault ? 1 : 0, row.id);
+    return row.id;
+  }
+  const info = getDb()
+    .prepare('INSERT INTO themes (name, theme_json, is_default) VALUES (?, ?, ?)')
+    .run(def.name, json, isDefault ? 1 : 0);
+  return Number(info.lastInsertRowid);
+}
+
+/**
+ * Restore Dark/Light Glass JSON and switch to Dark Glass at brightness 50.
+ * Does not delete user custom presets.
+ */
+function resetThemeDefaults() {
+  try {
+    const darkId = ensureBuiltinTheme(DEFAULT_DARK_THEME, true);
+    ensureBuiltinTheme(DEFAULT_LIGHT_THEME, false);
+    setSetting('theme_base', 'dark');
+    setSetting('theme_brightness_dark', '50');
+    setSetting('theme_brightness_light', '50');
+    setSetting('active_theme_id', String(darkId));
+    return getActiveTheme();
+  } catch (err) {
+    logError('resetThemeDefaults', err);
+    throw err;
+  }
+}
+
+const WALLPAPER_HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/**
+ * Normalize a wallpaper hex to #rrggbb.
+ * @param {string} color
+ */
+function normalizeWallpaperHex(color) {
+  const s = String(color || '').trim();
+  if (!WALLPAPER_HEX.test(s)) throw new Error('Invalid color');
+  if (s.length === 4) {
+    return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`.toLowerCase();
+  }
+  return s.toLowerCase();
+}
+
+/** Named wallpaper color presets. */
+function listWallpaperColors() {
+  try {
+    return getDb()
+      .prepare(
+        'SELECT id, name, color FROM wallpaper_colors ORDER BY name COLLATE NOCASE'
+      )
+      .all();
+  } catch (err) {
+    logError('listWallpaperColors', err);
+    throw err;
+  }
+}
+
+/**
+ * Insert (New) or overwrite a named wallpaper color, then apply it.
+ * @param {{ id?: number, name?: string, color: string }} payload
+ */
+function saveWallpaperColor(payload) {
+  try {
+    const color = normalizeWallpaperHex(payload?.color);
+    const id = payload && payload.id != null ? Number(payload.id) : null;
+    if (id) {
+      const row = getDb().prepare('SELECT * FROM wallpaper_colors WHERE id = ?').get(id);
+      if (!row) throw new Error('Wallpaper preset not found');
+      const name = payload?.name != null ? String(payload.name).trim().slice(0, 40) : '';
+      if (name) {
+        getDb()
+          .prepare('UPDATE wallpaper_colors SET color = ?, name = ? WHERE id = ?')
+          .run(color, name, id);
+      } else {
+        getDb().prepare('UPDATE wallpaper_colors SET color = ? WHERE id = ?').run(color, id);
+      }
+      setSetting('wallpaper_mode', 'color');
+      setSetting('wallpaper_color', color);
+      setSetting('wallpaper_color_id', String(id));
+      return { id, name: name || row.name, color };
+    }
+    const name = String(payload?.name || '').trim().slice(0, 40);
+    if (!name) throw new Error('Name required');
+    const info = getDb()
+      .prepare('INSERT INTO wallpaper_colors (name, color) VALUES (?, ?)')
+      .run(name, color);
+    const newId = Number(info.lastInsertRowid);
+    setSetting('wallpaper_mode', 'color');
+    setSetting('wallpaper_color', color);
+    setSetting('wallpaper_color_id', String(newId));
+    return { id: newId, name, color };
+  } catch (err) {
+    logError('saveWallpaperColor', err);
+    throw err;
+  }
+}
+
+/**
+ * Restore factory wallpaper color. Named presets are left in wallpaper_colors.
+ * @returns {{ wallpaper_color: string, wallpaper_color_id: string }}
+ */
+function resetWallpaperDefaults() {
+  try {
+    setSetting('wallpaper_mode', 'color');
+    setSetting('wallpaper_color', '#3e5679');
+    setSetting('wallpaper_color_id', '');
+    return { wallpaper_color: '#3e5679', wallpaper_color_id: '' };
+  } catch (err) {
+    logError('resetWallpaperDefaults', err);
     throw err;
   }
 }
@@ -685,6 +1061,13 @@ module.exports = {
   setSetting,
   getActiveTheme,
   setThemeBase,
+  listCustomThemes,
+  saveCustomTheme,
+  getThemeDefaults,
+  resetThemeDefaults,
+  listWallpaperColors,
+  saveWallpaperColor,
+  resetWallpaperDefaults,
   closeDatabase,
   DEFAULT_DARK_THEME,
   DEFAULT_LIGHT_THEME,

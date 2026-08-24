@@ -17,6 +17,7 @@ import { useBrief } from '../context/BriefContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CalEntryLabel from '../components/CalEntryLabel';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
 const CHIP_CAP = 3;
 
@@ -215,6 +216,13 @@ export default function CalendarView({
     setMenu(null);
   }
 
+  /** Inline edit — same as the day-list Edit button. */
+  function beginEdit(ev) {
+    setEditingId(ev.id);
+    setEditTitle(ev.title);
+    setEditStart(toLocalInput(ev.start_datetime));
+  }
+
   function onChipClick(e, ev, day) {
     e.stopPropagation();
     if (e.ctrlKey || e.metaKey) {
@@ -227,9 +235,7 @@ export default function CalendarView({
       onEditRequest(ev.source_type, ev.source_id);
       return;
     }
-    setEditingId(ev.id);
-    setEditTitle(ev.title);
-    setEditStart(toLocalInput(ev.start_datetime));
+    beginEdit(ev);
   }
 
   async function create(e) {
@@ -425,7 +431,10 @@ export default function CalendarView({
                 </div>
               </form>
             ) : (
-              <div className="module-list__row">
+              <div
+                className="module-list__row"
+                onDoubleClick={rowDblClick(() => beginEdit(ev))}
+              >
                 <button
                   type="button"
                   className="cal-row-title"
@@ -439,14 +448,7 @@ export default function CalendarView({
                   </div>
                 </button>
                 <div className="item-row__actions">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingId(ev.id);
-                      setEditTitle(ev.title);
-                      setEditStart(toLocalInput(ev.start_datetime));
-                    }}
-                  >
+                  <button type="button" onClick={() => beginEdit(ev)}>
                     Edit
                   </button>
                   <button

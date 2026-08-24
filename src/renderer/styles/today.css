@@ -28,16 +28,35 @@
   max-width: 42rem;
 }
 
+/* Title + Compact ← on one row (Today ←). Tucked up vs other focus views. */
+.focus-host--today {
+  padding-top: 8px;
+}
+
+.today-view__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+
 /* Beat .focus-host h1 { font-size: 22px } */
 .focus-host h1.today-view__title,
 .today-view__title {
-  margin: 0 0 4px;
+  margin: 0;
   font-family: "Outfit", "Segoe UI", sans-serif;
-  font-size: 3rem;
+  font-size: 1.75rem;
   font-weight: 500;
   letter-spacing: -0.03em;
-  line-height: 1.05;
+  line-height: 1.1;
   color: var(--text-primary);
+}
+
+.today-view__back.btn-focus-back {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* Beat .focus-host p { margin: 0 } */
@@ -51,7 +70,7 @@
   margin-top: 28px;
 }
 
-/* Same size; Outfit / Source Serif 4 / IBM Plex Mono per section. */
+/* Same size; Sitka Tasks / Outfit Habits / Source Serif 4 Reminders / Plex Bills. */
 .today-view__h {
   margin: 0 0 10px;
   font-size: 1.65rem;
@@ -64,6 +83,12 @@
 
 .today-view__h--outfit {
   font-family: "Outfit", "Segoe UI", sans-serif;
+}
+
+/* Tasks: Sitka (Win11) — not Outfit / Source Serif 4 / Plex Mono */
+.today-view__h--sitka {
+  font-family: "Sitka Text", "Sitka Heading", Constantia, Palatino, serif;
+  font-weight: 600;
 }
 
 .today-view__h--serif {

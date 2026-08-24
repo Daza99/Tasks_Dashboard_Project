@@ -69,6 +69,11 @@
         cursor: pointer;
         -webkit-app-region: no-drag;
       }
+      #editBtn {
+        width: auto;
+        padding: 0 8px;
+        font-size: 11px;
+      }
       .chrome-btn:hover {
         background: #fff;
       }
@@ -91,6 +96,11 @@
       .meta {
         font-size: 11px;
         opacity: 0.7;
+        margin: 0 0 6px;
+      }
+      .created {
+        font-size: 11px;
+        opacity: 0.65;
         margin: 0 0 6px;
       }
       .clock {
@@ -138,6 +148,7 @@
       <div class="chrome">
         <span class="label" id="kindLabel">Tracker</span>
         <div class="chrome-btns">
+          <button type="button" class="chrome-btn" id="editBtn" aria-label="Edit">Edit</button>
           <button type="button" class="chrome-btn" id="minBtn" aria-label="Minimize">−</button>
           <button type="button" class="close" id="closeBtn" aria-label="Close">✕</button>
         </div>
@@ -159,6 +170,20 @@
         const s = n % 60;
         if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
         return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+      }
+
+      /** created_at ISO → local yyyy-mm-dd */
+      function createdLabel(iso) {
+        if (!iso) return "";
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) {
+          const s = String(iso).slice(0, 10);
+          return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+        }
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return y + "-" + m + "-" + day;
       }
 
       function liveDisplay(c) {
@@ -189,6 +214,13 @@
           title.className = "unit";
           title.textContent = c.name;
           wrap.appendChild(title);
+          const created = createdLabel(c.created_at);
+          if (created) {
+            const createdEl = document.createElement("div");
+            createdEl.className = "created";
+            createdEl.textContent = "Created " + created;
+            wrap.appendChild(createdEl);
+          }
           if (c.kind === "count") {
             const meta = document.createElement("p");
             meta.className = "meta";
@@ -303,6 +335,7 @@
 
       document.getElementById("closeBtn").onclick = () => window.trackerApi.close();
       document.getElementById("minBtn").onclick = () => window.trackerApi.minimize();
+      document.getElementById("editBtn").onclick = () => window.trackerApi.edit();
 
       window.trackerApi.onState((payload) => {
         state = payload || { controls: [] };

@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
  *   message?: string,
  *   confirmLabel?: string,
  *   placeholder?: string,
+ *   initialValue?: string,
  *   onConfirm: (value: string) => void,
  *   onCancel: () => void,
  * }} props
@@ -19,6 +20,7 @@ export default function PromptDialog({
   message = '',
   confirmLabel = 'OK',
   placeholder = '',
+  initialValue = '',
   onConfirm,
   onCancel,
 }) {
@@ -27,10 +29,10 @@ export default function PromptDialog({
 
   useEffect(() => {
     if (open) {
-      setValue('');
+      setValue(initialValue || '');
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [open]);
+  }, [open, initialValue]);
 
   if (!open) return null;
 

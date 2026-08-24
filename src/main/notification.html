@@ -79,6 +79,16 @@
         line-height: 1.35;
         overflow: hidden;
       }
+      .created {
+        flex: 0 0 auto;
+        font-size: 11px;
+        opacity: 0.65;
+        color: var(--notif-text);
+        margin-top: -4px;
+      }
+      .created:empty {
+        display: none;
+      }
       .notif-tags {
         flex: 0 0 auto;
         font-size: 12px;
@@ -150,10 +160,11 @@
         </div>
       </div>
       <div class="title" id="title">…</div>
+      <div class="created" id="created"></div>
       <div class="notif-tags" id="tags"></div>
       <div class="details" id="details"></div>
       <div class="actions">
-        <button type="button" class="secondary" id="btn-view">VIEW</button>
+        <button type="button" class="secondary" id="btn-view">Edit</button>
         <button type="button" class="secondary" id="btn-snooze">Snooze</button>
         <button type="button" class="secondary" id="btn-delete" hidden>Delete</button>
         <button type="button" id="btn-done">Done</button>
@@ -164,7 +175,15 @@
       const id = Number(params.get('id'));
       const rawItemType = params.get('itemType');
       // Preserve habit|bill|task|reminder (old ternary coerced habit/bill → reminder)
-      const VALID = new Set(['reminder', 'reminder_nudge', 'task', 'bill', 'habit', 'countdown']);
+      const VALID = new Set([
+        'reminder',
+        'reminder_nudge',
+        'task',
+        'bill',
+        'bill_nudge',
+        'habit',
+        'countdown',
+      ]);
       const itemType = VALID.has(rawItemType) ? rawItemType : 'reminder';
       const payload = { id, itemType };
       const title = params.get('title') || 'Reminder';
@@ -204,7 +223,27 @@
       window.notifApi.getMeta().then((meta) => {
         const text = meta && meta.details ? String(meta.details).trim() : '';
         document.getElementById('details').textContent = text;
+        const created = meta && meta.createdAt ? String(meta.createdAt).trim() : '';
+        document.getElementById('created').textContent = created
+          ? 'Created ' + created
+          : '';
       }).catch(() => {});
+
+      if (window.notifApi.onRefresh) {
+        window.notifApi.onRefresh((payload) => {
+          if (payload && payload.title != null) {
+            document.getElementById('title').textContent = payload.title;
+          }
+          const text =
+            payload && payload.details ? String(payload.details).trim() : '';
+          document.getElementById('details').textContent = text;
+          const created =
+            payload && payload.createdAt ? String(payload.createdAt).trim() : '';
+          document.getElementById('created').textContent = created
+            ? 'Created ' + created
+            : '';
+        });
+      }
 
       document.getElementById('btn-done').onclick = () => {
         window.notifApi.complete(payload);

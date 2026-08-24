@@ -11,4 +11,10 @@ contextBridge.exposeInMainWorld('notifApi', {
   minimize: (payload) => ipcRenderer.invoke('notif:minimize', payload),
   getMeta: () => ipcRenderer.invoke('notif:getMeta'),
   view: (payload) => ipcRenderer.invoke('notif:view', payload),
+  /** Live title/details/created after dashboard edit. */
+  onRefresh: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('notif:refresh', listener);
+    return () => ipcRenderer.removeListener('notif:refresh', listener);
+  },
 });

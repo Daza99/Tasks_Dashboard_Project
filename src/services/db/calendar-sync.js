@@ -194,7 +194,12 @@ function retitleSourceEvents(sourceType, sourceId, title) {
  * @param {{ prevDueDate?: string }} [opts]
  */
 function syncBill(bill, { prevDueDate } = {}) {
-  if (!bill?.id || !bill.due_date) return;
+  if (!bill?.id) return;
+  if (Number(bill.show_on_calendar) === 0) {
+    deleteEventsForSource('bill', bill.id);
+    return;
+  }
+  if (!bill.due_date) return;
   const title = `${bill.name} Due`;
   const start = dateAtNine(bill.due_date);
   if (prevDueDate && prevDueDate !== bill.due_date) {

@@ -104,7 +104,7 @@ function openNotePopout(id) {
       height: bounds.height || 700,
       minWidth: 560,
       minHeight: 400,
-      backgroundColor: '#0a1628',
+      backgroundColor: '#3e5679',
       title: row.title || 'Note',
       show: false,
       webPreferences: {

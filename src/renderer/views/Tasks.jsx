@@ -12,8 +12,10 @@ import {
 } from '../../utils/tag-helpers.js';
 import PrioritySelect from '../components/PrioritySelect';
 import DetailsInline from '../components/DetailsInline';
+import DetailsPreview from '../components/DetailsPreview';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
 function fmt(iso) {
   if (!iso) return '—';
@@ -303,18 +305,16 @@ export default function TasksView({
                 {editError && <span style={{ color: 'var(--danger)' }}>{editError}</span>}
               </form>
             ) : (
-              <div className="module-list__row">
+              <div
+                className="module-list__row"
+                onDoubleClick={rowDblClick(() => beginEdit(t))}
+              >
                 <div>
                   <strong>
                     <span className="priority-badge" data-p={t.priority ?? 3}>
                       P{t.priority ?? 3}
                     </span>{' '}
                     {t.title}
-                    {t.description?.trim() ? (
-                      <span className="details-mark" title="Has details">
-                        details
-                      </span>
-                    ) : null}
                   </strong>
                   <div className="module-list__meta">
                     {t.tags?.includes('todo_open') ? 'open' : '24hr'}
@@ -324,6 +324,7 @@ export default function TasksView({
                       : ''}{' '}
                     · due {fmt(t.due_datetime)}
                   </div>
+                  <DetailsPreview text={t.description} />
                 </div>
                 <div className="item-row__actions">
                   <LockButton

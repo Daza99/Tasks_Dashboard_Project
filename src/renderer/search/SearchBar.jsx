@@ -6,7 +6,6 @@ import SearchResults from './SearchResults';
 
 const DISABLED_VIEWS = new Set([
   'settings',
-  'inbox',
   'projects',
   'tags',
   'weather',

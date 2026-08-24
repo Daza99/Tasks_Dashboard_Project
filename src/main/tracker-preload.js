@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('trackerApi', {
   getState: () => ipcRenderer.invoke('trackers:popoutState'),
   close: () => ipcRenderer.invoke('trackers:popoutCloseSelf'),
   minimize: () => ipcRenderer.invoke('trackers:popoutMinimizeSelf'),
+  /** Focus dashboard Trackers view with this widget's tracker editing. */
+  edit: () => ipcRenderer.invoke('trackers:popoutEditSelf'),
   log: (id, value) => ipcRenderer.invoke('trackers:log', id, value),
   undo: (id) => ipcRenderer.invoke('trackers:undo', id),
   timerStart: (id) => ipcRenderer.invoke('trackers:timerStart', id),

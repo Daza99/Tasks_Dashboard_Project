@@ -9,20 +9,32 @@ import HabitCheckinStrip from '../components/HabitCheckinStrip';
 import MoneySnapshot from '../components/MoneySnapshot';
 import BillPayConfirm from '../components/BillPayConfirm';
 import LockButton from '../components/LockButton';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
+/** Compact week timestamps: yyyy-mm-dd · time. */
 function fmtWhen(iso) {
   if (!iso || iso.startsWith('9999')) return 'Open';
   try {
     const d = typeof iso === 'string' ? parseISO(iso) : new Date(iso);
     if (!isValid(d)) return iso;
-    return format(d, 'h:mm a');
+    return format(d, 'yyyy-MM-dd · h:mm a');
   } catch {
     return iso;
   }
 }
 
+/** Smallest section label + optional compact action (New / Log). */
+function SectionHead({ label, action }) {
+  return (
+    <div className="brief-section-head">
+      <p className="section-label">{label}</p>
+      {action}
+    </div>
+  );
+}
+
 /**
- * Live Compact brief: tasks, reminders, bills, events, habits, money.
+ * Live Compact This Week brief: tasks, reminders, bills, habits, money.
  * @param {{ onEditRequest?: (type: string, id: number) => void, onNavigate?: (id: string) => void }} props
  */
 export default function CenterBrief({ onEditRequest, onNavigate }) {
@@ -131,10 +143,52 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
     );
   }
 
+  function billCaption(b) {
+    return (
+      <>
+        {b.name} · ${Number(b.amount).toFixed(2)}
+        {b.amount_mode === 'estimate' && (
+          <span className="bill-amount-caption"> Estimate</span>
+        )}
+        {b.amount_mode === 'average' && (
+          <span className="bill-amount-caption"> Avg</span>
+        )}
+      </>
+    );
+  }
+
+  function billActions(b) {
+    return (
+      <div className="item-row__actions">
+        {payingId === b.id ? (
+          <BillPayConfirm
+            value={payActual}
+            onChange={setPayActual}
+            onConfirm={() => payBill(b, payActual)}
+            onCancel={() => setPayingId(null)}
+          />
+        ) : (
+          <button type="button" onClick={() => payBill(b)}>
+            Paid
+          </button>
+        )}
+        <button type="button" onClick={() => onEditRequest?.('bill', b.id)}>
+          Edit
+        </button>
+      </div>
+    );
+  }
+
+  const newBtn = (id, label) => (
+    <button type="button" className="btn-compact" onClick={() => openModule(id)}>
+      {label}
+    </button>
+  );
+
   return (
-    <section className="center-panel glass-panel" aria-label="TASKS — Due today">
+    <section className="center-panel glass-panel" aria-label="Compact This Week">
       <div className="center-panel__header">
-        <h2 className="center-panel__title">TASKS — Due today</h2>
+        <h2 className="center-panel__title">Compact This Week</h2>
         <button type="button" className="btn-compact" onClick={refresh}>
           Refresh
         </button>
@@ -150,25 +204,18 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
           </p>
         )}
 
-        <HabitCheckinStrip
-          habits={brief?.habitsToday || []}
-          onToggle={toggleHabit}
-          onOpen={() => openModule('habits')}
-        />
-
-        <MoneySnapshot
-          today={brief?.moneyToday}
-          mtd={brief?.moneyMtd}
-          onOpen={() => openModule('spending')}
-        />
-
         <div>
-          {!brief?.tasksDueToday?.length && (
-            <p className="stub-empty">No tasks due today — quick-add or open Tasks.</p>
+          <SectionHead label="Tasks" />
+          {!brief?.tasksThisWeek?.length && (
+            <p className="stub-empty">No tasks due this week — quick-add or open Tasks.</p>
           )}
           <ul className="reminder-list">
-            {(brief?.tasksDueToday || []).map((t) => (
-              <li key={t.id} className="reminder-item glass-inset item-row">
+            {(brief?.tasksThisWeek || []).map((t) => (
+              <li
+                key={t.id}
+                className="reminder-item glass-inset item-row"
+                onDoubleClick={rowDblClick(() => onEditRequest?.('task', t.id))}
+              >
                 <div className="item-row__main">
                   <span>
                     <span className="priority-badge" data-p={t.priority ?? 3}>
@@ -184,42 +231,41 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
           </ul>
         </div>
 
+        <HabitCheckinStrip
+          habits={brief?.habitsToday || []}
+          onToggle={toggleHabit}
+          onNew={() => openModule('habits')}
+        />
+
+        <MoneySnapshot
+          today={brief?.moneyToday}
+          mtd={brief?.moneyMtd}
+          onOpen={() => openModule('spending')}
+        />
+
         <div>
-          <button
-            type="button"
-            className="section-label section-toggle"
-            onClick={() => setExpiredOpen((v) => !v)}
-          >
-            Expired ({brief?.expiredTasks?.length || 0}) {expiredOpen ? '▾' : '▸'}
-          </button>
-          {expiredOpen && (
-            <ul className="reminder-list">
-              {(brief?.expiredTasks || []).map((t) => (
-                <li
-                  key={t.id}
-                  className="reminder-item glass-inset item-row item-row--expired"
-                >
-                  <div className="item-row__main">
-                    <span>
-                      <span className="priority-badge" data-p={t.priority ?? 3}>
-                        P{t.priority ?? 3}
-                      </span>{' '}
-                      {t.title}
-                    </span>
-                    {tagsLine(t)}
-                    <span className="reminder-item__when">expired</span>
-                  </div>
-                  {taskActions(t)}
-                </li>
-              ))}
-              {!brief?.expiredTasks?.length && (
-                <p className="stub-empty">No expired tasks.</p>
-              )}
-            </ul>
-          )}
+          <SectionHead label="Reminders" action={newBtn('reminders', 'New')} />
+          <ul className="reminder-list">
+            {(brief?.remindersThisWeek || []).map((r) => (
+              <li
+                key={r.id}
+                className="reminder-item glass-inset item-row"
+                onDoubleClick={rowDblClick(() => onEditRequest?.('reminder', r.id))}
+              >
+                <div className="item-row__main">
+                  <span>{r.title}</span>
+                  <span className="reminder-item__when">{fmtWhen(r.datetime)}</span>
+                </div>
+                {remActions(r)}
+              </li>
+            ))}
+            {!brief?.remindersThisWeek?.length && (
+              <p className="stub-empty">None this week.</p>
+            )}
+          </ul>
         </div>
 
-        {(brief?.billsOverdue?.length > 0 || brief?.billsDueToday?.length > 0) && (
+        {(brief?.billsOverdue?.length > 0 || brief?.billsDueThisWeek?.length > 0) && (
           <div>
             <p className="section-label">Bills</p>
             <ul className="reminder-list">
@@ -227,161 +273,86 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
                 <li
                   key={`o-${b.id}`}
                   className="reminder-item glass-inset item-row item-row--expired"
+                  onDoubleClick={rowDblClick(() => onEditRequest?.('bill', b.id))}
                 >
                   <div className="item-row__main">
-                    <span>
-                      {b.name} · ${Number(b.amount).toFixed(2)}
-                      {b.amount_mode === 'estimate' && (
-                        <span className="bill-amount-caption"> Estimate</span>
-                      )}
-                      {b.amount_mode === 'average' && (
-                        <span className="bill-amount-caption"> Avg</span>
-                      )}
-                    </span>
+                    <span>{billCaption(b)}</span>
                     <span className="reminder-item__when">overdue {b.due_date}</span>
                   </div>
-                  <div className="item-row__actions">
-                    {payingId === b.id ? (
-                      <BillPayConfirm
-                        value={payActual}
-                        onChange={setPayActual}
-                        onConfirm={() => payBill(b, payActual)}
-                        onCancel={() => setPayingId(null)}
-                      />
-                    ) : (
-                      <button type="button" onClick={() => payBill(b)}>
-                        Paid
-                      </button>
-                    )}
-                    <button type="button" onClick={() => onEditRequest?.('bill', b.id)}>
-                      Edit
-                    </button>
-                  </div>
+                  {billActions(b)}
                 </li>
               ))}
-              {(brief?.billsDueToday || []).map((b) => (
-                <li key={`d-${b.id}`} className="reminder-item glass-inset item-row">
-                  <div className="item-row__main">
-                    <span>
-                      {b.name} · ${Number(b.amount).toFixed(2)}
-                      {b.amount_mode === 'estimate' && (
-                        <span className="bill-amount-caption"> Estimate</span>
-                      )}
-                      {b.amount_mode === 'average' && (
-                        <span className="bill-amount-caption"> Avg</span>
-                      )}
-                    </span>
-                    <span className="reminder-item__when">due today</span>
-                  </div>
-                  <div className="item-row__actions">
-                    {payingId === b.id ? (
-                      <BillPayConfirm
-                        value={payActual}
-                        onChange={setPayActual}
-                        onConfirm={() => payBill(b, payActual)}
-                        onCancel={() => setPayingId(null)}
-                      />
-                    ) : (
-                      <button type="button" onClick={() => payBill(b)}>
-                        Paid
-                      </button>
-                    )}
-                    <button type="button" onClick={() => onEditRequest?.('bill', b.id)}>
-                      Edit
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div>
-          <p className="section-label">Events today</p>
-          <ul className="reminder-list">
-            {(brief?.eventsToday || []).map((ev) => (
-              <li key={ev.id} className="reminder-item glass-inset item-row">
-                <div className="item-row__main">
-                  <span>{ev.title}</span>
-                  <span className="reminder-item__when">{fmtWhen(ev.start_datetime)}</span>
-                </div>
-                <div className="item-row__actions">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onEditRequest?.(
-                        ev.source_type && ev.source_id != null ? ev.source_type : 'event',
-                        ev.source_type && ev.source_id != null ? ev.source_id : ev.id
-                      )
-                    }
-                  >
-                    Edit
-                  </button>
-                </div>
-              </li>
-            ))}
-            {!brief?.eventsToday?.length && (
-              <p className="stub-empty">No events today.</p>
-            )}
-          </ul>
-        </div>
-
-        <div>
-          <p className="section-label">Reminders · today</p>
-          <ul className="reminder-list">
-            {(brief?.remindersToday || []).map((r) => (
-              <li key={r.id} className="reminder-item glass-inset item-row">
-                <div className="item-row__main">
-                  <span>{r.title}</span>
-                  <span className="reminder-item__when">{fmtWhen(r.datetime)}</span>
-                </div>
-                {remActions(r)}
-              </li>
-            ))}
-            {!brief?.remindersToday?.length && (
-              <p className="stub-empty">None today.</p>
-            )}
-          </ul>
-        </div>
-
-        <div>
-          <p className="section-label">Reminders · tomorrow</p>
-          <ul className="reminder-list">
-            {(brief?.remindersTomorrow || []).map((r) => (
-              <li key={r.id} className="reminder-item glass-inset item-row">
-                <div className="item-row__main">
-                  <span>{r.title}</span>
-                  <span className="reminder-item__when">{fmtWhen(r.datetime)}</span>
-                </div>
-                {remActions(r)}
-              </li>
-            ))}
-            {!brief?.remindersTomorrow?.length && (
-              <p className="stub-empty">None tomorrow.</p>
-            )}
-          </ul>
-        </div>
-
-        {brief?.ignoredReminders?.length > 0 && (
-          <div>
-            <p className="section-label">Ignored</p>
-            <ul className="reminder-list">
-              {brief.ignoredReminders.map((r) => (
+              {(brief?.billsDueThisWeek || []).map((b) => (
                 <li
-                  key={r.id}
-                  className="reminder-item glass-inset item-row item-row--expired"
+                  key={`d-${b.id}`}
+                  className="reminder-item glass-inset item-row"
+                  onDoubleClick={rowDblClick(() => onEditRequest?.('bill', b.id))}
                 >
                   <div className="item-row__main">
-                    <span>{r.title}</span>
-                    {tagsLine(r)}
-                    <span className="reminder-item__when">ignored</span>
+                    <span>{billCaption(b)}</span>
+                    <span className="reminder-item__when">due {b.due_date}</span>
                   </div>
-                  {remActions(r)}
+                  {billActions(b)}
                 </li>
               ))}
             </ul>
           </div>
         )}
+
+        <div>
+          <button
+            type="button"
+            className="section-label section-toggle"
+            onClick={() => setExpiredOpen((v) => !v)}
+          >
+            Expired ({brief?.expiredItems?.length || 0}) {expiredOpen ? '▾' : '▸'}
+          </button>
+          {expiredOpen && (
+            <ul className="reminder-list">
+              {(brief?.expiredItems || []).map((item) =>
+                item.item_type === 'reminder' ? (
+                  <li
+                    key={`rem-${item.id}`}
+                    className="reminder-item glass-inset item-row item-row--expired"
+                    onDoubleClick={rowDblClick(() => onEditRequest?.('reminder', item.id))}
+                  >
+                    <div className="item-row__main">
+                      <span>{item.title}</span>
+                      {tagsLine(item)}
+                      <span className="reminder-item__when">
+                        ignored {fmtWhen(item.datetime)}
+                      </span>
+                    </div>
+                    {remActions(item)}
+                  </li>
+                ) : (
+                  <li
+                    key={`task-${item.id}`}
+                    className="reminder-item glass-inset item-row item-row--expired"
+                    onDoubleClick={rowDblClick(() => onEditRequest?.('task', item.id))}
+                  >
+                    <div className="item-row__main">
+                      <span>
+                        <span className="priority-badge" data-p={item.priority ?? 3}>
+                          P{item.priority ?? 3}
+                        </span>{' '}
+                        {item.title}
+                      </span>
+                      {tagsLine(item)}
+                      <span className="reminder-item__when">
+                        expired {fmtWhen(item.due_datetime)}
+                      </span>
+                    </div>
+                    {taskActions(item)}
+                  </li>
+                )
+              )}
+              {!brief?.expiredItems?.length && (
+                <p className="stub-empty">No expired items this week.</p>
+              )}
+            </ul>
+          )}
+        </div>
       </div>
     </section>
   );

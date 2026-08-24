@@ -20,6 +20,7 @@ const REPEAT = [
   { id: 'all', label: 'All' },
   { id: 'daily', label: 'Daily' },
   { id: 'weekly', label: 'Weekly' },
+  { id: 'fortnight', label: 'Fortnight' },
   { id: 'monthly', label: 'Monthly' },
   { id: 'quarterly', label: 'Quarterly' },
   { id: 'yearly', label: 'Yearly' },

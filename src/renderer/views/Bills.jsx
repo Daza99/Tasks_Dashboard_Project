@@ -1,19 +1,52 @@
 import React, { useEffect, useState } from 'react';
-import { format } from 'date-fns';
+import { format, isValid, parseISO } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import BillPayConfirm from '../components/BillPayConfirm';
 import PrioritySelect from '../components/PrioritySelect';
 import DetailsInline from '../components/DetailsInline';
+import DetailsPreview from '../components/DetailsPreview';
+import NudgeCustomDialog from '../components/NudgeCustomDialog';
+import { NudgePreview, NudgeRow, todayKey } from '../components/NudgeRow';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { useDateFormat } from '../hooks/useDateFormat';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
 const RECUR = [
   { id: '', label: 'once' },
   { id: 'monthly', label: 'monthly' },
+  { id: 'fortnight', label: 'fortnight' },
   { id: 'quarterly', label: 'quarterly' },
   { id: 'yearly', label: 'yearly' },
 ];
+
+/** ISO from local date + HH:mm (bills use 09:00 default). */
+function localToIso(date, time) {
+  const base = parseISO(`${date}T${time || '09:00'}:00`);
+  return isValid(base) ? base.toISOString() : null;
+}
+
+/** Local HH:mm from stored nudge ISO. */
+function timeFromIso(iso) {
+  if (!iso) return '09:00';
+  try {
+    const d = parseISO(iso);
+    return isValid(d) ? format(d, 'HH:mm') : '09:00';
+  } catch {
+    return '09:00';
+  }
+}
+
+/** Local yyyy-MM-dd from stored nudge ISO. */
+function dateFromIso(iso) {
+  if (!iso) return todayKey();
+  try {
+    const d = parseISO(iso);
+    return isValid(d) ? format(d, 'yyyy-MM-dd') : todayKey();
+  } catch {
+    return todayKey();
+  }
+}
 
 const MONTHS = [
   { id: 'ALL', label: 'ALL' },
@@ -73,11 +106,21 @@ export default function BillsView({
   const [amountMode, setAmountMode] = useState('fixed');
   const [priority, setPriority] = useState(DEFAULT_PRIORITY);
   const [details, setDetails] = useState('');
+  const [showOnCalendar, setShowOnCalendar] = useState(true);
+  const [nudge, setNudge] = useState(false);
+  const [nudgeMode, setNudgeMode] = useState('day_before');
+  const [customDate, setCustomDate] = useState(() => todayKey());
+  const [customTime, setCustomTime] = useState('09:00');
+  const [customOpen, setCustomOpen] = useState(null); // 'create' | 'edit' | null
   const [stats, setStats] = useState({ count: 0, average: null, canAverage: false });
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
   const [edit, setEdit] = useState({});
+  const [editNudge, setEditNudge] = useState(false);
+  const [editNudgeMode, setEditNudgeMode] = useState('day_before');
+  const [editCustomDate, setEditCustomDate] = useState(() => todayKey());
+  const [editCustomTime, setEditCustomTime] = useState('09:00');
   const [payingId, setPayingId] = useState(null);
   const [payActual, setPayActual] = useState('');
   const [editStats, setEditStats] = useState({
@@ -151,8 +194,39 @@ export default function BillsView({
     if (!seedDate) return;
     setMode('edit');
     setDue(seedDate);
+    setShowOnCalendar(true);
     onSeedConsumed?.();
   }, [seedDate]);
+
+  // Today bills cannot use Day Before (would be yesterday).
+  useEffect(() => {
+    if (nudge && nudgeMode === 'day_before' && due === todayKey()) {
+      setNudgeMode('custom');
+      setCustomDate(due);
+      setCustomTime('09:00');
+    }
+  }, [nudge, nudgeMode, due]);
+
+  useEffect(() => {
+    if (!editNudge || editNudgeMode !== 'day_before') return;
+    const editDue = edit.due_date || todayKey();
+    if (editDue === todayKey()) {
+      setEditNudgeMode('custom');
+      setEditCustomDate(editDue);
+      setEditCustomTime('09:00');
+    }
+  }, [editNudge, editNudgeMode, edit.due_date]);
+
+  function applyNudgeOn(dueDate, setOn, setMode, setCDate, setCTime) {
+    setOn(true);
+    if (dueDate === todayKey()) {
+      setMode('custom');
+      setCDate(dueDate);
+      setCTime('09:00');
+    } else {
+      setMode('day_before');
+    }
+  }
 
   // Refresh name-based payment stats for create form
   useEffect(() => {
@@ -217,6 +291,11 @@ export default function BillsView({
         amount_mode: amountMode,
         priority,
         description: details.trim() || null,
+        show_on_calendar: showOnCalendar,
+        nudge,
+        nudge_mode: nudge ? nudgeMode : null,
+        nudge_datetime:
+          nudge && nudgeMode === 'custom' ? localToIso(customDate, customTime) : null,
       });
       setName('');
       setAmount('');
@@ -224,6 +303,11 @@ export default function BillsView({
       setAmountMode('fixed');
       setPriority(DEFAULT_PRIORITY);
       setDetails('');
+      setShowOnCalendar(true);
+      setNudge(false);
+      setNudgeMode('day_before');
+      setCustomDate(todayKey());
+      setCustomTime('09:00');
       await load();
       await refresh();
     } catch (err) {
@@ -242,7 +326,18 @@ export default function BillsView({
       amount_mode: b.amount_mode || 'fixed',
       priority: b.priority ?? DEFAULT_PRIORITY,
       description: b.description || '',
+      show_on_calendar: Number(b.show_on_calendar) !== 0,
     });
+    const hasNudge = Boolean(b.nudge_datetime);
+    setEditNudge(hasNudge);
+    setEditNudgeMode(b.nudge_mode === 'custom' ? 'custom' : 'day_before');
+    if (b.nudge_mode === 'custom' && b.nudge_datetime) {
+      setEditCustomDate(dateFromIso(b.nudge_datetime));
+      setEditCustomTime(timeFromIso(b.nudge_datetime));
+    } else {
+      setEditCustomDate(b.due_date || todayKey());
+      setEditCustomTime('09:00');
+    }
   }
 
   async function saveEdit(e) {
@@ -257,6 +352,13 @@ export default function BillsView({
         amount_mode: edit.amount_mode || 'fixed',
         priority: edit.priority ?? DEFAULT_PRIORITY,
         description: (edit.description || '').trim() || null,
+        show_on_calendar: Boolean(edit.show_on_calendar),
+        nudge: editNudge,
+        nudge_mode: editNudge ? editNudgeMode : null,
+        nudge_datetime:
+          editNudge && editNudgeMode === 'custom'
+            ? localToIso(editCustomDate, editCustomTime)
+            : null,
       });
       setEditingId(null);
       await load();
@@ -496,6 +598,14 @@ export default function BillsView({
               Calc Average
             </label>
             <input type="date" value={due} onChange={(e) => setDue(e.target.value)} required />
+            <label className="bill-check">
+              <input
+                type="checkbox"
+                checked={showOnCalendar}
+                onChange={(e) => setShowOnCalendar(e.target.checked)}
+              />
+              Calendar
+            </label>
           </div>
           <input
             type="text"
@@ -521,12 +631,42 @@ export default function BillsView({
                 </button>
               </div>
               <PrioritySelect id="bill-priority" value={priority} onChange={setPriority} />
+              <NudgeRow
+                nudge={nudge}
+                mode={nudgeMode}
+                dueDate={due}
+                dayBeforeTitle="09:00, one day before due"
+                onNudgeChange={(on) => {
+                  if (!on) {
+                    setNudge(false);
+                    return;
+                  }
+                  applyNudgeOn(due, setNudge, setNudgeMode, setCustomDate, setCustomTime);
+                }}
+                onDayBefore={() => {
+                  setNudge(true);
+                  setNudgeMode('day_before');
+                }}
+                onCustom={() => {
+                  setNudge(true);
+                  setCustomOpen('create');
+                }}
+              />
+              <NudgePreview
+                nudge={nudge}
+                mode={nudgeMode}
+                dueDate={due}
+                dueTime="09:00"
+                customDate={customDate}
+                customTime={customTime}
+              />
             </div>
             <DetailsInline
               value={details}
               onChange={setDetails}
               placeholder="Optional notes"
               ariaLabel="Optional notes"
+              compact
             />
           </div>
           <button type="submit" className="btn-primary">
@@ -535,6 +675,37 @@ export default function BillsView({
           {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
         </form>
       )}
+
+      <NudgeCustomDialog
+        open={customOpen === 'create'}
+        dueDate={due}
+        time={customTime}
+        initialDate={customDate}
+        prompt={`When to ping before the bill is due (date method: ${methodHint}).`}
+        onCancel={() => setCustomOpen(null)}
+        onSave={(d, t) => {
+          setCustomDate(d);
+          setCustomTime(t);
+          setNudgeMode('custom');
+          setNudge(true);
+          setCustomOpen(null);
+        }}
+      />
+      <NudgeCustomDialog
+        open={customOpen === 'edit'}
+        dueDate={edit.due_date || todayKey()}
+        time={editCustomTime}
+        initialDate={editCustomDate}
+        prompt={`When to ping before the bill is due (date method: ${methodHint}).`}
+        onCancel={() => setCustomOpen(null)}
+        onSave={(d, t) => {
+          setEditCustomDate(d);
+          setEditCustomTime(t);
+          setEditNudgeMode('custom');
+          setEditNudge(true);
+          setCustomOpen(null);
+        }}
+      />
 
       {isHistory ? (
         <ul className="module-list">
@@ -624,6 +795,16 @@ export default function BillsView({
                       onChange={(e) => setEdit({ ...edit, due_date: e.target.value })}
                       required
                     />
+                    <label className="bill-check">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(edit.show_on_calendar)}
+                        onChange={(e) =>
+                          setEdit({ ...edit, show_on_calendar: e.target.checked })
+                        }
+                      />
+                      Calendar
+                    </label>
                   </div>
                   <input
                     type="text"
@@ -650,12 +831,48 @@ export default function BillsView({
                         value={edit.priority ?? DEFAULT_PRIORITY}
                         onChange={(n) => setEdit({ ...edit, priority: n })}
                       />
+                      <NudgeRow
+                        nudge={editNudge}
+                        mode={editNudgeMode}
+                        dueDate={edit.due_date || todayKey()}
+                        dayBeforeTitle="09:00, one day before due"
+                        onNudgeChange={(on) => {
+                          if (!on) {
+                            setEditNudge(false);
+                            return;
+                          }
+                          applyNudgeOn(
+                            edit.due_date || todayKey(),
+                            setEditNudge,
+                            setEditNudgeMode,
+                            setEditCustomDate,
+                            setEditCustomTime
+                          );
+                        }}
+                        onDayBefore={() => {
+                          setEditNudge(true);
+                          setEditNudgeMode('day_before');
+                        }}
+                        onCustom={() => {
+                          setEditNudge(true);
+                          setCustomOpen('edit');
+                        }}
+                      />
+                      <NudgePreview
+                        nudge={editNudge}
+                        mode={editNudgeMode}
+                        dueDate={edit.due_date || todayKey()}
+                        dueTime="09:00"
+                        customDate={editCustomDate}
+                        customTime={editCustomTime}
+                      />
                     </div>
                     <DetailsInline
                       value={edit.description || ''}
                       onChange={(text) => setEdit({ ...edit, description: text })}
                       placeholder="Optional notes"
                       ariaLabel="Optional notes"
+                      compact
                     />
                   </div>
                   <div className="item-row__actions">
@@ -666,18 +883,16 @@ export default function BillsView({
                   </div>
                 </form>
               ) : (
-                <div className="module-list__row">
+                <div
+                  className="module-list__row"
+                  onDoubleClick={rowDblClick(() => beginEdit(b))}
+                >
                   <div>
                     <strong>
                       <span className="priority-badge" data-p={b.priority ?? DEFAULT_PRIORITY}>
                         P{b.priority ?? DEFAULT_PRIORITY}
                       </span>{' '}
                       {b.name}
-                      {b.description?.trim() ? (
-                        <span className="details-mark" title="Has details">
-                          details
-                        </span>
-                      ) : null}
                     </strong>
                     <div className="module-list__meta">
                       ${Number(b.amount).toFixed(2)}
@@ -691,6 +906,7 @@ export default function BillsView({
                       {b.recurrence ? ` · ${b.recurrence}` : ''}
                       {b.category ? ` · ${b.category}` : ''}
                     </div>
+                    <DetailsPreview text={b.description} />
                   </div>
                   <div className="item-row__actions">
                     {b.paid_status !== 'paid' && payingId === b.id && (

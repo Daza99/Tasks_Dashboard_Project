@@ -64,6 +64,8 @@ function sizeForPayload(payload) {
     height = 176;
   }
   height += Math.max(0, n - 1) * 120;
+  // Room for Created yyyy-mm-dd under the name
+  height += 18;
   return { width, height };
 }
 
@@ -159,7 +161,10 @@ function ensureDock() {
   win.loadFile(path.join(__dirname, 'tracker-dock.html'));
   win.webContents.once('did-finish-load', () => pushDockList());
   win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) win.show();
+    if (win.isDestroyed()) return;
+    // Taskbar button without staying visible on the desktop
+    win.show();
+    win.minimize();
   });
   win.on('close', () => {
     if (closingDock) return;
@@ -393,6 +398,30 @@ function registerTrackerPopoutIpc() {
     const id = idForSender(e.sender);
     if (id == null) return false;
     return minimizeTrackerPopout(id);
+  });
+  // Focus dashboard Trackers with this id open for edit
+  ipcMain.handle('trackers:popoutEditSelf', (e) => {
+    try {
+      const id = idForSender(e.sender);
+      if (id == null) return false;
+      const dash = getDashboardWindow();
+      if (!dash || dash.isDestroyed()) return false;
+      if (dash.isMinimized()) {
+        dash.restore();
+        dash.maximize();
+      } else if (!dash.isVisible()) {
+        dash.show();
+      }
+      dash.show();
+      dash.focus();
+      if (!dash.webContents.isDestroyed()) {
+        dash.webContents.send('app:open-item', { type: 'tracker', id });
+      }
+      return true;
+    } catch (err) {
+      logError('trackers:popoutEditSelf', err);
+      throw err;
+    }
   });
   ipcMain.handle('trackers:dockList', () => ({ items: dockItems() }));
   ipcMain.handle('trackers:dockRestore', (_e, id) => restoreTrackerPopout(id));

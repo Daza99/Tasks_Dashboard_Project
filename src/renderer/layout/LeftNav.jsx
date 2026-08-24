@@ -62,14 +62,6 @@ export default function LeftNav({ activeView, onNavigate }) {
       <div className="left-nav__glance">
         <button
           type="button"
-          className={`nav-inbox${activeView === 'inbox' ? ' nav-inbox--active' : ''}`}
-          onClick={() => open('inbox')}
-        >
-          <span aria-hidden>✉</span> Inbox
-        </button>
-
-        <button
-          type="button"
           className={`nav-item${activeView === 'today' ? ' nav-item--active' : ''}`}
           onClick={() => open('today')}
         >

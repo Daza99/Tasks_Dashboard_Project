@@ -37,7 +37,7 @@ export default function ListHashtagInput({
   }
 
   function handleKeyDown(e) {
-    if ((e.key === ' ' || e.key === 'Tab') && prediction) {
+    if (e.key === 'Tab' && prediction) {
       e.preventDefault();
       acceptPrediction();
     }

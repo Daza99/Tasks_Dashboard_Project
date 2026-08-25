@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useDatabase } from '../context/DatabaseContext';
 import PromptDialog from '../components/PromptDialog';
+import ColorPalettePopover from '../components/ColorPalettePopover';
 import {
   CLOCK_FONTS,
   alphaOf,
@@ -13,20 +14,62 @@ import {
 const NEW_ID = 'new';
 
 /**
- * Native color square. Opens the OS palette picker.
- * @param {{ label: string, value: string, onChange: (hex: string) => void }} props
+ * Theme color chip. Only the 36px square opens the palette.
+ * Snapshot hex+dirty on open; OK keeps preview, click-away/Esc restores.
+ * @param {{
+ *   label: string,
+ *   value: string,
+ *   onChange: (hex: string) => void,
+ *   dirty: boolean,
+ *   setDirty: (v: boolean) => void,
+ * }} props
  */
-function ColorSwatch({ label, value, onChange }) {
+function ColorSwatch({ label, value, onChange, dirty, setDirty }) {
+  const chipRef = useRef(null);
+  const snapRef = useRef({ hex: '', dirty: false });
+  const [open, setOpen] = useState(false);
+  const hex = cssColorToHex(value);
+
+  function openPalette() {
+    if (open) return;
+    snapRef.current = { hex, dirty };
+    setOpen(true);
+  }
+
+  function onCommit() {
+    setOpen(false);
+  }
+
+  function onCancel() {
+    onChange(snapRef.current.hex);
+    setDirty(snapRef.current.dirty);
+    setOpen(false);
+  }
+
   return (
-    <label className="theme-swatch">
-      <span>{label}</span>
-      <input
-        type="color"
-        value={cssColorToHex(value)}
-        onChange={(e) => onChange(e.target.value)}
+    <div className="theme-swatch">
+      <span className="theme-swatch__label">{label}</span>
+      <button
+        ref={chipRef}
+        type="button"
+        className="theme-swatch__chip"
+        style={{ backgroundColor: hex }}
         aria-label={label}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={openPalette}
       />
-    </label>
+      <ColorPalettePopover
+        open={open}
+        anchorRef={chipRef}
+        preferLeft
+        label={label}
+        value={hex}
+        onChange={onChange}
+        onCommit={onCommit}
+        onCancel={onCancel}
+      />
+    </div>
   );
 }
 
@@ -167,18 +210,18 @@ export default function SettingsTheme() {
 
   return (
     <div>
-      <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 0 }}>
-        Active: {theme?.name || '—'}
-      </p>
       <div className="theme-toggle-row">
         <div className="theme-toggle" role="group" aria-label="Theme base">
-          <button
-            type="button"
-            className={themeBase === 'dark' ? 'active' : ''}
-            onClick={() => setThemeBase('dark')}
-          >
-            Dark glass
-          </button>
+          <div className="theme-toggle__cell">
+            <p className="theme-active">Active: {theme?.name || '—'}</p>
+            <button
+              type="button"
+              className={themeBase === 'dark' ? 'active' : ''}
+              onClick={() => setThemeBase('dark')}
+            >
+              Dark glass
+            </button>
+          </div>
           <button
             type="button"
             className={themeBase === 'light' ? 'active' : ''}
@@ -249,81 +292,101 @@ export default function SettingsTheme() {
             </div>
           </div>
 
-          <div className="theme-swatches">
-            <ColorSwatch label="Bg" value={draft['--panel-bg']} onChange={onBg} />
-            <ColorSwatch
-              label="Button bg"
-              value={draft['--button-bg']}
-              onChange={onButtonBg}
-            />
-            <ColorSwatch
-              label="Button label"
-              value={draft['--button-text']}
-              onChange={onButtonText}
-            />
-            <ColorSwatch
-              label="Row actions (Done / Edit)"
-              value={draft['--action-text']}
-              onChange={(hex) => patchDraft({ '--action-text': hex })}
-            />
-            <ColorSwatch
-              label="Delete"
-              value={draft['--danger']}
-              onChange={(hex) => patchDraft({ '--danger': hex })}
-            />
-            <ColorSwatch
-              label="Clock"
-              value={draft['--clock-color']}
-              onChange={(hex) => patchDraft({ '--clock-color': hex })}
-            />
-          </div>
+          <div className="theme-custom-layout">
+            <div className="theme-custom-layout__preview">
+              <div className="settings-field">
+                <label htmlFor="theme-clock-font">Clock font</label>
+                <select
+                  id="theme-clock-font"
+                  className="theme-font-select"
+                  value={fontValue}
+                  onChange={(e) => patchDraft({ '--font-clock': e.target.value })}
+                >
+                  {!fontKnown && <option value={fontValue}>Current</option>}
+                  {CLOCK_FONTS.map((f) => (
+                    <option key={f.label} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="settings-field">
-            <label htmlFor="theme-clock-font">Clock font</label>
-            <select
-              id="theme-clock-font"
-              className="theme-font-select"
-              value={fontValue}
-              onChange={(e) => patchDraft({ '--font-clock': e.target.value })}
-            >
-              {!fontKnown && <option value={fontValue}>Current</option>}
-              {CLOCK_FONTS.map((f) => (
-                <option key={f.label} value={f.value}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="theme-preview" style={draftToStyle(draft)} aria-hidden="true">
-            <div className="theme-preview__glass">
-              <span className="theme-preview__clock">14:32:01</span>
-              <div className="theme-preview__row">
-                <button type="button" className="btn-primary" tabIndex={-1}>
-                  Primary
-                </button>
-                <div className="item-row__actions">
-                  <button type="button" tabIndex={-1}>
-                    Done
-                  </button>
-                  <button type="button" tabIndex={-1}>
-                    Edit
-                  </button>
-                  <button type="button" className="danger" tabIndex={-1}>
-                    Del
-                  </button>
+              <div className="theme-preview" style={draftToStyle(draft)} aria-hidden="true">
+                <div className="theme-preview__glass">
+                  <span className="theme-preview__clock">14:32:01</span>
+                  <div className="theme-preview__row">
+                    <button type="button" className="btn-primary" tabIndex={-1}>
+                      Primary
+                    </button>
+                    <div className="item-row__actions">
+                      <button type="button" tabIndex={-1}>
+                        Done
+                      </button>
+                      <button type="button" tabIndex={-1}>
+                        Edit
+                      </button>
+                      <button type="button" className="danger" tabIndex={-1}>
+                        Del
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              <button
+                type="button"
+                className={`theme-confirm${dirty ? ' is-dirty' : ''}`}
+                onClick={onConfirm}
+              >
+                Confirm
+              </button>
+            </div>
+
+            <div className="theme-swatches">
+              <ColorSwatch
+                label="Bg"
+                value={draft['--panel-bg']}
+                onChange={onBg}
+                dirty={dirty}
+                setDirty={setDirty}
+              />
+              <ColorSwatch
+                label="Button bg"
+                value={draft['--button-bg']}
+                onChange={onButtonBg}
+                dirty={dirty}
+                setDirty={setDirty}
+              />
+              <ColorSwatch
+                label="Button label"
+                value={draft['--button-text']}
+                onChange={onButtonText}
+                dirty={dirty}
+                setDirty={setDirty}
+              />
+              <ColorSwatch
+                label="Row actions (Done / Edit)"
+                value={draft['--action-text']}
+                onChange={(h) => patchDraft({ '--action-text': h })}
+                dirty={dirty}
+                setDirty={setDirty}
+              />
+              <ColorSwatch
+                label="Delete"
+                value={draft['--danger']}
+                onChange={(h) => patchDraft({ '--danger': h })}
+                dirty={dirty}
+                setDirty={setDirty}
+              />
+              <ColorSwatch
+                label="Clock"
+                value={draft['--clock-color']}
+                onChange={(h) => patchDraft({ '--clock-color': h })}
+                dirty={dirty}
+                setDirty={setDirty}
+              />
             </div>
           </div>
-
-          <button
-            type="button"
-            className={`theme-confirm${dirty ? ' is-dirty' : ''}`}
-            onClick={onConfirm}
-          >
-            Confirm
-          </button>
         </>
       )}
 

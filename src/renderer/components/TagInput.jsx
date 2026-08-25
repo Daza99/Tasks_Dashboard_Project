@@ -8,7 +8,7 @@ import {
 import { useTagCatalog } from '../hooks/useTagCatalog';
 
 /**
- * Multi-tag input with grey ghost suffix; Space/Tab accepts prediction.
+ * Multi-tag input with grey ghost suffix; Tab accepts prediction.
  * Value is display string (`#a #b`); parent normalizes on submit.
  * @param {{ onBlur?: () => void }} props
  */
@@ -48,7 +48,7 @@ export default function TagInput({
   }
 
   function handleKeyDown(e) {
-    if ((e.key === ' ' || e.key === 'Tab') && prediction) {
+    if (e.key === 'Tab' && prediction) {
       e.preventDefault();
       acceptPrediction();
     }

@@ -60,7 +60,7 @@ export default function ListHashtagEditor({ listId, tags = [], onCommit }) {
   }
 
   function handleKeyDown(e) {
-    if ((e.key === ' ' || e.key === 'Tab') && prediction) {
+    if (e.key === 'Tab' && prediction) {
       e.preventDefault();
       acceptPrediction();
     }

@@ -41,9 +41,9 @@ export default function TagSearchInput({
   }
 
   function handleKeyDown(e) {
-    if ((e.key === ' ' || e.key === 'Tab' || e.key === 'Enter') && prediction) {
-      // Space/Tab accept; Enter accepts then lets form/filter use value
-      if (e.key === ' ' || e.key === 'Tab') e.preventDefault();
+    if ((e.key === 'Tab' || e.key === 'Enter') && prediction) {
+      // Tab accept; Enter accepts then lets form/filter use value
+      if (e.key === 'Tab') e.preventDefault();
       if (e.key === 'Enter') {
         e.preventDefault();
         acceptPrediction();

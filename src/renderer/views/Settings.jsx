@@ -18,7 +18,7 @@ export default function SettingsView() {
   const [tab, setTab] = useState('general');
 
   return (
-    <div className="settings">
+    <div className={`settings${tab === 'theme' ? ' settings--wide' : ''}`}>
       <h1>Settings</h1>
       <p style={{ marginBottom: 16 }}>Preferences persist in local SQLite.</p>
       <div className="settings__tabs" role="tablist">

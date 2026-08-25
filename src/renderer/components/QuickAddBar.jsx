@@ -9,7 +9,7 @@ import {
 
 /**
  * Always-visible quick add — routes via main-process parser.
- * Ghost-completes `#partial` tokens with Space/Tab.
+ * Ghost-completes `#partial` tokens with Tab.
  * @param {{ compact?: boolean }} props
  */
 export default function QuickAddBar({ compact = false }) {
@@ -80,7 +80,7 @@ export default function QuickAddBar({ compact = false }) {
   }
 
   function handleKeyDown(e) {
-    if ((e.key === ' ' || e.key === 'Tab') && prediction) {
+    if (e.key === 'Tab' && prediction) {
       e.preventDefault();
       acceptHashPrediction();
     }

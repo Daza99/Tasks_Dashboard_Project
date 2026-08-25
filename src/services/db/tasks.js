@@ -187,6 +187,47 @@ function deleteTask(id) {
   }
 }
 
+function uniqPositiveIds(ids) {
+  return [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+function taskIsLocked(id) {
+  const row = getDb().prepare('SELECT locked FROM tasks WHERE id = ?').get(id);
+  if (row && Number(row.locked) === 1) return true;
+  return hasTag('task', id, 'locked');
+}
+
+/**
+ * Bulk-delete tasks (skips locked). One transaction.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteTasks(ids) {
+  try {
+    const list = uniqPositiveIds(ids);
+    if (!list.length) return 0;
+    const db = getDb();
+    const delTags = db.prepare(
+      `DELETE FROM item_tags WHERE item_type = 'task' AND item_id = ?`
+    );
+    const delRow = db.prepare('DELETE FROM tasks WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        if (taskIsLocked(id)) continue;
+        delTags.run(id);
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteTasks', err);
+    throw err;
+  }
+}
+
 /** Mark todo_24 items past due as todo_expired. Returns {id, title}[]. */
 function expireStaleTodo24() {
   try {
@@ -292,6 +333,7 @@ module.exports = {
   completeTask,
   uncompleteTask,
   deleteTask,
+  deleteTasks,
   expireStaleTodo24,
   listDueTasksForAlert,
   markTaskAlerted,

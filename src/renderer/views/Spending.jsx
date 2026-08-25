@@ -3,12 +3,17 @@ import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
 import TagSearchInput from '../components/TagSearchInput';
+import ConfirmDialog from '../components/ConfirmDialog';
+import ListSelectToolbar from '../components/ListSelectToolbar';
 import DetailsInline from '../components/DetailsInline';
 import DetailsPreview from '../components/DetailsPreview';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import { formatTagsDisplay, normalizeUserTagNames, userTagsDisplay } from '../../utils/tag-helpers.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { useSelectedCard } from '../hooks/useSelectedCard';
+import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { rowDblClick } from '../../utils/row-dblclick.js';
+import { matchesEntitySearch } from '../../utils/entity-search.js';
 
 const FILTER_OPTS = [
   { value: 'all', label: 'All' },
@@ -43,11 +48,13 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
+  const { selectedId, setSelectedId, listRef } = useSelectedCard();
   const [edit, setEdit] = useState({});
   const [listFilter, setListFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   async function load() {
     // Higher limit so month/range filters are not truncated at default 100
@@ -61,6 +68,7 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
 
   function beginEdit(tx) {
     setEditingId(tx.id);
+    setSelectedId(tx.id);
     setEdit({
       amount: String(tx.amount),
       category: tx.category,
@@ -94,7 +102,6 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
     }
 
     const q = search.trim().toLowerCase();
-    const tagQuery = q.startsWith('#') ? q.slice(1) : null;
     const isFullDate = /^\d{4}-\d{2}-\d{2}$/.test(q);
     const isMonthPrefix = /^\d{4}-\d{2}$/.test(q);
 
@@ -106,14 +113,11 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
       if (dateTo && d > dateTo) return false;
 
       if (!q) return true;
-      if (tagQuery != null) {
-        return (tx.tags || []).some((t) => t.toLowerCase() === tagQuery);
-      }
       if (isFullDate) return d === q;
       if (isMonthPrefix) return d.startsWith(q);
-      const cat = String(tx.category || '').toLowerCase();
-      const desc = String(tx.description || '').toLowerCase();
-      return cat.includes(q) || desc.includes(q);
+      return matchesEntitySearch(tx, search, {
+        textKeys: ['category', 'description'],
+      });
     });
 
     if (listFilter === 'highest') {
@@ -129,6 +133,19 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
     }
     return list;
   }, [rows, listFilter, search, dateFrom, dateTo]);
+
+  const visibleIds = useMemo(() => filtered.map((tx) => tx.id), [filtered]);
+  const {
+    selected,
+    selectAllRef,
+    selectedVisibleCount,
+    allVisibleSelected,
+    selectableCount,
+    toggle,
+    onSelectAllChange,
+    clear: clearSelected,
+    selectedList,
+  } = useVisibleSelection(visibleIds);
 
   async function create(e) {
     e.preventDefault();
@@ -173,6 +190,19 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
 
   async function remove(id) {
     await window.api.deleteTransaction(id);
+    await load();
+    await refresh();
+  }
+
+  async function removeSelected() {
+    const ids = selectedList();
+    if (!ids.length) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    await window.api.deleteTransactions(ids);
+    clearSelected();
+    setBulkDeleteOpen(false);
     await load();
     await refresh();
   }
@@ -255,8 +285,8 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
           <TagSearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Category, #tag, or date"
-            aria-label="Search transactions by category, tag, or date"
+            placeholder="Category, details, #tag, or date"
+            aria-label="Search transactions by category, details, tag, or date"
           />
         </label>
         <label className="module-filter-bar__field">
@@ -279,14 +309,25 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
         </label>
       </div>
 
-      <ul className="module-list">
+      <ListSelectToolbar
+        selectAllRef={selectAllRef}
+        allVisibleSelected={allVisibleSelected}
+        selectableCount={selectableCount}
+        selectedCount={selectedVisibleCount}
+        onSelectAllChange={onSelectAllChange}
+        onDelete={() => setBulkDeleteOpen(true)}
+        selectAllAriaLabel="Select all visible transactions"
+      />
+
+      <ul className="module-list" ref={listRef}>
         {filtered.map((tx) => (
           <li
             key={tx.id}
             ref={editingId === tx.id ? editRowRef : null}
+            onClick={() => setSelectedId(tx.id)}
             className={`module-list__item glass-inset module-list__item--col${
               editingId === tx.id ? ' module-list__item--editing' : ''
-            }`}
+            }${selectedId === tx.id || editingId === tx.id ? ' module-list__item--selected' : ''}`}
           >
             {editingId === tx.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
@@ -343,15 +384,25 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
                 className="module-list__row"
                 onDoubleClick={rowDblClick(() => beginEdit(tx))}
               >
-                <div>
-                  <strong>
-                    ${Number(tx.amount).toFixed(2)} · {tx.category}
-                  </strong>
-                  <div className="module-list__meta">
-                    {tx.date}
-                    {tx.tags?.length ? ` · ${formatTagsDisplay(tx.tags)}` : ''}
+                <div className="tracker-list__main">
+                  <label className="bill-check tracker-list__check">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(tx.id)}
+                      onChange={() => toggle(tx.id)}
+                      aria-label={`Select ${tx.category} ${tx.amount}`}
+                    />
+                  </label>
+                  <div>
+                    <strong>
+                      ${Number(tx.amount).toFixed(2)} · {tx.category}
+                    </strong>
+                    <div className="module-list__meta">
+                      {tx.date}
+                      {tx.tags?.length ? ` · ${formatTagsDisplay(tx.tags)}` : ''}
+                    </div>
+                    <DetailsPreview text={tx.description} />
                   </div>
-                  <DetailsPreview text={tx.description} />
                 </div>
                 <div className="item-row__actions">
                   <button type="button" onClick={() => beginEdit(tx)}>
@@ -370,6 +421,16 @@ export default function SpendingView({ editId = null, onEditConsumed }) {
           <p className="stub-empty">No transactions match these filters.</p>
         )}
       </ul>
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${selectedVisibleCount} transaction${selectedVisibleCount === 1 ? '' : 's'}?`}
+        message="Removes the selected transactions. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
+      />
     </div>
   );
 }

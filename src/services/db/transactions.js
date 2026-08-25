@@ -122,6 +122,40 @@ function deleteTransaction(id) {
   }
 }
 
+function uniqPositiveIds(ids) {
+  return [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+/**
+ * Bulk-delete transactions and their tags in one transaction.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteTransactions(ids) {
+  try {
+    const list = uniqPositiveIds(ids);
+    if (!list.length) return 0;
+    const db = getDb();
+    const delTags = db.prepare(
+      `DELETE FROM item_tags WHERE item_type = 'transaction' AND item_id = ?`
+    );
+    const delRow = db.prepare('DELETE FROM transactions WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        delTags.run(id);
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteTransactions', err);
+    throw err;
+  }
+}
+
 function sumForDate(day = dateKey()) {
   const row = getDb()
     .prepare(
@@ -158,6 +192,7 @@ module.exports = {
   listCategories,
   updateTransaction,
   deleteTransaction,
+  deleteTransactions,
   sumForDate,
   sumMonthToDate,
   getMoneySnapshot,

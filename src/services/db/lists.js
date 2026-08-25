@@ -3,10 +3,11 @@
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
-const { addTag, getItemTagNames } = require('./tags');
+const { addTag, getItemTagNames, syncUserTags } = require('./tags');
 const { appendHashtag } = require('../list-hashtags');
 const {
   normalizeTagName,
+  normalizeTagNames,
   userTagsOnly,
 } = require('../../utils/tag-helpers.cjs');
 const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
@@ -144,6 +145,27 @@ function renameList(id, name) {
   }
 }
 
+/**
+ * Replace user hashtags on a list. Empty set is a no-op (do not wipe all tags).
+ * New names are appended to the list-hashtags.txt whitelist.
+ * @param {number} id
+ * @param {string[]|string} tags
+ */
+function setListTags(id, tags) {
+  try {
+    const list = getList(id);
+    if (!list) throw new Error('List not found');
+    const names = userTagsOnly(normalizeTagNames(tags));
+    if (!names.length) return list;
+    syncUserTags('list', id, names);
+    for (const n of names) appendHashtag(n);
+    return getList(id);
+  } catch (err) {
+    logError('setListTags', err);
+    throw err;
+  }
+}
+
 function deleteList(id) {
   try {
     const db = getDb();
@@ -158,6 +180,42 @@ function deleteList(id) {
     return true;
   } catch (err) {
     logError('deleteList', err);
+    throw err;
+  }
+}
+
+function uniqPositiveIds(ids) {
+  return [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+/**
+ * Bulk-delete lists (items + list tags) in one transaction.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteLists(ids) {
+  try {
+    const list = uniqPositiveIds(ids);
+    if (!list.length) return 0;
+    const db = getDb();
+    const delItems = db.prepare('DELETE FROM list_items WHERE list_id = ?');
+    const delTags = db.prepare(
+      `DELETE FROM item_tags WHERE item_type = 'list' AND item_id = ?`
+    );
+    const delRow = db.prepare('DELETE FROM lists WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        delItems.run(id);
+        delTags.run(id);
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteLists', err);
     throw err;
   }
 }
@@ -311,7 +369,9 @@ module.exports = {
   getList,
   listLists,
   renameList,
+  setListTags,
   deleteList,
+  deleteLists,
   mergeLists,
   listItems,
   addListEntry,

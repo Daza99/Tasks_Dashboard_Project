@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
 import TagSearchInput from '../components/TagSearchInput';
+import ConfirmDialog from '../components/ConfirmDialog';
+import ListSelectToolbar from '../components/ListSelectToolbar';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import {
   formatTagsDisplay,
@@ -13,7 +15,10 @@ import DetailsPreview from '../components/DetailsPreview';
 import PrioritySelect from '../components/PrioritySelect';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { useSelectedCard } from '../hooks/useSelectedCard';
+import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { rowDblClick } from '../../utils/row-dblclick.js';
+import { matchesEntitySearch } from '../../utils/entity-search.js';
 
 const FREQS = ['daily', 'weekly', 'monthly'];
 const FILTER_OPTS = ['all', 'daily', 'weekly', 'monthly'];
@@ -40,6 +45,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
+  const { selectedId, setSelectedId, listRef } = useSelectedCard();
   const [editName, setEditName] = useState('');
   const [editFreq, setEditFreq] = useState('daily');
   const [editNudge, setEditNudge] = useState('');
@@ -48,6 +54,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
   const [editDetails, setEditDetails] = useState('');
   const [freqFilter, setFreqFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const isArchive = mode === 'archive';
 
@@ -72,21 +79,26 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
     onEditConsumed?.();
   }, [editId, rows]);
 
-  /** Frequency dropdown + name/#tag search (AND). */
+  /** Frequency dropdown + name/details/#tag search (AND). */
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const tagQuery = q.startsWith('#') ? q.slice(1) : null;
     return rows.filter((h) => {
       if (freqFilter !== 'all' && h.frequency !== freqFilter) return false;
-      if (!q) return true;
-      if (tagQuery != null) {
-        return (h.tags || []).some((t) => t.toLowerCase() === tagQuery);
-      }
-      return String(h.name || '')
-        .toLowerCase()
-        .includes(q);
+      return matchesEntitySearch(h, search, { textKeys: ['name', 'description'] });
     });
   }, [rows, freqFilter, search]);
+
+  const visibleIds = useMemo(() => filtered.map((h) => h.id), [filtered]);
+  const {
+    selected,
+    selectAllRef,
+    selectedVisibleCount,
+    allVisibleSelected,
+    selectableCount,
+    toggle: toggleSelected,
+    onSelectAllChange,
+    clear: clearSelected,
+    selectedList,
+  } = useVisibleSelection(visibleIds);
 
   async function create(e) {
     e.preventDefault();
@@ -115,6 +127,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
 
   function beginEdit(h) {
     setEditingId(h.id);
+    setSelectedId(h.id);
     setEditName(h.name);
     setEditFreq(h.frequency);
     setEditNudge(h.nudge_time || '');
@@ -155,6 +168,19 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
     await refresh();
   }
 
+  async function removeSelected() {
+    const ids = selectedList();
+    if (!ids.length) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    await window.api.deleteHabits(ids);
+    clearSelected();
+    setBulkDeleteOpen(false);
+    await load();
+    await refresh();
+  }
+
   async function archive(id) {
     await window.api.archiveHabit(id);
     await load();
@@ -188,8 +214,8 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
         <TagSearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Name or #tag"
-          aria-label="Search habits by name or #tag"
+          placeholder="Name, details, or #tag"
+          aria-label="Search habits by name, details, or #tag"
         />
       </label>
     </div>
@@ -274,14 +300,25 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
 
       {filterBar}
 
-      <ul className="module-list">
+      <ListSelectToolbar
+        selectAllRef={selectAllRef}
+        allVisibleSelected={allVisibleSelected}
+        selectableCount={selectableCount}
+        selectedCount={selectedVisibleCount}
+        onSelectAllChange={onSelectAllChange}
+        onDelete={() => setBulkDeleteOpen(true)}
+        selectAllAriaLabel="Select all visible habits"
+      />
+
+      <ul className="module-list" ref={listRef}>
         {filtered.map((h) => (
           <li
             key={h.id}
             ref={editingId === h.id ? editRowRef : null}
+            onClick={() => setSelectedId(h.id)}
             className={`module-list__item glass-inset module-list__item--col${
               editingId === h.id ? ' module-list__item--editing' : ''
-            }`}
+            }${selectedId === h.id || editingId === h.id ? ' module-list__item--selected' : ''}`}
           >
             {editingId === h.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
@@ -347,23 +384,33 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
                   className="module-list__row"
                   onDoubleClick={rowDblClick(() => beginEdit(h))}
                 >
-                  <div>
-                    <strong>
-                      <span className="priority-badge" data-p={h.priority ?? DEFAULT_PRIORITY}>
-                        P{h.priority ?? DEFAULT_PRIORITY}
-                      </span>{' '}
-                      {h.name}
-                    </strong>
-                    <div className="module-list__meta">
-                      {h.frequency}
-                      {h.nudge_time ? ` · nudge ${h.nudge_time}` : ''}
-                      {` · streak ${h.streak || 0}`}
-                      {!isArchive && h.completed_today ? ' · done today' : ''}
+                  <div className="tracker-list__main">
+                    <label className="bill-check tracker-list__check">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(h.id)}
+                        onChange={() => toggleSelected(h.id)}
+                        aria-label={`Select ${h.name}`}
+                      />
+                    </label>
+                    <div>
+                      <strong>
+                        <span className="priority-badge" data-p={h.priority ?? DEFAULT_PRIORITY}>
+                          P{h.priority ?? DEFAULT_PRIORITY}
+                        </span>{' '}
+                        {h.name}
+                      </strong>
+                      <div className="module-list__meta">
+                        {h.frequency}
+                        {h.nudge_time ? ` · nudge ${h.nudge_time}` : ''}
+                        {` · streak ${h.streak || 0}`}
+                        {!isArchive && h.completed_today ? ' · done today' : ''}
+                      </div>
+                      {h.tags?.length > 0 && (
+                        <div className="item-row__tags">{formatTagsDisplay(h.tags)}</div>
+                      )}
+                      <DetailsPreview text={h.description} />
                     </div>
-                    {h.tags?.length > 0 && (
-                      <div className="item-row__tags">{formatTagsDisplay(h.tags)}</div>
-                    )}
-                    <DetailsPreview text={h.description} />
                   </div>
                   <div className="item-row__actions">
                     {isArchive ? (
@@ -418,6 +465,16 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
           </p>
         )}
       </ul>
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${selectedVisibleCount} habit${selectedVisibleCount === 1 ? '' : 's'}?`}
+        message="Removes the selected habits and their logs. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
+      />
     </div>
   );
 }

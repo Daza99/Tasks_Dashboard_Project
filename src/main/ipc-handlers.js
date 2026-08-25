@@ -24,6 +24,7 @@ const {
   updateTask,
   completeTask,
   deleteTask,
+  deleteTasks,
 } = require('../services/db/tasks');
 const {
   createReminder,
@@ -33,6 +34,7 @@ const {
   completeReminder,
   dismissReminder,
   deleteReminder,
+  deleteReminders,
 } = require('../services/db/reminders');
 const {
   createHabit,
@@ -40,6 +42,7 @@ const {
   getHabit,
   updateHabit,
   deleteHabit,
+  deleteHabits,
   archiveHabit,
   activateHabit,
   toggleCheckin,
@@ -54,7 +57,9 @@ const {
   listBillPayments,
   listBillPaymentFilterOptions,
   deleteBill,
+  deleteBills,
   deleteBillPayment,
+  deleteBillPayments,
 } = require('../services/db/bills');
 const {
   createEvent,
@@ -72,6 +77,7 @@ const {
   listCategories,
   updateTransaction,
   deleteTransaction,
+  deleteTransactions,
 } = require('../services/db/transactions');
 const { getTodayBrief } = require('../services/db/today');
 const {
@@ -101,6 +107,7 @@ const {
   updateNote,
   saveNoteDoc,
   deleteNote,
+  deleteNotes,
   listNoteCategories,
   createNoteCategory,
 } = require('../services/db/notes');
@@ -109,7 +116,9 @@ const {
   getList,
   listLists,
   renameList,
+  setListTags,
   deleteList,
+  deleteLists,
   mergeLists,
   listItems,
   addListEntry,
@@ -375,6 +384,7 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('tasks:complete', (_e, id) => completeTask(id));
   ipcMain.handle('tasks:delete', (_e, id) => deleteTask(id));
+  ipcMain.handle('tasks:deleteMany', (_e, ids) => deleteTasks(ids || []));
 
   // --- Reminders ---
   ipcMain.handle('reminders:list', (_e, opts) => listReminders(opts || {}));
@@ -399,6 +409,7 @@ function registerIpcHandlers() {
   ipcMain.handle('reminders:complete', (_e, id) => completeReminder(id));
   ipcMain.handle('reminders:dismiss', (_e, id) => dismissReminder(id));
   ipcMain.handle('reminders:delete', (_e, id) => deleteReminder(id));
+  ipcMain.handle('reminders:deleteMany', (_e, ids) => deleteReminders(ids || []));
 
   // --- Habits ---
   ipcMain.handle('habits:list', (_e, opts) => listHabits(opts || {}));
@@ -414,6 +425,7 @@ function registerIpcHandlers() {
     return row;
   });
   ipcMain.handle('habits:delete', (_e, id) => deleteHabit(id));
+  ipcMain.handle('habits:deleteMany', (_e, ids) => deleteHabits(ids || []));
   ipcMain.handle('habits:archive', (_e, id) => archiveHabit(id));
   ipcMain.handle('habits:activate', (_e, id) => activateHabit(id));
   ipcMain.handle('habits:toggleCheckin', (_e, id, date) => toggleCheckin(id, date));
@@ -505,7 +517,11 @@ function registerIpcHandlers() {
   ipcMain.handle('bills:listPayments', (_e, opts) => listBillPayments(opts || {}));
   ipcMain.handle('bills:paymentFilterOptions', () => listBillPaymentFilterOptions());
   ipcMain.handle('bills:delete', (_e, id) => deleteBill(id));
+  ipcMain.handle('bills:deleteMany', (_e, ids) => deleteBills(ids || []));
   ipcMain.handle('bills:deletePayment', (_e, id) => deleteBillPayment(id));
+  ipcMain.handle('bills:deletePaymentsMany', (_e, ids) =>
+    deleteBillPayments(ids || [])
+  );
 
   // --- Events / Calendar ---
   ipcMain.handle('events:get', (_e, id) => getEvent(id));
@@ -530,6 +546,7 @@ function registerIpcHandlers() {
   ipcMain.handle('tx:create', (_e, data) => createTransaction(data));
   ipcMain.handle('tx:update', (_e, id, fields) => updateTransaction(id, fields));
   ipcMain.handle('tx:delete', (_e, id) => deleteTransaction(id));
+  ipcMain.handle('tx:deleteMany', (_e, ids) => deleteTransactions(ids || []));
 
   ipcMain.handle('tags:list', (_e, opts) => listTags(opts || {}));
   ipcMain.handle('tags:catalog', () => listUserTagsWithCounts());
@@ -562,7 +579,9 @@ function registerIpcHandlers() {
   ipcMain.handle('lists:get', (_e, id) => getList(id));
   ipcMain.handle('lists:create', (_e, data) => createList(data));
   ipcMain.handle('lists:rename', (_e, id, name) => renameList(id, name));
+  ipcMain.handle('lists:setTags', (_e, id, tags) => setListTags(id, tags));
   ipcMain.handle('lists:delete', (_e, id) => deleteList(id));
+  ipcMain.handle('lists:deleteMany', (_e, ids) => deleteLists(ids || []));
   ipcMain.handle('lists:merge', (_e, sourceId, targetId) =>
     mergeLists(sourceId, targetId)
   );
@@ -585,6 +604,11 @@ function registerIpcHandlers() {
   ipcMain.handle('notes:delete', (_e, id) => {
     closeNotePopoutById(id);
     return deleteNote(id);
+  });
+  ipcMain.handle('notes:deleteMany', (_e, ids) => {
+    const list = Array.isArray(ids) ? ids : [];
+    for (const id of list) closeNotePopoutById(id);
+    return deleteNotes(list);
   });
   ipcMain.handle('notes:categories', () => listNoteCategories());
   ipcMain.handle('notes:createCategory', (_e, name) => createNoteCategory(name));

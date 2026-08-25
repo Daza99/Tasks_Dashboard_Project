@@ -506,6 +506,37 @@ function deleteBill(id) {
   }
 }
 
+function uniqPositiveIds(ids) {
+  return [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+/**
+ * Bulk-delete bills and their calendar events in one transaction.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteBills(ids) {
+  try {
+    const list = uniqPositiveIds(ids);
+    if (!list.length) return 0;
+    const db = getDb();
+    const delRow = db.prepare('DELETE FROM bills WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        require('./calendar-sync').deleteEventsForSource('bill', id);
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteBills', err);
+    throw err;
+  }
+}
+
 /** Delete one payment history row (user correction in History). */
 function deleteBillPayment(id) {
   try {
@@ -513,6 +544,32 @@ function deleteBillPayment(id) {
     return info.changes > 0;
   } catch (err) {
     logError('deleteBillPayment', err);
+    throw err;
+  }
+}
+
+/**
+ * Bulk-delete payment history rows in one transaction.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteBillPayments(ids) {
+  try {
+    const list = uniqPositiveIds(ids);
+    if (!list.length) return 0;
+    const db = getDb();
+    const delRow = db.prepare('DELETE FROM bill_payments WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteBillPayments', err);
     throw err;
   }
 }
@@ -735,7 +792,9 @@ module.exports = {
   listBillPayments,
   listBillPaymentFilterOptions,
   deleteBill,
+  deleteBills,
   deleteBillPayment,
+  deleteBillPayments,
   markOverdueBills,
   listBillsForBrief,
   listBillsForWeekBrief,

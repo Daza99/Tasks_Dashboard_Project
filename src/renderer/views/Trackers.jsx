@@ -11,9 +11,13 @@ import {
 import DetailsInline from '../components/DetailsInline';
 import DetailsPreview from '../components/DetailsPreview';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ListSelectToolbar from '../components/ListSelectToolbar';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { useSelectedCard } from '../hooks/useSelectedCard';
+import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { useDateFormat } from '../hooks/useDateFormat';
 import { rowDblClick } from '../../utils/row-dblclick.js';
+import { matchesEntitySearch } from '../../utils/entity-search.js';
 
 const KINDS = ['count', 'scale', 'mood', 'energy', 'stopwatch', 'countdown'];
 const PERIODS = ['daily', 'weekly', 'monthly', 'bimonthly', 'as_needed'];
@@ -253,6 +257,7 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
+  const { selectedId, setSelectedId, listRef } = useSelectedCard();
   const [editName, setEditName] = useState('');
   const [editPeriod, setEditPeriod] = useState('daily');
   const [editFields, setEditFields] = useState({});
@@ -269,8 +274,6 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
   const [customDraftTo, setCustomDraftTo] = useState('');
   /** Newest first by created_at */
   const [sortDir, setSortDir] = useState('desc');
-  const [selected, setSelected] = useState(() => new Set());
-  const selectAllRef = useRef(null);
   const [now, setNow] = useState(() => Date.now());
   const settlingRef = useRef(new Set());
 
@@ -320,8 +323,6 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
   }, [editId, rows]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const tagQuery = q.startsWith('#') ? q.slice(1) : null;
     const win = dateFilterWindow(dateFilter, customFrom, customTo);
     const list = rows.filter((t) => {
       if (kindFilter !== 'all' && t.kind !== kindFilter) return false;
@@ -330,13 +331,9 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
         const k = isoToDateKey(t.created_at);
         if (!k || k < win.start || k > win.end) return false;
       }
-      if (!q) return true;
-      if (tagQuery != null) {
-        return (t.tags || []).some((tag) => tag.toLowerCase() === tagQuery);
-      }
-      return String(t.name || '')
-        .toLowerCase()
-        .includes(q);
+      return matchesEntitySearch(t, search, {
+        textKeys: ['name', 'description'],
+      });
     });
     // Sort by created_at (+ id tiebreak); desc = newest on top
     const mul = sortDir === 'asc' ? 1 : -1;
@@ -350,36 +347,17 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
   }, [rows, kindFilter, periodFilter, search, dateFilter, customFrom, customTo, sortDir]);
 
   const visibleIds = useMemo(() => filtered.map((t) => t.id), [filtered]);
-
-  // Drop selection for rows no longer visible (filters / deletes)
-  useEffect(() => {
-    const visible = new Set(visibleIds);
-    setSelected((prev) => {
-      let changed = false;
-      const next = new Set();
-      for (const id of prev) {
-        if (visible.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [visibleIds]);
-
-  const selectedVisibleCount = useMemo(() => {
-    let n = 0;
-    for (const id of visibleIds) if (selected.has(id)) n += 1;
-    return n;
-  }, [visibleIds, selected]);
-
-  const allVisibleSelected =
-    visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
-
-  useEffect(() => {
-    const el = selectAllRef.current;
-    if (!el) return;
-    el.indeterminate =
-      selectedVisibleCount > 0 && selectedVisibleCount < visibleIds.length;
-  }, [selectedVisibleCount, visibleIds.length]);
+  const {
+    selected,
+    selectAllRef,
+    selectedVisibleCount,
+    allVisibleSelected,
+    selectableCount,
+    toggle: toggleSelected,
+    onSelectAllChange,
+    clear: clearSelected,
+    selectedList,
+  } = useVisibleSelection(visibleIds);
 
   function setKindAndFields(next) {
     setKind(next);
@@ -413,6 +391,7 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
 
   function beginEdit(t) {
     setEditingId(t.id);
+    setSelectedId(t.id);
     setEditName(t.name);
     setEditPeriod(t.period);
     setEditTags(userTagsDisplay(t.tags));
@@ -466,31 +445,14 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
     await load();
   }
 
-  function toggleSelected(id) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function onSelectAllChange(checked) {
-    if (checked) {
-      setSelected(new Set(visibleIds));
-    } else {
-      setSelected(new Set());
-    }
-  }
-
   async function removeSelected() {
-    const ids = visibleIds.filter((id) => selected.has(id));
+    const ids = selectedList();
     if (!ids.length) {
       setBulkDeleteOpen(false);
       return;
     }
     await window.api.deleteTrackers(ids);
-    setSelected(new Set());
+    clearSelected();
     setBulkDeleteOpen(false);
     await load();
   }
@@ -898,13 +860,21 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
           <TagSearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Name or #tag"
-            aria-label="Search trackers by name or #tag"
+            placeholder="Name, details, or #tag"
+            aria-label="Search trackers by name, details, or #tag"
           />
         </label>
       </div>
 
-      <div className="tracker-list-toolbar">
+      <ListSelectToolbar
+        selectAllRef={selectAllRef}
+        allVisibleSelected={allVisibleSelected}
+        selectableCount={selectableCount}
+        selectedCount={selectedVisibleCount}
+        onSelectAllChange={onSelectAllChange}
+        onDelete={() => setBulkDeleteOpen(true)}
+        selectAllAriaLabel="Select all visible trackers"
+      >
         <div className="kind-toggle kind-toggle--labels" role="group" aria-label="Sort by created date">
           <button
             type="button"
@@ -925,37 +895,17 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
             v
           </button>
         </div>
-        <div className="tracker-list-toolbar__right">
-          <label className="bill-check">
-            <input
-              ref={selectAllRef}
-              type="checkbox"
-              checked={allVisibleSelected}
-              disabled={!visibleIds.length}
-              onChange={(e) => onSelectAllChange(e.target.checked)}
-              aria-label="Select all visible trackers"
-            />
-            Select all
-          </label>
-          <button
-            type="button"
-            className="danger"
-            disabled={!selectedVisibleCount}
-            onClick={() => setBulkDeleteOpen(true)}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
+      </ListSelectToolbar>
 
-      <ul className="module-list">
+      <ul className="module-list" ref={listRef}>
         {filtered.map((t) => (
           <li
             key={t.id}
             ref={editingId === t.id ? editRowRef : null}
+            onClick={() => setSelectedId(t.id)}
             className={`module-list__item glass-inset module-list__item--col${
               editingId === t.id ? ' module-list__item--editing' : ''
-            }`}
+            }${selectedId === t.id || editingId === t.id ? ' module-list__item--selected' : ''}`}
           >
             {editingId === t.id ? (
               <form className="edit-form" onSubmit={saveEdit}>

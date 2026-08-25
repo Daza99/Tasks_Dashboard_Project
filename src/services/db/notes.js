@@ -177,6 +177,40 @@ function deleteNote(id) {
   }
 }
 
+function uniqPositiveIds(ids) {
+  return [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+/**
+ * Bulk-delete notes and their tags in one transaction.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteNotes(ids) {
+  try {
+    const list = uniqPositiveIds(ids);
+    if (!list.length) return 0;
+    const db = getDb();
+    const delTags = db.prepare(
+      `DELETE FROM item_tags WHERE item_type = 'note' AND item_id = ?`
+    );
+    const delRow = db.prepare('DELETE FROM notes WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        delTags.run(id);
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteNotes', err);
+    throw err;
+  }
+}
+
 /** Category names for dropdowns, A–Z. */
 function listNoteCategories() {
   try {
@@ -216,6 +250,7 @@ module.exports = {
   updateNote,
   saveNoteDoc,
   deleteNote,
+  deleteNotes,
   listNoteCategories,
   createNoteCategory,
   parseStyle,

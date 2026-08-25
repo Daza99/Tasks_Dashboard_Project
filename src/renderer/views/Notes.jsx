@@ -3,8 +3,12 @@ import { format, parseISO } from 'date-fns';
 import ConfirmDialog from '../components/ConfirmDialog';
 import PromptDialog from '../components/PromptDialog';
 import TagInput from '../components/TagInput';
+import TagSearchInput from '../components/TagSearchInput';
+import ListSelectToolbar from '../components/ListSelectToolbar';
 import NotePad from '../notes-view/NotePad';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
+import { useVisibleSelection } from '../hooks/useVisibleSelection';
+import { matchesEntitySearch } from '../../utils/entity-search.js';
 import {
   formatTagsDisplay,
   normalizeUserTagNames,
@@ -39,6 +43,8 @@ export default function NotesView({ editId = null, onEditConsumed }) {
   const [category, setCategory] = useState(CAT_NONE);
   const [error, setError] = useState('');
   const [confirmDel, setConfirmDel] = useState(null);
+  const [search, setSearch] = useState('');
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptFor, setPromptFor] = useState('create'); // create | header
   const [poppedIds, setPoppedIds] = useState([]);
@@ -220,6 +226,44 @@ export default function NotesView({ editId = null, onEditConsumed }) {
     await loadNotes();
   }
 
+  const filtered = useMemo(
+    () =>
+      notes.filter((n) =>
+        matchesEntitySearch(n, search, {
+          textKeys: ['title', 'content', 'category'],
+        })
+      ),
+    [notes, search]
+  );
+  const visibleIds = useMemo(() => filtered.map((n) => n.id), [filtered]);
+  const {
+    selected,
+    selectAllRef,
+    selectedVisibleCount,
+    allVisibleSelected,
+    selectableCount,
+    toggle,
+    onSelectAllChange,
+    clear: clearSelected,
+    selectedList,
+  } = useVisibleSelection(visibleIds);
+
+  async function removeSelected() {
+    const ids = selectedList();
+    if (!ids.length) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    await window.api.deleteNotes(ids);
+    if (selectedId != null && ids.includes(selectedId)) {
+      setSelectedId(null);
+      setDetail(null);
+    }
+    clearSelected();
+    setBulkDeleteOpen(false);
+    await loadNotes();
+  }
+
   function onDocSaved(note) {
     setDetail(note);
     loadNotes();
@@ -241,8 +285,8 @@ export default function NotesView({ editId = null, onEditConsumed }) {
     <div className="module-view lists-view">
       <h1>Notes</h1>
       <p className="module-view__hint">
-        Combined markdown and bullet notepad. Filter by category. Search from the
-        top bar.
+        Combined markdown and bullet notepad. Filter by category or search
+        title, details, and #tags.
       </p>
       {error ? <p className="stub-empty">{error}</p> : null}
 
@@ -258,6 +302,15 @@ export default function NotesView({ editId = null, onEditConsumed }) {
               </option>
             ))}
           </select>
+        </label>
+        <label className="module-filter-bar__field module-filter-bar__field--grow">
+          Search
+          <TagSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Title, details, or #tag"
+            aria-label="Search notes by title, details, or #tag"
+          />
         </label>
         <button
           type="button"
@@ -300,10 +353,28 @@ export default function NotesView({ editId = null, onEditConsumed }) {
         </form>
       )}
 
+      <ListSelectToolbar
+        selectAllRef={selectAllRef}
+        allVisibleSelected={allVisibleSelected}
+        selectableCount={selectableCount}
+        selectedCount={selectedVisibleCount}
+        onSelectAllChange={onSelectAllChange}
+        onDelete={() => setBulkDeleteOpen(true)}
+        selectAllAriaLabel="Select all visible notes"
+      />
+
       <div className="lists-split">
         <ul className="module-list lists-folder">
-          {notes.map((n) => (
-            <li key={n.id}>
+          {filtered.map((n) => (
+            <li key={n.id} className="lists-folder__pick">
+              <label className="bill-check tracker-list__check">
+                <input
+                  type="checkbox"
+                  checked={selected.has(n.id)}
+                  onChange={() => toggle(n.id)}
+                  aria-label={`Select ${n.title}`}
+                />
+              </label>
               <button
                 type="button"
                 className={`lists-folder__row glass-inset${selectedId === n.id ? ' lists-folder__row--on' : ''}`}
@@ -321,7 +392,13 @@ export default function NotesView({ editId = null, onEditConsumed }) {
               </button>
             </li>
           ))}
-          {!notes.length && <p className="stub-empty">No notes in this filter.</p>}
+          {!filtered.length && (
+            <p className="stub-empty">
+              {!notes.length
+                ? 'No notes in this filter.'
+                : 'No notes match this search.'}
+            </p>
+          )}
         </ul>
 
         <div className="lists-detail">
@@ -394,6 +471,15 @@ export default function NotesView({ editId = null, onEditConsumed }) {
         danger
         onCancel={() => setConfirmDel(null)}
         onConfirm={removeNote}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${selectedVisibleCount} note${selectedVisibleCount === 1 ? '' : 's'}?`}
+        message="Removes the selected notes. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
       />
       <PromptDialog
         open={promptOpen}

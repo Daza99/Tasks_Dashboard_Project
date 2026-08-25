@@ -479,6 +479,48 @@ function deleteReminder(id, { force = false } = {}) {
   }
 }
 
+function uniqPositiveIds(ids) {
+  return [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+function reminderIsLocked(id) {
+  const row = getDb().prepare('SELECT locked FROM reminders WHERE id = ?').get(id);
+  if (row && Number(row.locked) === 1) return true;
+  return hasTag('reminder', id, 'locked');
+}
+
+/**
+ * Bulk-delete reminders (skips locked). One transaction + calendar cleanup.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteReminders(ids) {
+  try {
+    const list = uniqPositiveIds(ids);
+    if (!list.length) return 0;
+    const db = getDb();
+    const delTags = db.prepare(
+      `DELETE FROM item_tags WHERE item_type = 'reminder' AND item_id = ?`
+    );
+    const delRow = db.prepare('DELETE FROM reminders WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        if (reminderIsLocked(id)) continue;
+        require('./calendar-sync').deleteEventsForSource('reminder', id);
+        delTags.run(id);
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteReminders', err);
+    throw err;
+  }
+}
+
 /** Pending reminders whose datetime has arrived. */
 function listDuePending() {
   return getDb()
@@ -599,6 +641,7 @@ module.exports = {
   snoozeReminder,
   markFired,
   deleteReminder,
+  deleteReminders,
   listDuePending,
   listDueSnoozed,
   expireGraceReminders,

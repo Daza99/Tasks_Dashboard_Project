@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { format, isValid, parseISO } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import BillPayConfirm from '../components/BillPayConfirm';
@@ -6,11 +6,17 @@ import PrioritySelect from '../components/PrioritySelect';
 import DetailsInline from '../components/DetailsInline';
 import DetailsPreview from '../components/DetailsPreview';
 import NudgeCustomDialog from '../components/NudgeCustomDialog';
+import ConfirmDialog from '../components/ConfirmDialog';
+import ListSelectToolbar from '../components/ListSelectToolbar';
+import TagSearchInput from '../components/TagSearchInput';
 import { NudgePreview, NudgeRow, todayKey } from '../components/NudgeRow';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { useSelectedCard } from '../hooks/useSelectedCard';
+import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { useDateFormat } from '../hooks/useDateFormat';
 import { rowDblClick } from '../../utils/row-dblclick.js';
+import { matchesEntitySearch } from '../../utils/entity-search.js';
 
 const RECUR = [
   { id: '', label: 'once' },
@@ -116,6 +122,7 @@ export default function BillsView({
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
+  const { selectedId, setSelectedId, listRef } = useSelectedCard();
   const [edit, setEdit] = useState({});
   const [editNudge, setEditNudge] = useState(false);
   const [editNudgeMode, setEditNudgeMode] = useState('day_before');
@@ -137,6 +144,8 @@ export default function BillsView({
   const [filterYears, setFilterYears] = useState([new Date().getFullYear()]);
   const [filterNames, setFilterNames] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [search, setSearch] = useState('');
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   async function load() {
     setRows(await window.api.listBills());
@@ -184,6 +193,7 @@ export default function BillsView({
   useEffect(() => {
     if (editId == null) return;
     setMode('edit');
+    setSearch('');
     const b = rows.find((x) => x.id === editId);
     if (!b) return;
     beginEdit(b);
@@ -317,6 +327,7 @@ export default function BillsView({
 
   function beginEdit(b) {
     setEditingId(b.id);
+    setSelectedId(b.id);
     setEdit({
       name: b.name,
       amount: String(b.amount),
@@ -419,6 +430,52 @@ export default function BillsView({
     }
   }
 
+  const isHistory = mode === 'history';
+  const filteredBills = useMemo(
+    () =>
+      rows.filter((b) =>
+        matchesEntitySearch(b, search, {
+          textKeys: ['name', 'description', 'category'],
+        })
+      ),
+    [rows, search]
+  );
+  const billVisibleIds = useMemo(
+    () => (isHistory ? [] : filteredBills.map((b) => b.id)),
+    [isHistory, filteredBills]
+  );
+  const payVisibleIds = useMemo(
+    () => (isHistory ? payments.map((p) => p.id) : []),
+    [isHistory, payments]
+  );
+  const billSel = useVisibleSelection(billVisibleIds);
+  const paySel = useVisibleSelection(payVisibleIds);
+  const sel = isHistory ? paySel : billSel;
+
+  async function removeSelected() {
+    const ids = sel.selectedList();
+    if (!ids.length) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    if (isHistory) {
+      await window.api.deleteBillPayments(ids);
+      const list = await window.api.listBillPayments({
+        year: histYear,
+        month: histMonth,
+        billName: histName,
+        sort: histSort,
+      });
+      setPayments(list);
+    } else {
+      await window.api.deleteBills(ids);
+      await load();
+      await refresh();
+    }
+    sel.clear();
+    setBulkDeleteOpen(false);
+  }
+
   function setCreateEstimate(checked) {
     if (checked) {
       setAmountMode('estimate');
@@ -457,8 +514,6 @@ export default function BillsView({
       setEdit({ ...edit, amount_mode: 'fixed' });
     }
   }
-
-  const isHistory = mode === 'history';
 
   return (
     <div className="module-view">
@@ -676,6 +731,32 @@ export default function BillsView({
         </form>
       )}
 
+      {!isHistory && (
+        <div className="module-filter-bar glass-inset">
+          <label className="module-filter-bar__field module-filter-bar__field--grow">
+            Search
+            <TagSearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Name, details, or category"
+              aria-label="Search bills by name, details, or category"
+            />
+          </label>
+        </div>
+      )}
+
+      <ListSelectToolbar
+        selectAllRef={sel.selectAllRef}
+        allVisibleSelected={sel.allVisibleSelected}
+        selectableCount={sel.selectableCount}
+        selectedCount={sel.selectedVisibleCount}
+        onSelectAllChange={sel.onSelectAllChange}
+        onDelete={() => setBulkDeleteOpen(true)}
+        selectAllAriaLabel={
+          isHistory ? 'Select all visible payments' : 'Select all visible bills'
+        }
+      />
+
       <NudgeCustomDialog
         open={customOpen === 'create'}
         dueDate={due}
@@ -712,12 +793,22 @@ export default function BillsView({
           {payments.map((p) => (
             <li key={p.id} className="module-list__item glass-inset">
               <div className="module-list__row">
-                <div>
-                  <strong>{p.bill_name}</strong>
-                  <div className="module-list__meta">
-                    ${Number(p.amount).toFixed(2)}
-                    {p.due_date ? ` · due ${p.due_date}` : ''}
-                    {' · '}paid {formatPaidAt(p.paid_at)}
+                <div className="tracker-list__main">
+                  <label className="bill-check tracker-list__check">
+                    <input
+                      type="checkbox"
+                      checked={paySel.selected.has(p.id)}
+                      onChange={() => paySel.toggle(p.id)}
+                      aria-label={`Select payment ${p.bill_name}`}
+                    />
+                  </label>
+                  <div>
+                    <strong>{p.bill_name}</strong>
+                    <div className="module-list__meta">
+                      ${Number(p.amount).toFixed(2)}
+                      {p.due_date ? ` · due ${p.due_date}` : ''}
+                      {' · '}paid {formatPaidAt(p.paid_at)}
+                    </div>
                   </div>
                 </div>
                 <div className="item-row__actions">
@@ -735,14 +826,15 @@ export default function BillsView({
           {!payments.length && <p className="stub-empty">No paid bills for these filters.</p>}
         </ul>
       ) : (
-        <ul className="module-list">
-          {rows.map((b) => (
+        <ul className="module-list" ref={listRef}>
+          {filteredBills.map((b) => (
             <li
               key={b.id}
               ref={editingId === b.id ? editRowRef : null}
+              onClick={() => setSelectedId(b.id)}
               className={`module-list__item glass-inset module-list__item--col${
                 editingId === b.id ? ' module-list__item--editing' : ''
-              }`}
+              }${selectedId === b.id || editingId === b.id ? ' module-list__item--selected' : ''}`}
             >
               {editingId === b.id ? (
                 <form className="edit-form" onSubmit={saveEdit}>
@@ -887,26 +979,36 @@ export default function BillsView({
                   className="module-list__row"
                   onDoubleClick={rowDblClick(() => beginEdit(b))}
                 >
-                  <div>
-                    <strong>
-                      <span className="priority-badge" data-p={b.priority ?? DEFAULT_PRIORITY}>
-                        P{b.priority ?? DEFAULT_PRIORITY}
-                      </span>{' '}
-                      {b.name}
-                    </strong>
-                    <div className="module-list__meta">
-                      ${Number(b.amount).toFixed(2)}
-                      {amountModeLabel(b.amount_mode) && (
-                        <span className="bill-amount-caption">
-                          {' '}
-                          {amountModeLabel(b.amount_mode)}
-                        </span>
-                      )}
-                      {' · '}due {b.due_date} · {b.paid_status}
-                      {b.recurrence ? ` · ${b.recurrence}` : ''}
-                      {b.category ? ` · ${b.category}` : ''}
+                  <div className="tracker-list__main">
+                    <label className="bill-check tracker-list__check">
+                      <input
+                        type="checkbox"
+                        checked={billSel.selected.has(b.id)}
+                        onChange={() => billSel.toggle(b.id)}
+                        aria-label={`Select ${b.name}`}
+                      />
+                    </label>
+                    <div>
+                      <strong>
+                        <span className="priority-badge" data-p={b.priority ?? DEFAULT_PRIORITY}>
+                          P{b.priority ?? DEFAULT_PRIORITY}
+                        </span>{' '}
+                        {b.name}
+                      </strong>
+                      <div className="module-list__meta">
+                        ${Number(b.amount).toFixed(2)}
+                        {amountModeLabel(b.amount_mode) && (
+                          <span className="bill-amount-caption">
+                            {' '}
+                            {amountModeLabel(b.amount_mode)}
+                          </span>
+                        )}
+                        {' · '}due {b.due_date} · {b.paid_status}
+                        {b.recurrence ? ` · ${b.recurrence}` : ''}
+                        {b.category ? ` · ${b.category}` : ''}
+                      </div>
+                      <DetailsPreview text={b.description} />
                     </div>
-                    <DetailsPreview text={b.description} />
                   </div>
                   <div className="item-row__actions">
                     {b.paid_status !== 'paid' && payingId === b.id && (
@@ -934,8 +1036,29 @@ export default function BillsView({
             </li>
           ))}
           {!rows.length && <p className="stub-empty">No bills yet.</p>}
+          {!!rows.length && !filteredBills.length && (
+            <p className="stub-empty">No bills match these filters.</p>
+          )}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={
+          isHistory
+            ? `Delete ${sel.selectedVisibleCount} payment${sel.selectedVisibleCount === 1 ? '' : 's'}?`
+            : `Delete ${sel.selectedVisibleCount} bill${sel.selectedVisibleCount === 1 ? '' : 's'}?`
+        }
+        message={
+          isHistory
+            ? 'Removes the selected payment history rows. This cannot be undone.'
+            : 'Removes the selected bills. This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
+      />
     </div>
   );
 }

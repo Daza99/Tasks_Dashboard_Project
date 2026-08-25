@@ -225,6 +225,43 @@ function deleteHabit(id) {
   }
 }
 
+function uniqPositiveIds(ids) {
+  return [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+/**
+ * Bulk-delete habits (tags, logs, calendar events) in one transaction.
+ * @param {number[]} ids
+ * @returns {number} how many were deleted
+ */
+function deleteHabits(ids) {
+  try {
+    const list = uniqPositiveIds(ids);
+    if (!list.length) return 0;
+    const db = getDb();
+    const delTags = db.prepare(
+      `DELETE FROM item_tags WHERE item_type = 'habit' AND item_id = ?`
+    );
+    const delLogs = db.prepare('DELETE FROM habit_logs WHERE habit_id = ?');
+    const delRow = db.prepare('DELETE FROM habits WHERE id = ?');
+    const run = db.transaction((idList) => {
+      let n = 0;
+      for (const id of idList) {
+        require('./calendar-sync').deleteEventsForSource('habit', id);
+        delTags.run(id);
+        delLogs.run(id);
+        const r = delRow.run(id);
+        if (r.changes) n += 1;
+      }
+      return n;
+    });
+    return run(list);
+  } catch (err) {
+    logError('deleteHabits', err);
+    throw err;
+  }
+}
+
 /** Shelve habit — adds #archived; excluded from active list / nudges. */
 function archiveHabit(id) {
   try {
@@ -421,6 +458,7 @@ module.exports = {
   listHabitsDueToday,
   updateHabit,
   deleteHabit,
+  deleteHabits,
   archiveHabit,
   activateHabit,
   toggleCheckin,

@@ -2,13 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO, startOfYear, startOfMonth, subDays } from 'date-fns';
 import { useDatabase } from '../context/DatabaseContext';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ListSelectToolbar from '../components/ListSelectToolbar';
 import ListEditor from './ListEditor';
+import ListHashtagEditor from './ListHashtagEditor';
 import ListHashtagInput from './ListHashtagInput';
 import TodoChecklist from './TodoChecklist';
 import BulletPad from './BulletPad';
 import { useDateFormat } from '../hooks/useDateFormat';
 import { formatTagDisplay, normalizeTagName } from '../../utils/tag-helpers.js';
 import { invalidateListHashtagWhitelist } from '../hooks/useListHashtagWhitelist';
+import { useVisibleSelection } from '../hooks/useVisibleSelection';
 
 const TABS = [
   { id: 'todo', label: 'To-Do lists' },
@@ -52,6 +55,7 @@ export default function ListsPanel() {
   const [menu, setMenu] = useState(null); // { x, y, list }
   const [mergeTarget, setMergeTarget] = useState('');
   const [confirm, setConfirm] = useState(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const tagDebounce = useRef(null);
 
@@ -129,6 +133,36 @@ export default function ListsPanel() {
     await loadLists();
   }
 
+  const visibleIds = useMemo(() => lists.map((l) => l.id), [lists]);
+  const {
+    selected,
+    selectAllRef,
+    selectedVisibleCount,
+    allVisibleSelected,
+    selectableCount,
+    toggle,
+    onSelectAllChange,
+    clear: clearSelected,
+    selectedList,
+  } = useVisibleSelection(visibleIds);
+
+  async function removeSelected() {
+    const ids = selectedList();
+    if (!ids.length) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    await window.api.deleteLists(ids);
+    if (selectedId != null && ids.includes(selectedId)) {
+      setSelectedId(null);
+      setDetail(null);
+    }
+    clearSelected();
+    setBulkDeleteOpen(false);
+    invalidateListHashtagWhitelist();
+    await loadLists();
+  }
+
   async function doMerge() {
     const target = Number(mergeTarget);
     if (!target) return;
@@ -153,6 +187,15 @@ export default function ListsPanel() {
   function onDocSaved(list) {
     setDetail((prev) => (prev ? { ...prev, list } : { list, items: [] }));
     loadLists();
+  }
+
+  async function saveListTags(listId, names) {
+    const list = await window.api.setListTags(listId, names);
+    invalidateListHashtagWhitelist();
+    setDetail((prev) =>
+      prev && prev.list.id === listId ? { ...prev, list } : prev
+    );
+    await loadLists();
   }
 
   return (
@@ -213,6 +256,16 @@ export default function ListsPanel() {
         </button>
       </div>
 
+      <ListSelectToolbar
+        selectAllRef={selectAllRef}
+        allVisibleSelected={allVisibleSelected}
+        selectableCount={selectableCount}
+        selectedCount={selectedVisibleCount}
+        onSelectAllChange={onSelectAllChange}
+        onDelete={() => setBulkDeleteOpen(true)}
+        selectAllAriaLabel="Select all visible lists"
+      />
+
       {editor === 'create' && (
         <ListEditor
           mode="create"
@@ -236,7 +289,15 @@ export default function ListsPanel() {
       <div className="lists-split">
         <ul className="module-list lists-folder">
           {lists.map((l) => (
-            <li key={l.id}>
+            <li key={l.id} className="lists-folder__pick">
+              <label className="bill-check tracker-list__check">
+                <input
+                  type="checkbox"
+                  checked={selected.has(l.id)}
+                  onChange={() => toggle(l.id)}
+                  aria-label={`Select ${l.name}`}
+                />
+              </label>
               <button
                 type="button"
                 className={`lists-folder__row glass-inset${selectedId === l.id ? ' lists-folder__row--on' : ''}`}
@@ -267,13 +328,20 @@ export default function ListsPanel() {
           {!detail && <p className="stub-empty">Select a list, or create one.</p>}
           {detail && (
             <>
-              <h2>{detail.list.name}</h2>
-              <p className="module-list__meta">
-                Created {createdLabel(detail.list.created_date)}
-                {detail.list.tags?.length
-                  ? ` · ${detail.list.tags.map((t) => formatTagDisplay(t)).join(' ')}`
-                  : ''}
-              </p>
+              <div className="lists-detail__head">
+                <div className="lists-detail__title">
+                  <h2>{detail.list.name}</h2>
+                  <div className="module-list__meta">
+                    Created {createdLabel(detail.list.created_date)}
+                  </div>
+                </div>
+                <ListHashtagEditor
+                  key={detail.list.id}
+                  listId={detail.list.id}
+                  tags={detail.list.tags}
+                  onCommit={saveListTags}
+                />
+              </div>
               {detail.list.type === 'todo' && (
                 <TodoChecklist
                   listId={detail.list.id}
@@ -346,6 +414,15 @@ export default function ListsPanel() {
         danger
         onCancel={() => setConfirm(null)}
         onConfirm={removeList}
+      />
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${selectedVisibleCount} list${selectedVisibleCount === 1 ? '' : 's'}?`}
+        message="Removes the selected lists and their contents. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
       />
     </div>
   );

@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
   updateTask: (id, fields) => ipcRenderer.invoke('tasks:update', id, fields),
   completeTask: (id) => ipcRenderer.invoke('tasks:complete', id),
   deleteTask: (id) => ipcRenderer.invoke('tasks:delete', id),
+  deleteTasks: (ids) => ipcRenderer.invoke('tasks:deleteMany', ids),
 
   listReminders: (opts) => ipcRenderer.invoke('reminders:list', opts),
   getReminder: (id) => ipcRenderer.invoke('reminders:get', id),
@@ -57,12 +58,14 @@ contextBridge.exposeInMainWorld('api', {
   completeReminder: (id) => ipcRenderer.invoke('reminders:complete', id),
   dismissReminder: (id) => ipcRenderer.invoke('reminders:dismiss', id),
   deleteReminder: (id) => ipcRenderer.invoke('reminders:delete', id),
+  deleteReminders: (ids) => ipcRenderer.invoke('reminders:deleteMany', ids),
 
   listHabits: (opts) => ipcRenderer.invoke('habits:list', opts),
   getHabit: (id) => ipcRenderer.invoke('habits:get', id),
   createHabit: (data) => ipcRenderer.invoke('habits:create', data),
   updateHabit: (id, fields) => ipcRenderer.invoke('habits:update', id, fields),
   deleteHabit: (id) => ipcRenderer.invoke('habits:delete', id),
+  deleteHabits: (ids) => ipcRenderer.invoke('habits:deleteMany', ids),
   archiveHabit: (id) => ipcRenderer.invoke('habits:archive', id),
   activateHabit: (id) => ipcRenderer.invoke('habits:activate', id),
   toggleCheckin: (id, date) => ipcRenderer.invoke('habits:toggleCheckin', id, date),
@@ -97,7 +100,9 @@ contextBridge.exposeInMainWorld('api', {
   listBillPaymentFilterOptions: () =>
     ipcRenderer.invoke('bills:paymentFilterOptions'),
   deleteBill: (id) => ipcRenderer.invoke('bills:delete', id),
+  deleteBills: (ids) => ipcRenderer.invoke('bills:deleteMany', ids),
   deleteBillPayment: (id) => ipcRenderer.invoke('bills:deletePayment', id),
+  deleteBillPayments: (ids) => ipcRenderer.invoke('bills:deletePaymentsMany', ids),
 
   getEvent: (id) => ipcRenderer.invoke('events:get', id),
   listEventsDay: (day) => ipcRenderer.invoke('events:listDay', day),
@@ -116,6 +121,7 @@ contextBridge.exposeInMainWorld('api', {
   createTransaction: (data) => ipcRenderer.invoke('tx:create', data),
   updateTransaction: (id, fields) => ipcRenderer.invoke('tx:update', id, fields),
   deleteTransaction: (id) => ipcRenderer.invoke('tx:delete', id),
+  deleteTransactions: (ids) => ipcRenderer.invoke('tx:deleteMany', ids),
 
   listTags: (opts) => ipcRenderer.invoke('tags:list', opts),
   listTagCatalog: () => ipcRenderer.invoke('tags:catalog'),
@@ -144,7 +150,9 @@ contextBridge.exposeInMainWorld('api', {
   getList: (id) => ipcRenderer.invoke('lists:get', id),
   createList: (data) => ipcRenderer.invoke('lists:create', data),
   renameList: (id, name) => ipcRenderer.invoke('lists:rename', id, name),
+  setListTags: (id, tags) => ipcRenderer.invoke('lists:setTags', id, tags),
   deleteList: (id) => ipcRenderer.invoke('lists:delete', id),
+  deleteLists: (ids) => ipcRenderer.invoke('lists:deleteMany', ids),
   mergeLists: (sourceId, targetId) => ipcRenderer.invoke('lists:merge', sourceId, targetId),
   listListItems: (id) => ipcRenderer.invoke('lists:items', id),
   addListEntry: (listId, title) => ipcRenderer.invoke('lists:addEntry', listId, title),
@@ -160,6 +168,7 @@ contextBridge.exposeInMainWorld('api', {
   updateNote: (id, fields) => ipcRenderer.invoke('notes:update', id, fields),
   saveNoteDoc: (id, payload) => ipcRenderer.invoke('notes:saveDoc', id, payload),
   deleteNote: (id) => ipcRenderer.invoke('notes:delete', id),
+  deleteNotes: (ids) => ipcRenderer.invoke('notes:deleteMany', ids),
   listNoteCategories: () => ipcRenderer.invoke('notes:categories'),
   createNoteCategory: (name) => ipcRenderer.invoke('notes:createCategory', name),
   exportNote: (id, format) => ipcRenderer.invoke('notes:export', id, format),

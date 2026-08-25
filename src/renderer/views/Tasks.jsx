@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
+import TagSearchInput from '../components/TagSearchInput';
 import LockButton from '../components/LockButton';
+import ConfirmDialog from '../components/ConfirmDialog';
+import ListSelectToolbar from '../components/ListSelectToolbar';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import {
   formatTagsDisplay,
@@ -15,7 +18,10 @@ import DetailsInline from '../components/DetailsInline';
 import DetailsPreview from '../components/DetailsPreview';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { useSelectedCard } from '../hooks/useSelectedCard';
+import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { rowDblClick } from '../../utils/row-dblclick.js';
+import { matchesEntitySearch } from '../../utils/entity-search.js';
 
 function fmt(iso) {
   if (!iso) return '—';
@@ -65,6 +71,7 @@ export default function TasksView({
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
+  const { selectedId, setSelectedId, listRef } = useSelectedCard();
   const [editTitle, setEditTitle] = useState('');
   const [editKind, setEditKind] = useState('todo_24');
   const [editDue, setEditDue] = useState('');
@@ -72,6 +79,8 @@ export default function TasksView({
   const [editTags, setEditTags] = useState('');
   const [editDetails, setEditDetails] = useState('');
   const [editError, setEditError] = useState('');
+  const [search, setSearch] = useState('');
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   async function load() {
     const rows = await window.api.listTasks();
@@ -84,6 +93,7 @@ export default function TasksView({
 
   useEffect(() => {
     if (editId == null) return;
+    setSearch('');
     const t = tasks.find((x) => x.id === editId);
     if (!t) return;
     beginEdit(t);
@@ -123,6 +133,7 @@ export default function TasksView({
 
   function beginEdit(t) {
     setEditingId(t.id);
+    setSelectedId(t.id);
     setEditTitle(t.title);
     setEditKind(t.tags?.includes('todo_open') ? 'todo_open' : 'todo_24');
     setEditDue(toLocalInput(t.due_datetime));
@@ -162,6 +173,43 @@ export default function TasksView({
 
   async function remove(id) {
     await window.api.deleteTask(id);
+    await load();
+    await refresh();
+  }
+
+  const filtered = useMemo(
+    () =>
+      tasks.filter((t) =>
+        matchesEntitySearch(t, search, { textKeys: ['title', 'description'] })
+      ),
+    [tasks, search]
+  );
+  const visibleIds = useMemo(() => filtered.map((t) => t.id), [filtered]);
+  const selectableIds = useMemo(
+    () => filtered.filter((t) => !t.locked).map((t) => t.id),
+    [filtered]
+  );
+  const {
+    selected,
+    selectAllRef,
+    selectedVisibleCount,
+    allVisibleSelected,
+    selectableCount,
+    toggle,
+    onSelectAllChange,
+    clear: clearSelected,
+    selectedList,
+  } = useVisibleSelection(visibleIds, { selectableIds });
+
+  async function removeSelected() {
+    const ids = selectedList();
+    if (!ids.length) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    await window.api.deleteTasks(ids);
+    clearSelected();
+    setBulkDeleteOpen(false);
     await load();
     await refresh();
   }
@@ -230,14 +278,37 @@ export default function TasksView({
         {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
       </form>
 
-      <ul className="module-list">
-        {tasks.map((t) => (
+      <div className="module-filter-bar glass-inset">
+        <label className="module-filter-bar__field module-filter-bar__field--grow">
+          Search
+          <TagSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Title, details, or #tag"
+            aria-label="Search tasks by title, details, or #tag"
+          />
+        </label>
+      </div>
+
+      <ListSelectToolbar
+        selectAllRef={selectAllRef}
+        allVisibleSelected={allVisibleSelected}
+        selectableCount={selectableCount}
+        selectedCount={selectedVisibleCount}
+        onSelectAllChange={onSelectAllChange}
+        onDelete={() => setBulkDeleteOpen(true)}
+        selectAllAriaLabel="Select all visible tasks"
+      />
+
+      <ul className="module-list" ref={listRef}>
+        {filtered.map((t) => (
           <li
             key={t.id}
             ref={editingId === t.id ? editRowRef : null}
+            onClick={() => setSelectedId(t.id)}
             className={`module-list__item glass-inset module-list__item--col${
               editingId === t.id ? ' module-list__item--editing' : ''
-            }`}
+            }${selectedId === t.id || editingId === t.id ? ' module-list__item--selected' : ''}`}
           >
             {editingId === t.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
@@ -309,22 +380,33 @@ export default function TasksView({
                 className="module-list__row"
                 onDoubleClick={rowDblClick(() => beginEdit(t))}
               >
-                <div>
-                  <strong>
-                    <span className="priority-badge" data-p={t.priority ?? 3}>
-                      P{t.priority ?? 3}
-                    </span>{' '}
-                    {t.title}
-                  </strong>
-                  <div className="module-list__meta">
-                    {t.tags?.includes('todo_open') ? 'open' : '24hr'}
-                    {t.locked ? ' · locked' : ''}
-                    {userTagsOnly(t.tags).length
-                      ? ` · ${formatTagsDisplay(userTagsOnly(t.tags))}`
-                      : ''}{' '}
-                    · due {fmt(t.due_datetime)}
+                <div className="tracker-list__main">
+                  <label className="bill-check tracker-list__check">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(t.id)}
+                      disabled={t.locked}
+                      onChange={() => toggle(t.id)}
+                      aria-label={`Select ${t.title}`}
+                    />
+                  </label>
+                  <div>
+                    <strong>
+                      <span className="priority-badge" data-p={t.priority ?? 3}>
+                        P{t.priority ?? 3}
+                      </span>{' '}
+                      {t.title}
+                    </strong>
+                    <div className="module-list__meta">
+                      {t.tags?.includes('todo_open') ? 'open' : '24hr'}
+                      {t.locked ? ' · locked' : ''}
+                      {userTagsOnly(t.tags).length
+                        ? ` · ${formatTagsDisplay(userTagsOnly(t.tags))}`
+                        : ''}{' '}
+                      · due {fmt(t.due_datetime)}
+                    </div>
+                    <DetailsPreview text={t.description} />
                   </div>
-                  <DetailsPreview text={t.description} />
                 </div>
                 <div className="item-row__actions">
                   <LockButton
@@ -352,8 +434,24 @@ export default function TasksView({
             )}
           </li>
         ))}
-        {!tasks.length && <p className="stub-empty">No active tasks.</p>}
+        {!filtered.length && (
+          <p className="stub-empty">
+            {!tasks.length
+              ? 'No active tasks.'
+              : 'No tasks match these filters.'}
+          </p>
+        )}
       </ul>
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${selectedVisibleCount} task${selectedVisibleCount === 1 ? '' : 's'}?`}
+        message="Removes the selected tasks. Locked items are skipped. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
+      />
     </div>
   );
 }

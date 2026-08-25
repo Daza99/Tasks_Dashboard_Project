@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { format, parseISO, isValid, addDays, setHours, setMinutes } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
+import TagSearchInput from '../components/TagSearchInput';
 import LockButton from '../components/LockButton';
+import ConfirmDialog from '../components/ConfirmDialog';
+import ListSelectToolbar from '../components/ListSelectToolbar';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import {
   formatTagsDisplay,
@@ -15,7 +18,10 @@ import DetailsPreview from '../components/DetailsPreview';
 import NudgeCustomDialog from '../components/NudgeCustomDialog';
 import { NudgePreview, NudgeRow, todayKey } from '../components/NudgeRow';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
+import { useSelectedCard } from '../hooks/useSelectedCard';
+import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { rowDblClick } from '../../utils/row-dblclick.js';
+import { matchesEntitySearch } from '../../utils/entity-search.js';
 
 function fmt(iso) {
   if (!iso || String(iso).startsWith('9999')) return 'Open';
@@ -104,6 +110,9 @@ export default function RemindersView({
   const [editDetails, setEditDetails] = useState('');
   const [editError, setEditError] = useState('');
   const editRowRef = useScrollEditIntoView(editingId);
+  const { selectedId, setSelectedId, listRef } = useSelectedCard();
+  const [search, setSearch] = useState('');
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   async function load() {
     setRows(await window.api.listReminders());
@@ -115,6 +124,7 @@ export default function RemindersView({
 
   useEffect(() => {
     if (editId == null) return;
+    setSearch('');
     const r = rows.find((x) => x.id === editId);
     if (!r) return;
     beginEdit(r);
@@ -210,6 +220,7 @@ export default function RemindersView({
 
   function beginEdit(r) {
     setEditingId(r.id);
+    setSelectedId(r.id);
     setEditTitle(r.title);
     setEditScope(scopeFromTags(r.tags));
     setEditDue(toLocalInput(r.datetime));
@@ -276,6 +287,43 @@ export default function RemindersView({
 
   async function remove(id) {
     await window.api.deleteReminder(id);
+    await load();
+    await refresh();
+  }
+
+  const filtered = useMemo(
+    () =>
+      rows.filter((r) =>
+        matchesEntitySearch(r, search, { textKeys: ['title', 'description'] })
+      ),
+    [rows, search]
+  );
+  const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const selectableIds = useMemo(
+    () => filtered.filter((r) => !r.locked).map((r) => r.id),
+    [filtered]
+  );
+  const {
+    selected,
+    selectAllRef,
+    selectedVisibleCount,
+    allVisibleSelected,
+    selectableCount,
+    toggle,
+    onSelectAllChange,
+    clear: clearSelected,
+    selectedList,
+  } = useVisibleSelection(visibleIds, { selectableIds });
+
+  async function removeSelected() {
+    const ids = selectedList();
+    if (!ids.length) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    await window.api.deleteReminders(ids);
+    clearSelected();
+    setBulkDeleteOpen(false);
     await load();
     await refresh();
   }
@@ -393,14 +441,37 @@ export default function RemindersView({
         {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
       </form>
 
-      <ul className="module-list">
-        {rows.map((r) => (
+      <div className="module-filter-bar glass-inset">
+        <label className="module-filter-bar__field module-filter-bar__field--grow">
+          Search
+          <TagSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Title, details, or #tag"
+            aria-label="Search reminders by title, details, or #tag"
+          />
+        </label>
+      </div>
+
+      <ListSelectToolbar
+        selectAllRef={selectAllRef}
+        allVisibleSelected={allVisibleSelected}
+        selectableCount={selectableCount}
+        selectedCount={selectedVisibleCount}
+        onSelectAllChange={onSelectAllChange}
+        onDelete={() => setBulkDeleteOpen(true)}
+        selectAllAriaLabel="Select all visible reminders"
+      />
+
+      <ul className="module-list" ref={listRef}>
+        {filtered.map((r) => (
           <li
             key={r.id}
             ref={editingId === r.id ? editRowRef : null}
+            onClick={() => setSelectedId(r.id)}
             className={`module-list__item glass-inset module-list__item--col${
               editingId === r.id ? ' module-list__item--editing' : ''
-            }`}
+            }${selectedId === r.id || editingId === r.id ? ' module-list__item--selected' : ''}`}
           >
             {editingId === r.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
@@ -520,20 +591,31 @@ export default function RemindersView({
                 className="module-list__row"
                 onDoubleClick={rowDblClick(() => beginEdit(r))}
               >
-                <div>
-                  <strong>
-                    {r.title}
-                  </strong>
-                  <div className="module-list__meta">
-                    {scopeFromTags(r.tags)}
-                    {r.locked ? ' · locked' : ''}
-                    {userTagsOnly(r.tags).length
-                      ? ` · ${formatTagsDisplay(userTagsOnly(r.tags))}`
-                      : ''}
-                    {r.recurrence === 'daily' ? ' · daily' : ''}{' '}
-                    · {fmt(r.datetime)}
+                <div className="tracker-list__main">
+                  <label className="bill-check tracker-list__check">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.id)}
+                      disabled={r.locked}
+                      onChange={() => toggle(r.id)}
+                      aria-label={`Select ${r.title}`}
+                    />
+                  </label>
+                  <div>
+                    <strong>
+                      {r.title}
+                    </strong>
+                    <div className="module-list__meta">
+                      {scopeFromTags(r.tags)}
+                      {r.locked ? ' · locked' : ''}
+                      {userTagsOnly(r.tags).length
+                        ? ` · ${formatTagsDisplay(userTagsOnly(r.tags))}`
+                        : ''}
+                      {r.recurrence === 'daily' ? ' · daily' : ''}{' '}
+                      · {fmt(r.datetime)}
+                    </div>
+                    <DetailsPreview text={r.description} />
                   </div>
-                  <DetailsPreview text={r.description} />
                 </div>
                 <div className="item-row__actions">
                   <LockButton
@@ -561,8 +643,24 @@ export default function RemindersView({
             )}
           </li>
         ))}
-        {!rows.length && <p className="stub-empty">No active reminders.</p>}
+        {!filtered.length && (
+          <p className="stub-empty">
+            {!rows.length
+              ? 'No active reminders.'
+              : 'No reminders match these filters.'}
+          </p>
+        )}
       </ul>
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${selectedVisibleCount} reminder${selectedVisibleCount === 1 ? '' : 's'}?`}
+        message="Removes the selected reminders. Locked items are skipped. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
+      />
 
       <NudgeCustomDialog
         open={Boolean(customOpen)}

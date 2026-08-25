@@ -1,6 +1,6 @@
 {
   "name": "personal-dashboard",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Offline-first personal dashboard — Today pane, tag lifecycle, portable USB build",
   "main": "src/main/index.js",
   "author": "Lumo",

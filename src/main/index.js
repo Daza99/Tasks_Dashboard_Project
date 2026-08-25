@@ -21,7 +21,7 @@ applyPortableUserData();
 let mainWindow = null;
 
 /**
- * Map semver x.y.z to display label Vx.yz (1.0.5 → V1.05).
+ * Map semver x.y.z to display label Vx.yz (1.0.6 → V1.06).
  * @param {string} semver
  * @returns {string}
  */

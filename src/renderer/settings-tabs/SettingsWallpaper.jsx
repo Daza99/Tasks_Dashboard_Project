@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import PromptDialog from '../components/PromptDialog';
+import ColorPalettePopover from '../components/ColorPalettePopover';
+import { cssColorToHex, parseCssColor } from '../../utils/theme-color.js';
 
 const NEW_ID = 'new';
 const DEFAULT_COLOR = '#3e5679';
@@ -15,6 +17,11 @@ export default function SettingsWallpaper() {
   const [nameOpen, setNameOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [error, setError] = useState('');
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteBtnRef = useRef(null);
+  const paletteSnapRef = useRef('');
+
+  const paletteHex = parseCssColor(color) ? cssColorToHex(color) : DEFAULT_COLOR;
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +98,21 @@ export default function SettingsWallpaper() {
     });
   }
 
+  function openPalette() {
+    if (paletteOpen) return;
+    paletteSnapRef.current = paletteHex;
+    setPaletteOpen(true);
+  }
+
+  function onPaletteCommit() {
+    setPaletteOpen(false);
+  }
+
+  function onPaletteCancel() {
+    setColor(paletteSnapRef.current);
+    setPaletteOpen(false);
+  }
+
   /** Factory color; named presets stay in the dropdown. */
   async function onReset() {
     setError('');
@@ -138,11 +160,35 @@ export default function SettingsWallpaper() {
       <div className="settings-field">
         <label htmlFor="wall-color">Background color</label>
         <div className="settings-row">
-          <input
+          <button
             id="wall-color"
-            type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
+            ref={paletteBtnRef}
+            type="button"
+            className="wallpaper-palette-btn"
+            aria-label="Background color palette"
+            aria-expanded={paletteOpen}
+            aria-haspopup="dialog"
+            onClick={openPalette}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c1.4 0 2.2-1.1 2.2-2.2 0-.6-.2-1.1-.6-1.5-.3-.3-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4c2.6 0 4.5-2.1 4.5-4.8C22 6.2 17.5 2 12 2z"
+              />
+              <circle cx="7.2" cy="11.2" r="1.45" fill={paletteHex} stroke="#111" strokeWidth="0.6" />
+              <circle cx="10.2" cy="7.2" r="1.45" fill={paletteHex} stroke="#111" strokeWidth="0.6" />
+              <circle cx="14.6" cy="7.6" r="1.45" fill={paletteHex} stroke="#111" strokeWidth="0.6" />
+              <circle cx="16.8" cy="11.4" r="1.45" fill={paletteHex} stroke="#111" strokeWidth="0.6" />
+            </svg>
+          </button>
+          <ColorPalettePopover
+            open={paletteOpen}
+            anchorRef={paletteBtnRef}
+            label="Background color"
+            value={paletteHex}
+            onChange={setColor}
+            onCommit={onPaletteCommit}
+            onCancel={onPaletteCancel}
           />
           <input
             type="text"

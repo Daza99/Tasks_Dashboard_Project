@@ -743,6 +743,27 @@
   line-height: 0;
 }
 
+.wallpaper-palette-btn {
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--text-primary);
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.wallpaper-palette-btn:hover {
+  background: var(--button-bg);
+}
+
 /* Solid light chrome — native picker is white; do not use themed --text-primary. */
 .color-palette {
   position: fixed;

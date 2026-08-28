@@ -2,13 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagSearchInput from '../components/TagSearchInput';
+import ConfirmDialog from '../components/ConfirmDialog';
 import TagInspector from '../inspection/TagInspector';
 import {
   formatTagDisplay,
   formatTagsDisplay,
   normalizeTagName,
+  SYSTEM_TAG_NAMES,
   userTagsOnly,
 } from '../../utils/tag-helpers.js';
+import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import DetailsPreview from '../components/DetailsPreview';
 
@@ -104,6 +107,10 @@ export default function TagsView({ onEditRequest }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('all');
   const [showItems, setShowItems] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [pages, setPages] = useState({});
   const [error, setError] = useState('');
   const pagesRef = useRef({});
@@ -240,6 +247,54 @@ export default function TagsView({ onEditRequest }) {
     await afterChange(tagName);
   }
 
+  function beginRename(tag) {
+    setRenamingId(tag.id);
+    setRenameDraft(formatTagDisplay(tag.name));
+    setError('');
+  }
+
+  async function saveRename(e, tag) {
+    e.preventDefault();
+    const bare = normalizeTagName(renameDraft);
+    if (!bare) {
+      setError('Tag name required');
+      return;
+    }
+    if (SYSTEM_TAG_NAMES.has(bare)) {
+      setError('Cannot rename to a system tag');
+      return;
+    }
+    try {
+      await window.api.renameTag(tag.id, bare);
+      setRenamingId(null);
+      invalidateTagCatalog();
+      pagesRef.current = {};
+      setPages({});
+      await loadCatalog();
+      await refresh();
+    } catch (err) {
+      setError(err?.message || String(err));
+    }
+  }
+
+  async function confirmDeleteTag() {
+    const t = deleteTarget;
+    if (!t) return;
+    try {
+      await window.api.deleteTag(t.id);
+      setDeleteTarget(null);
+      if (renamingId === t.id) setRenamingId(null);
+      invalidateTagCatalog();
+      pagesRef.current = {};
+      setPages({});
+      await loadCatalog();
+      await refresh();
+    } catch (err) {
+      setError(err?.message || String(err));
+      setDeleteTarget(null);
+    }
+  }
+
   return (
     <div className="module-view">
       <h1>Tags</h1>
@@ -271,14 +326,27 @@ export default function TagsView({ onEditRequest }) {
             aria-label="Search tags"
           />
         </label>
-        <label className="module-filter-bar__check">
-          <input
-            type="checkbox"
-            checked={showItems}
-            onChange={(e) => setShowItems(e.target.checked)}
-          />
-          Show items
-        </label>
+        <div className="module-filter-bar__checks">
+          <label className="module-filter-bar__check">
+            <input
+              type="checkbox"
+              checked={showItems}
+              onChange={(e) => setShowItems(e.target.checked)}
+            />
+            Show items
+          </label>
+          <label className="module-filter-bar__check">
+            <input
+              type="checkbox"
+              checked={editMode}
+              onChange={(e) => {
+                setEditMode(e.target.checked);
+                if (!e.target.checked) setRenamingId(null);
+              }}
+            />
+            Edit
+          </label>
+        </div>
       </div>
 
       {error ? (
@@ -307,12 +375,64 @@ export default function TagsView({ onEditRequest }) {
             const total = page?.total ?? tag.usage;
             return (
               <li key={tag.id} className="tags-catalog__block">
-                <div className="tags-catalog__head">
-                  <span className="tags-catalog__name">
-                    {formatTagDisplay(tag.name)}
-                  </span>
-                  <span className="tags-catalog__count">({tag.usage})</span>
-                </div>
+                {editMode ? (
+                  <div className="module-list__item glass-inset module-list__item--col">
+                    {renamingId === tag.id ? (
+                      <form
+                        className="edit-form"
+                        onSubmit={(e) => saveRename(e, tag)}
+                      >
+                        <input
+                          type="text"
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          aria-label="Rename tag"
+                        />
+                        <div className="item-row__actions">
+                          <button type="submit" className="btn-primary">
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRenamingId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="module-list__row">
+                        <div className="tags-catalog__head">
+                          <span className="tags-catalog__name">
+                            {formatTagDisplay(tag.name)}
+                          </span>
+                          <span className="tags-catalog__count">
+                            ({tag.usage})
+                          </span>
+                        </div>
+                        <div className="item-row__actions">
+                          <button type="button" onClick={() => beginRename(tag)}>
+                            Rename
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => setDeleteTarget(tag)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="tags-catalog__head">
+                    <span className="tags-catalog__name">
+                      {formatTagDisplay(tag.name)}
+                    </span>
+                    <span className="tags-catalog__count">({tag.usage})</span>
+                  </div>
+                )}
                 {showItems ? (
                   <div className="tags-catalog__items">
                     {groups.map((g) => (
@@ -366,6 +486,18 @@ export default function TagsView({ onEditRequest }) {
           refresh();
         }}
       />
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title={`Delete ${formatTagDisplay(deleteTarget?.name)}?`}
+        message={`Removes this tag from ${deleteTarget?.usage || 0} attached item${
+          (deleteTarget?.usage || 0) === 1 ? '' : 's'
+        }. Items themselves are kept. This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={confirmDeleteTag}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
@@ -412,7 +544,12 @@ function TagAttachedRow({
       scopeFromTags(item.tags),
       locked ? 'locked' : null,
       userTags.length ? formatTagsDisplay(userTags) : null,
-      item.recurrence === 'daily' ? 'daily' : null,
+      item.recurrence === 'daily' ||
+      item.recurrence === 'monthly' ||
+      item.recurrence === 'fortnight' ||
+      item.recurrence === 'quarterly'
+        ? item.recurrence
+        : null,
       fmtDateTime(item.datetime),
     ]
       .filter(Boolean)
@@ -427,7 +564,7 @@ function TagAttachedRow({
       </>
     );
     meta = [
-      item.frequency,
+      item.frequency === '3day' ? '3 Day' : item.frequency,
       item.nudge_time ? `nudge ${item.nudge_time}` : null,
       `streak ${item.streak || 0}`,
       item.completed_today ? 'done today' : null,

@@ -103,6 +103,8 @@ contextBridge.exposeInMainWorld('api', {
   deleteBills: (ids) => ipcRenderer.invoke('bills:deleteMany', ids),
   deleteBillPayment: (id) => ipcRenderer.invoke('bills:deletePayment', id),
   deleteBillPayments: (ids) => ipcRenderer.invoke('bills:deletePaymentsMany', ids),
+  listBillCategories: () => ipcRenderer.invoke('bills:categories'),
+  createBillCategory: (name) => ipcRenderer.invoke('bills:createCategory', name),
 
   getEvent: (id) => ipcRenderer.invoke('events:get', id),
   listEventsDay: (day) => ipcRenderer.invoke('events:listDay', day),
@@ -129,6 +131,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('tags:items', tagName, opts),
   inspectTags: () => ipcRenderer.invoke('tags:inspect'),
   listInspectLog: (opts) => ipcRenderer.invoke('tags:inspectLog', opts),
+  renameTag: (id, newName) => ipcRenderer.invoke('tags:rename', id, newName),
+  deleteTag: (id) => ipcRenderer.invoke('tags:delete', id),
 
   listExpired7: () => ipcRenderer.invoke('containers:listExpired7'),
   listCompleted: (opts) => ipcRenderer.invoke('containers:listCompleted', opts),
@@ -150,6 +154,7 @@ contextBridge.exposeInMainWorld('api', {
   getList: (id) => ipcRenderer.invoke('lists:get', id),
   createList: (data) => ipcRenderer.invoke('lists:create', data),
   renameList: (id, name) => ipcRenderer.invoke('lists:rename', id, name),
+  updateList: (id, fields) => ipcRenderer.invoke('lists:update', id, fields),
   setListTags: (id, tags) => ipcRenderer.invoke('lists:setTags', id, tags),
   deleteList: (id) => ipcRenderer.invoke('lists:delete', id),
   deleteLists: (ids) => ipcRenderer.invoke('lists:deleteMany', ids),

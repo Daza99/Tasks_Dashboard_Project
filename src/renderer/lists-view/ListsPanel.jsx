@@ -8,10 +8,12 @@ import ListHashtagEditor from './ListHashtagEditor';
 import ListHashtagInput from './ListHashtagInput';
 import TodoChecklist from './TodoChecklist';
 import BulletPad from './BulletPad';
+import DetailsPreview from '../components/DetailsPreview';
 import { useDateFormat } from '../hooks/useDateFormat';
 import { formatTagDisplay, normalizeTagName } from '../../utils/tag-helpers.js';
 import { invalidateListHashtagWhitelist } from '../hooks/useListHashtagWhitelist';
 import { useVisibleSelection } from '../hooks/useVisibleSelection';
+import { rowDblClick } from '../../utils/row-dblclick.js';
 
 const TABS = [
   { id: 'todo', label: 'To-Do lists' },
@@ -52,6 +54,12 @@ export default function ListsPanel() {
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [editor, setEditor] = useState(null); // 'create' | { rename: list } | null
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameSource, setRenameSource] = useState(null); // 'card' | 'detail'
+  const renameInputRef = useRef(null);
+  const skipRenameBlur = useRef(false);
+  const renameBusy = useRef(false);
   const [menu, setMenu] = useState(null); // { x, y, list }
   const [mergeTarget, setMergeTarget] = useState('');
   const [confirm, setConfirm] = useState(null);
@@ -108,19 +116,81 @@ export default function ListsPanel() {
     return () => window.removeEventListener('click', close);
   }, []);
 
-  async function create(name) {
-    const list = await window.api.createList({ name, type, tag: bareTag || 'list' });
+  useEffect(() => {
+    if (renamingId == null) return;
+    const el = renameInputRef.current;
+    if (!el) return;
+    el.focus();
+    const len = el.value.length;
+    el.setSelectionRange(len, len);
+  }, [renamingId]);
+
+  async function create(name, description) {
+    const list = await window.api.createList({
+      name,
+      type,
+      tag: bareTag || 'list',
+      description,
+    });
     invalidateListHashtagWhitelist();
     setEditor(null);
     await loadLists();
     await openList(list.id);
   }
 
-  async function rename(name) {
-    await window.api.renameList(editor.rename.id, name);
+  async function rename(name, description) {
+    await window.api.updateList(editor.rename.id, { name, description });
     setEditor(null);
     await loadLists();
     if (selectedId === editor.rename.id) await openList(selectedId);
+  }
+
+  function beginInlineRename(list, source) {
+    skipRenameBlur.current = false;
+    setRenamingId(list.id);
+    setRenameDraft(list.name);
+    setRenameSource(source);
+  }
+
+  function cancelInlineRename() {
+    skipRenameBlur.current = true;
+    setRenamingId(null);
+    setRenameSource(null);
+  }
+
+  async function commitInlineRename() {
+    if (renamingId == null || renameBusy.current) return;
+    renameBusy.current = true;
+    const id = renamingId;
+    const draft = renameDraft;
+    setRenamingId(null);
+    setRenameSource(null);
+    try {
+      await window.api.renameList(id, draft);
+      await loadLists();
+      if (selectedId === id) await openList(id);
+    } finally {
+      renameBusy.current = false;
+    }
+  }
+
+  function onRenameKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      skipRenameBlur.current = true;
+      commitInlineRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelInlineRename();
+    }
+  }
+
+  function onRenameBlur() {
+    if (skipRenameBlur.current) {
+      skipRenameBlur.current = false;
+      return;
+    }
+    commitInlineRename();
   }
 
   async function removeList() {
@@ -280,6 +350,7 @@ export default function ListsPanel() {
           mode="rename"
           type={editor.rename.type}
           initialName={editor.rename.name}
+          initialDescription={editor.rename.description || ''}
           templates={templates}
           onSave={rename}
           onCancel={() => setEditor(null)}
@@ -298,27 +369,47 @@ export default function ListsPanel() {
                   aria-label={`Select ${l.name}`}
                 />
               </label>
-              <button
-                type="button"
-                className={`lists-folder__row glass-inset${selectedId === l.id ? ' lists-folder__row--on' : ''}`}
-                onClick={() => openList(l.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenu({ x: e.clientX, y: e.clientY, list: l });
-                  setMergeTarget('');
-                }}
-              >
-                <span>
-                  <strong>☰ {l.name}</strong>
-                  <div className="module-list__meta">
-                    {createdLabel(l.created_date)} · {l.item_count} item
-                    {l.item_count === 1 ? '' : 's'}
-                    {l.tags?.length
-                      ? ` · ${l.tags.map((t) => formatTagDisplay(t)).join(' ')}`
-                      : ''}
-                  </div>
-                </span>
-              </button>
+              {renamingId === l.id && renameSource === 'card' ? (
+                <div
+                  className={`lists-folder__row glass-inset${selectedId === l.id ? ' lists-folder__row--on' : ''}`}
+                >
+                  <input
+                    ref={renameInputRef}
+                    type="text"
+                    className="lists-title-input"
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onKeyDown={onRenameKeyDown}
+                    onBlur={onRenameBlur}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="List name"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={`lists-folder__row glass-inset${selectedId === l.id ? ' lists-folder__row--on' : ''}`}
+                  onClick={() => openList(l.id)}
+                  onDoubleClick={rowDblClick(() => beginInlineRename(l, 'card'))}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenu({ x: e.clientX, y: e.clientY, list: l });
+                    setMergeTarget('');
+                  }}
+                >
+                  <span>
+                    <strong>☰ {l.name}</strong>
+                    <div className="module-list__meta">
+                      {createdLabel(l.created_date)} · {l.item_count} item
+                      {l.item_count === 1 ? '' : 's'}
+                      {l.tags?.length
+                        ? ` · ${l.tags.map((t) => formatTagDisplay(t)).join(' ')}`
+                        : ''}
+                    </div>
+                    <DetailsPreview text={l.description} />
+                  </span>
+                </button>
+              )}
             </li>
           ))}
           {!lists.length && <p className="stub-empty">No lists in this filter.</p>}
@@ -330,17 +421,48 @@ export default function ListsPanel() {
             <>
               <div className="lists-detail__head">
                 <div className="lists-detail__title">
-                  <h2>{detail.list.name}</h2>
+                  {renamingId === detail.list.id && renameSource === 'detail' ? (
+                    <input
+                      ref={renameInputRef}
+                      type="text"
+                      className="lists-title-input"
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={onRenameKeyDown}
+                      onBlur={onRenameBlur}
+                      aria-label="List name"
+                    />
+                  ) : (
+                    <h2
+                      onDoubleClick={rowDblClick(() =>
+                        beginInlineRename(detail.list, 'detail')
+                      )}
+                    >
+                      {detail.list.name}
+                    </h2>
+                  )}
                   <div className="module-list__meta">
                     Created {createdLabel(detail.list.created_date)}
                   </div>
+                  {renameSource !== 'detail' && (
+                    <DetailsPreview text={detail.list.description} />
+                  )}
                 </div>
-                <ListHashtagEditor
-                  key={detail.list.id}
-                  listId={detail.list.id}
-                  tags={detail.list.tags}
-                  onCommit={saveListTags}
-                />
+                <div className="lists-detail__tools">
+                  <button
+                    type="button"
+                    className="btn-light"
+                    onClick={() => setEditor({ rename: detail.list })}
+                  >
+                    Edit
+                  </button>
+                  <ListHashtagEditor
+                    key={detail.list.id}
+                    listId={detail.list.id}
+                    tags={detail.list.tags}
+                    onCommit={saveListTags}
+                  />
+                </div>
               </div>
               {detail.list.type === 'todo' && (
                 <TodoChecklist

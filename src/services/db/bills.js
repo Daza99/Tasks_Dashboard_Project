@@ -127,6 +127,8 @@ function createBill({
     const prio = clampPriority(priority);
     const details = description != null ? String(description).trim() || null : null;
     const onCal = show_on_calendar ? 1 : 0;
+    const cat = category != null ? String(category).trim() || null : null;
+    if (cat) createBillCategory(cat);
     const nudgeFields = resolveNudgeFields(due_date, {
       nudge,
       nudge_mode,
@@ -144,7 +146,7 @@ function createBill({
         mode,
         due_date,
         rec,
-        category || null,
+        cat,
         prio,
         details,
         onCal,
@@ -200,7 +202,10 @@ function updateBill(id, fields) {
       throw new Error('recurrence must be monthly, fortnight, quarterly, yearly, or null');
     }
     const category =
-      fields.category !== undefined ? fields.category : cur.category;
+      fields.category !== undefined
+        ? String(fields.category || '').trim() || null
+        : cur.category;
+    if (fields.category !== undefined && category) createBillCategory(category);
     const amount_mode =
       fields.amount_mode !== undefined
         ? normalizeAmountMode(fields.amount_mode)
@@ -707,6 +712,38 @@ function markBillNudgeAlerted(id) {
   return getBill(id);
 }
 
+/** Category names for dropdowns, A–Z. */
+function listBillCategories() {
+  try {
+    return getDb()
+      .prepare('SELECT name FROM bill_categories ORDER BY name COLLATE NOCASE ASC')
+      .all()
+      .map((r) => r.name);
+  } catch (err) {
+    logError('listBillCategories', err);
+    throw err;
+  }
+}
+
+/**
+ * Insert a category name if missing.
+ * @param {string} name
+ * @returns {string} trimmed name
+ */
+function createBillCategory(name) {
+  try {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) throw new Error('Category name required');
+    getDb()
+      .prepare('INSERT OR IGNORE INTO bill_categories (name) VALUES (?)')
+      .run(trimmed);
+    return trimmed;
+  } catch (err) {
+    logError('createBillCategory', err);
+    throw err;
+  }
+}
+
 /** Snooze only the nudge; bill due is unchanged. */
 function snoozeBillNudge(id, minutes = 10) {
   try {
@@ -807,6 +844,9 @@ module.exports = {
   dismissBillAlert,
   dismissBillNudge,
   advanceDue,
+  addMonthsIso,
+  listBillCategories,
+  createBillCategory,
   STATUSES,
   AMOUNT_MODES,
   AVG_MIN_SAMPLES,

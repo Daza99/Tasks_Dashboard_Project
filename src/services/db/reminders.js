@@ -13,6 +13,7 @@ const {
 const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const SCOPE_TAGS = ['rem_today', 'rem_tomorrow', 'rem_dated', 'rem_open'];
+const RECURRENCES = ['daily', 'monthly', 'fortnight', 'quarterly'];
 const STATE_TAGS = [
   'rem_pending',
   'rem_fired',
@@ -39,6 +40,27 @@ function addDays(d, n) {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
   return x;
+}
+
+/** Add months, clamp DOM (31 Jan → 28/29 Feb). Keeps local wall-clock time. */
+function addMonthsDate(d, months) {
+  const x = new Date(d);
+  const day = x.getDate();
+  x.setDate(1);
+  x.setMonth(x.getMonth() + months);
+  const last = new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate();
+  x.setDate(Math.min(day, last));
+  return x;
+}
+
+/** daily | monthly | fortnight | quarterly | null. Open scope always null. */
+function normalizeRecurrence(recurrence, scope) {
+  if (scope === 'open') return null;
+  if (!recurrence) return null;
+  if (!RECURRENCES.includes(recurrence)) {
+    throw new Error('recurrence must be daily, monthly, fortnight, quarterly, or null');
+  }
+  return recurrence;
 }
 
 /** Local YYYY-MM-DD from ISO (for calendar occurrence moves). */
@@ -136,7 +158,7 @@ function createReminder({
     const remTitle = uniqueTitleFor('reminder', title);
     const resolved = resolveScope(scope, datetime);
     const appointment = scope === 'open' ? 0 : is_appointment ? 1 : 0;
-    const rec = scope === 'open' ? null : recurrence || null;
+    const rec = normalizeRecurrence(recurrence, scope);
     const details = description != null ? String(description).trim() || null : null;
     const nudgeFields = resolveNudgeFields(scope, resolved.datetime, {
       nudge,
@@ -221,6 +243,12 @@ function updateReminder(id, fields) {
     if (nextFields.scope === 'open') {
       nextFields.is_appointment = 0;
       nextFields.recurrence = null;
+    }
+    if (nextFields.recurrence !== undefined) {
+      nextFields.recurrence = normalizeRecurrence(
+        nextFields.recurrence,
+        nextFields.scope || null
+      );
     }
     if (nextFields.is_appointment !== undefined) {
       nextFields.is_appointment = nextFields.is_appointment ? 1 : 0;
@@ -315,13 +343,20 @@ function backupRemindDays() {
 function completeReminder(id) {
   try {
     const cur = getDb().prepare('SELECT * FROM reminders WHERE id = ?').get(id);
-    const isDaily = cur?.recurrence === 'daily';
+    const rec = cur?.recurrence;
+    const isRepeating = RECURRENCES.includes(rec);
     const isBackupRemind = isBackupRemindId(id);
     const isOpen = !cur?.datetime || String(cur.datetime).startsWith('9999');
-    if ((isDaily || isBackupRemind) && !isOpen) {
+    if ((isRepeating || isBackupRemind) && !isOpen) {
       const prevDate = dateKeyFromIso(cur.datetime);
-      const step = isBackupRemind ? backupRemindDays() : 1;
-      const next = addDays(new Date(cur.datetime), step).toISOString();
+      const from = new Date(cur.datetime);
+      let nextDt;
+      if (isBackupRemind) nextDt = addDays(from, backupRemindDays());
+      else if (rec === 'monthly') nextDt = addMonthsDate(from, 1);
+      else if (rec === 'quarterly') nextDt = addMonthsDate(from, 3);
+      else if (rec === 'fortnight') nextDt = addDays(from, 14);
+      else nextDt = addDays(from, 1);
+      const next = nextDt.toISOString();
       let nextNudge = cur.nudge_datetime;
       let nextAlerted = cur.nudge_alerted;
       if (cur.nudge_mode === 'day_before') {
@@ -653,6 +688,8 @@ module.exports = {
   startOfDay,
   endOfDay,
   addDays,
+  addMonthsDate,
+  RECURRENCES,
   SCOPE_TAGS,
   STATE_TAGS,
   ALL_REM,

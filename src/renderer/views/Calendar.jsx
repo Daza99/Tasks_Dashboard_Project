@@ -489,7 +489,7 @@ export default function CalendarView({
       <ConfirmDialog
         open={deleteOpen}
         title="Remove from calendar?"
-        message="Also delete the linked item? Calendar-only keeps the bill, habit, or reminder."
+        message="Also delete the linked item? Calendar-only keeps the bill, habit, reminder, or task."
         confirmLabel="Delete linked item too"
         secondaryLabel="Calendar only"
         danger

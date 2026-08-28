@@ -21,6 +21,12 @@ List tags use `item_tags` with `item_type = 'list'`. Tag Inspector orphan repair
 
 Incident: [`docs/dev-note-lists-hashtag-orphan.md`](docs/dev-note-lists-hashtag-orphan.md).
 
+## Tag ghost autocomplete (do not re-break)
+
+Ghost suffix lives **behind** the input. Opaque fill on `.tag-input__field` hides it. Navy on `.tag-input`; field `background: transparent !important`. Do not restore opaque field fill to fight Light Glass.
+
+Incident: [`docs/dev-note-tag-ghost-autocomplete.md`](docs/dev-note-tag-ghost-autocomplete.md).
+
 ## Dates / layout
 
 Dates: `yyyy-mm-dd`. Compact vs Focus as in `.cursorrules`. No decorative corner brackets.

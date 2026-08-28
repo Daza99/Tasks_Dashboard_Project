@@ -18,9 +18,12 @@ function enrich(row) {
 
 const VISIBLE = 'AND COALESCE(e.hidden, 0) = 0';
 
-/** Event row plus reminder/bill nudge_datetime when the source is linked. */
+/** Event row plus reminder/bill nudge; bill nudge only on the current due occurrence. */
 const EVENT_WITH_NUDGE = `SELECT e.*,
-       COALESCE(r.nudge_datetime, b.nudge_datetime) AS nudge_datetime
+       COALESCE(
+         r.nudge_datetime,
+         CASE WHEN e.occurrence_date = b.due_date THEN b.nudge_datetime END
+       ) AS nudge_datetime
        FROM events e
        LEFT JOIN reminders r ON e.source_type = 'reminder' AND e.source_id = r.id
        LEFT JOIN bills b ON e.source_type = 'bill' AND e.source_id = b.id`;
@@ -82,7 +85,10 @@ function createEvent({
   hidden = 0,
 }) {
   try {
-    const eventTitle = uniqueTitleFor('event', title);
+    // Linked series share a title (e.g. 12 months of "Rent Due"); manuals stay unique.
+    const eventTitle = source_type
+      ? String(title ?? '').trim() || uniqueTitleFor('event', title)
+      : uniqueTitleFor('event', title);
     if (!start_datetime) throw new Error('start_datetime required');
     const info = getDb()
       .prepare(
@@ -118,7 +124,9 @@ function updateEvent(id, fields) {
     if (!cur) throw new Error('Event not found');
     const title =
       fields.title !== undefined
-        ? uniqueTitleFor('event', fields.title, id)
+        ? cur.source_type
+          ? String(fields.title ?? '').trim() || cur.title
+          : uniqueTitleFor('event', fields.title, id)
         : cur.title;
     const start_datetime =
       fields.start_datetime !== undefined

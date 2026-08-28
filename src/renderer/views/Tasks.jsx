@@ -68,6 +68,7 @@ export default function TasksView({
   const [tagsInput, setTagsInput] = useState('');
   const [details, setDetails] = useState('');
   const [due, setDue] = useState('');
+  const [showOnCalendar, setShowOnCalendar] = useState(false);
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
@@ -78,6 +79,7 @@ export default function TasksView({
   const [editPriority, setEditPriority] = useState(DEFAULT_PRIORITY);
   const [editTags, setEditTags] = useState('');
   const [editDetails, setEditDetails] = useState('');
+  const [editOnCalendar, setEditOnCalendar] = useState(false);
   const [editError, setEditError] = useState('');
   const [search, setSearch] = useState('');
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -103,6 +105,7 @@ export default function TasksView({
   useEffect(() => {
     if (!seedDate) return;
     setDue(`${seedDate}T09:00`);
+    setShowOnCalendar(true);
     onSeedConsumed?.();
   }, [seedDate]);
 
@@ -117,12 +120,14 @@ export default function TasksView({
         tags: normalizeUserTagNames(tagsInput),
         description: details.trim() || null,
         due_datetime: due ? new Date(due).toISOString() : null,
+        show_on_calendar: showOnCalendar,
       });
       setTitle('');
       setPriority(DEFAULT_PRIORITY);
       setTagsInput('');
       setDetails('');
       setDue('');
+      setShowOnCalendar(false);
       invalidateTagCatalog();
       await load();
       await refresh();
@@ -140,6 +145,7 @@ export default function TasksView({
     setEditPriority(t.priority ?? DEFAULT_PRIORITY);
     setEditTags(userTagsDisplay(t.tags));
     setEditDetails(t.description || '');
+    setEditOnCalendar(Number(t.show_on_calendar) !== 0);
     setEditError('');
   }
 
@@ -155,6 +161,7 @@ export default function TasksView({
         priority: editPriority,
         tags: normalizeUserTagNames(editTags),
         description: editDetails.trim() || null,
+        show_on_calendar: editOnCalendar,
       });
       setEditingId(null);
       invalidateTagCatalog();
@@ -241,7 +248,10 @@ export default function TasksView({
               <button
                 type="button"
                 className={kind === 'todo_open' ? 'active' : ''}
-                onClick={() => setKind('todo_open')}
+                onClick={() => {
+                  setKind('todo_open');
+                  if (!due) setShowOnCalendar(false);
+                }}
               >
                 Open
               </button>
@@ -254,6 +264,15 @@ export default function TasksView({
                 value={due}
                 onChange={(e) => setDue(e.target.value)}
               />
+            </label>
+            <label className="cal-appt-check">
+              <input
+                type="checkbox"
+                checked={showOnCalendar}
+                disabled={kind === 'todo_open' && !due}
+                onChange={(e) => setShowOnCalendar(e.target.checked)}
+              />
+              Add to Calendar
             </label>
             <label className="edit-label">
               Tags (optional)
@@ -338,7 +357,10 @@ export default function TasksView({
                       <button
                         type="button"
                         className={editKind === 'todo_open' ? 'active' : ''}
-                        onClick={() => setEditKind('todo_open')}
+                        onClick={() => {
+                          setEditKind('todo_open');
+                          if (!editDue) setEditOnCalendar(false);
+                        }}
                       >
                         Open
                       </button>
@@ -348,6 +370,15 @@ export default function TasksView({
                       value={editPriority}
                       onChange={setEditPriority}
                     />
+                    <label className="cal-appt-check">
+                      <input
+                        type="checkbox"
+                        checked={editOnCalendar}
+                        disabled={editKind === 'todo_open' && !editDue}
+                        onChange={(e) => setEditOnCalendar(e.target.checked)}
+                      />
+                      Add to Calendar
+                    </label>
                     <label className="edit-label">
                       Tags
                       <TagInput

@@ -28,6 +28,12 @@ List tags use `item_tags` with `item_type = 'list'`. Tag Inspector orphan repair
 
 Incident: [`dev-note-lists-hashtag-orphan.md`](dev-note-lists-hashtag-orphan.md).
 
+## Tag ghost autocomplete (do not re-break)
+
+Grey remainder + Tab complete is a **transparent input over an opaque `.tag-input` wrapper**. The ghost layer is behind the field. An opaque `#28374f` (or any solid fill) on `.tag-input__field` hides `.tag-input__ghost-rest` even when `matchTagPrefix` works. Keep `!important` transparent field bg vs `.create-form input[type=text]`. Do not “fix Light Glass wash” by filling the input.
+
+Incident: [`dev-note-tag-ghost-autocomplete.md`](dev-note-tag-ghost-autocomplete.md).
+
 ## Dates
 
 Storage and display: `yyyy-mm-dd` only. Module hints that mention dates get `(date method: yyyy-mm-dd)`.

@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     archived BOOLEAN DEFAULT 0,
     archived_date DATETIME,
     locked INTEGER DEFAULT 0,
-    container TEXT NOT NULL DEFAULT 'active'
+    container TEXT NOT NULL DEFAULT 'active',
+    show_on_calendar INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS reminders (
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS habits (
     last_nudge_date DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     description TEXT,
-    priority INTEGER DEFAULT 3
+    priority INTEGER DEFAULT 3,
+    show_on_calendar INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS habit_logs (
@@ -118,6 +120,12 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 
 CREATE TABLE IF NOT EXISTS note_categories (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bill_categories (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -202,7 +210,8 @@ CREATE TABLE IF NOT EXISTS lists (
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     parent_id INTEGER,
     content TEXT,
-    style_json TEXT
+    style_json TEXT,
+    description TEXT
 );
 
 CREATE TABLE IF NOT EXISTS list_items (

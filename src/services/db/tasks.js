@@ -28,11 +28,19 @@ function enrich(row) {
     tags,
     item_type: 'task',
     locked: Number(row.locked) === 1 || tags.includes('locked'),
+    show_on_calendar: Number(row.show_on_calendar) !== 0 ? 1 : 0,
   };
 }
 
 /** Create task. kind must be todo_24 | todo_open. */
-function createTask({ title, description = null, priority = 3, kind, due_datetime = null }) {
+function createTask({
+  title,
+  description = null,
+  priority = 3,
+  kind,
+  due_datetime = null,
+  show_on_calendar = 0,
+}) {
   try {
     const taskTitle = uniqueTitleFor('task', title);
     if (kind !== 'todo_24' && kind !== 'todo_open') {
@@ -44,15 +52,18 @@ function createTask({ title, description = null, priority = 3, kind, due_datetim
     if (kind === 'todo_24' && !due) {
       due = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     }
+    const onCal = due && show_on_calendar ? 1 : 0;
     const info = db
       .prepare(
-        `INSERT INTO tasks (title, description, priority, due_datetime)
-         VALUES (?, ?, ?, ?)`
+        `INSERT INTO tasks (title, description, priority, due_datetime, show_on_calendar)
+         VALUES (?, ?, ?, ?, ?)`
       )
-      .run(taskTitle, description, prio, due);
+      .run(taskTitle, description, prio, due, onCal);
     const id = Number(info.lastInsertRowid);
     addTag('task', id, kind);
-    return getTask(id);
+    const row = getTask(id);
+    require('./calendar-sync').syncTask(row);
+    return row;
   } catch (err) {
     logError('createTask', err);
     throw err;
@@ -86,15 +97,20 @@ function listTasks({ includeCompleted = false } = {}) {
 
 function updateTask(id, fields) {
   try {
+    const cur = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+    if (!cur) throw new Error('Task not found');
     const next = { ...fields };
     if (next.title !== undefined) next.title = uniqueTitleFor('task', next.title, id);
-    const allowed = ['title', 'description', 'priority', 'due_datetime'];
+    const allowed = ['title', 'description', 'priority', 'due_datetime', 'show_on_calendar'];
     const sets = [];
     const vals = [];
     for (const key of allowed) {
       if (next[key] !== undefined) {
+        let val = next[key];
+        if (key === 'priority') val = clampPriority(val);
+        if (key === 'show_on_calendar') val = val ? 1 : 0;
         sets.push(`${key} = ?`);
-        vals.push(key === 'priority' ? clampPriority(next[key]) : next[key]);
+        vals.push(val);
       }
     }
     const db = getDb();
@@ -127,7 +143,16 @@ function updateTask(id, fields) {
       }
     });
     tx();
-    return getTask(id);
+    const row = getTask(id);
+    let prevDate;
+    if (cur?.due_datetime && cur.due_datetime !== row.due_datetime) {
+      const d = new Date(cur.due_datetime);
+      if (!Number.isNaN(d.getTime())) {
+        prevDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+    }
+    require('./calendar-sync').syncTask(row, { prevDate });
+    return row;
   } catch (err) {
     logError('updateTask', err);
     throw err;
@@ -144,7 +169,9 @@ function completeTask(id) {
       .run(id);
     replaceTags('task', id, TASK_LIFECYCLE, 'todo_completed');
     removeTag('task', id, 'archived');
-    return getTask(id);
+    const row = getTask(id);
+    require('./calendar-sync').syncTask(row);
+    return row;
   } catch (err) {
     logError('completeTask', err);
     throw err;
@@ -158,7 +185,9 @@ function uncompleteTask(id) {
       .prepare(`UPDATE tasks SET completed_at = NULL, container = 'active' WHERE id = ?`)
       .run(id);
     replaceTags('task', id, TASK_LIFECYCLE, 'todo_open');
-    return getTask(id);
+    const row = getTask(id);
+    require('./calendar-sync').syncTask(row);
+    return row;
   } catch (err) {
     logError('uncompleteTask', err);
     throw err;
@@ -172,6 +201,7 @@ function deleteTask(id) {
     if (hasTag('task', id, 'locked')) {
       throw new Error('Task is locked');
     }
+    require('./calendar-sync').deleteEventsForSource('task', id);
     const db = getDb();
     const tx = db.transaction(() => {
       db.prepare(
@@ -215,6 +245,7 @@ function deleteTasks(ids) {
       let n = 0;
       for (const id of idList) {
         if (taskIsLocked(id)) continue;
+        require('./calendar-sync').deleteEventsForSource('task', id);
         delTags.run(id);
         const r = delRow.run(id);
         if (r.changes) n += 1;

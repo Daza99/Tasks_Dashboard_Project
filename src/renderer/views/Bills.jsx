@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { format, isValid, parseISO } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import BillPayConfirm from '../components/BillPayConfirm';
@@ -7,6 +7,7 @@ import DetailsInline from '../components/DetailsInline';
 import DetailsPreview from '../components/DetailsPreview';
 import NudgeCustomDialog from '../components/NudgeCustomDialog';
 import ConfirmDialog from '../components/ConfirmDialog';
+import PromptDialog from '../components/PromptDialog';
 import ListSelectToolbar from '../components/ListSelectToolbar';
 import TagSearchInput from '../components/TagSearchInput';
 import { NudgePreview, NudgeRow, todayKey } from '../components/NudgeRow';
@@ -22,7 +23,7 @@ const RECUR = [
   { id: '', label: 'once' },
   { id: 'monthly', label: 'monthly' },
   { id: 'fortnight', label: 'fortnight' },
-  { id: 'quarterly', label: 'quarterly' },
+  { id: 'quarterly', label: 'quarterly', title: '3 Months' },
   { id: 'yearly', label: 'yearly' },
 ];
 
@@ -53,6 +54,9 @@ function dateFromIso(iso) {
     return todayKey();
   }
 }
+
+const CAT_NEW = '__new__';
+const CAT_NONE = '';
 
 const MONTHS = [
   { id: 'ALL', label: 'ALL' },
@@ -108,7 +112,8 @@ export default function BillsView({
   const [amount, setAmount] = useState('');
   const [due, setDue] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [recurrence, setRecurrence] = useState('');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState(CAT_NONE);
+  const [categories, setCategories] = useState([]);
   const [amountMode, setAmountMode] = useState('fixed');
   const [priority, setPriority] = useState(DEFAULT_PRIORITY);
   const [details, setDetails] = useState('');
@@ -146,13 +151,21 @@ export default function BillsView({
   const [payments, setPayments] = useState([]);
   const [search, setSearch] = useState('');
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptFor, setPromptFor] = useState('create'); // create | edit
+  const catBeforeNew = useRef(CAT_NONE);
 
   async function load() {
     setRows(await window.api.listBills());
   }
 
+  async function loadCategories() {
+    setCategories(await window.api.listBillCategories());
+  }
+
   useEffect(() => {
     load();
+    loadCategories();
   }, []);
 
   // Load filter option lists once when entering history
@@ -309,7 +322,7 @@ export default function BillsView({
       });
       setName('');
       setAmount('');
-      setCategory('');
+      setCategory(CAT_NONE);
       setAmountMode('fixed');
       setPriority(DEFAULT_PRIORITY);
       setDetails('');
@@ -318,11 +331,38 @@ export default function BillsView({
       setNudgeMode('day_before');
       setCustomDate(todayKey());
       setCustomTime('09:00');
+      await loadCategories();
       await load();
       await refresh();
     } catch (err) {
       setError(err?.message || String(err));
     }
+  }
+
+  function onCatSelect(e, current, apply) {
+    const v = e.target.value;
+    if (v === CAT_NEW) {
+      catBeforeNew.current = current;
+      setPromptFor(apply);
+      setPromptOpen(true);
+      return;
+    }
+    if (apply === 'create') setCategory(v);
+    else setEdit((prev) => ({ ...prev, category: v }));
+  }
+
+  async function onNewCategory(name) {
+    setPromptOpen(false);
+    const created = await window.api.createBillCategory(name);
+    await loadCategories();
+    if (promptFor === 'create') setCategory(created);
+    else setEdit((prev) => ({ ...prev, category: created }));
+  }
+
+  function cancelPrompt() {
+    setPromptOpen(false);
+    if (promptFor === 'create') setCategory(catBeforeNew.current || CAT_NONE);
+    else setEdit((prev) => ({ ...prev, category: catBeforeNew.current || CAT_NONE }));
   }
 
   function beginEdit(b) {
@@ -372,6 +412,7 @@ export default function BillsView({
             : null,
       });
       setEditingId(null);
+      await loadCategories();
       await load();
       await refresh();
     } catch (err) {
@@ -662,12 +703,34 @@ export default function BillsView({
               Calendar
             </label>
           </div>
-          <input
-            type="text"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            placeholder="Category (optional)"
-          />
+          <div className="bill-cat-row">
+            <select
+              value={categories.includes(category) ? category : CAT_NONE}
+              onChange={(e) => onCatSelect(e, category, 'create')}
+              aria-label="Bill category"
+            >
+              <option value={CAT_NEW}>NEW</option>
+              <option value={CAT_NONE}>Uncategorized</option>
+              {categories.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={category}
+              list="bill-categories"
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="Category (optional)"
+              aria-label="Category"
+            />
+            <datalist id="bill-categories">
+              {categories.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
           <div className="reminder-meta-row">
             <div className="reminder-meta-row__left">
               <div className="kind-toggle" role="group" aria-label="Recurrence">
@@ -675,6 +738,7 @@ export default function BillsView({
                   <button
                     key={r.id || 'once'}
                     type="button"
+                    title={r.title}
                     className={recurrence === r.id ? 'active' : ''}
                     onClick={() => setRecurrence(r.id)}
                   >
@@ -898,12 +962,36 @@ export default function BillsView({
                       Calendar
                     </label>
                   </div>
-                  <input
-                    type="text"
-                    value={edit.category}
-                    onChange={(e) => setEdit({ ...edit, category: e.target.value })}
-                    placeholder="Category"
-                  />
+                  <div className="bill-cat-row">
+                    <select
+                      value={
+                        categories.includes(edit.category) ? edit.category : CAT_NONE
+                      }
+                      onChange={(e) => onCatSelect(e, edit.category || CAT_NONE, 'edit')}
+                      aria-label="Bill category"
+                    >
+                      <option value={CAT_NEW}>NEW</option>
+                      <option value={CAT_NONE}>Uncategorized</option>
+                      {categories.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={edit.category}
+                      list="bill-categories-edit"
+                      onChange={(e) => setEdit({ ...edit, category: e.target.value })}
+                      placeholder="Category"
+                      aria-label="Category"
+                    />
+                    <datalist id="bill-categories-edit">
+                      {categories.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  </div>
                   <div className="reminder-meta-row">
                     <div className="reminder-meta-row__left">
                       <div className="kind-toggle">
@@ -911,6 +999,7 @@ export default function BillsView({
                           <button
                             key={r.id || 'once'}
                             type="button"
+                            title={r.title}
                             className={edit.recurrence === r.id ? 'active' : ''}
                             onClick={() => setEdit({ ...edit, recurrence: r.id })}
                           >
@@ -1058,6 +1147,15 @@ export default function BillsView({
         danger
         onConfirm={removeSelected}
         onCancel={() => setBulkDeleteOpen(false)}
+      />
+      <PromptDialog
+        open={promptOpen}
+        title="New category"
+        message="Name for this category."
+        confirmLabel="Add"
+        placeholder="e.g. Utilities"
+        onConfirm={onNewCategory}
+        onCancel={cancelPrompt}
       />
     </div>
   );

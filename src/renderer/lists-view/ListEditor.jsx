@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import DetailsInline from '../components/DetailsInline';
 
 function todayLong() {
   return format(new Date(), 'EEEE d MMMM yyyy');
@@ -15,8 +16,9 @@ function todayShort() {
  *   mode: 'create'|'rename',
  *   type: 'todo'|'bullet',
  *   initialName?: string,
+ *   initialDescription?: string,
  *   templates?: string[],
- *   onSave: (name: string) => void|Promise<void>,
+ *   onSave: (name: string, description: string) => void|Promise<void>,
  *   onCancel: () => void,
  * }} props
  */
@@ -24,11 +26,13 @@ export default function ListEditor({
   mode,
   type,
   initialName = '',
+  initialDescription = '',
   templates = ['Current Date', 'Project', 'Other'],
   onSave,
   onCancel,
 }) {
   const [name, setName] = useState(initialName || todayLong());
+  const [description, setDescription] = useState(initialDescription || '');
   const [template, setTemplate] = useState('Current Date');
   const [project, setProject] = useState('');
   const [error, setError] = useState('');
@@ -59,14 +63,14 @@ export default function ListEditor({
       finalName = `${project.trim()} — ${todayLong()}`;
     }
     try {
-      await onSave(finalName);
+      await onSave(finalName, description);
     } catch (err) {
       setError(err?.message || String(err));
     }
   }
 
   return (
-    <form className="create-form glass-inset" onSubmit={submit}>
+    <form className="create-form glass-inset list-editor" onSubmit={submit}>
       <div className="kind-toggle" role="group" aria-label="Naming template">
         {templates.map((t) => (
           <button
@@ -87,21 +91,30 @@ export default function ListEditor({
           placeholder="Project name"
         />
       )}
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="List name"
-      />
-      <p className="module-list__meta">Created {todayShort()} · Ctrl+; inserts date</p>
-      <p className="module-list__meta">
-        {type === 'todo' ? 'To-Do list' : 'Bullet list'}
-      </p>
+      <div className="list-editor__body">
+        <div className="list-editor__main">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="List name"
+          />
+          <p className="module-list__meta">Created {todayShort()} · Ctrl+; inserts date</p>
+          <p className="module-list__meta">
+            {type === 'todo' ? 'To-Do list' : 'Bullet list'}
+          </p>
+        </div>
+        <DetailsInline
+          value={description}
+          onChange={setDescription}
+          placeholder="Details"
+        />
+      </div>
       <div className="item-row__actions">
         <button type="submit" className="btn-primary">
-          {mode === 'rename' ? 'Rename' : 'Create'}
+          {mode === 'rename' ? 'Save' : 'Create'}
         </button>
-        <button type="button" onClick={onCancel}>
+        <button type="button" className="btn-light" onClick={onCancel}>
           Cancel
         </button>
       </div>

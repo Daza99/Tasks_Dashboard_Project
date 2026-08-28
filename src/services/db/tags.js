@@ -5,6 +5,7 @@
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const {
+  SYSTEM_TAG_NAMES,
   normalizeTagName,
   normalizeTagNames,
 } = require('../../utils/tag-helpers.cjs');
@@ -267,6 +268,83 @@ function listTagItems(tagName, { limit = 10, offset = 0 } = {}) {
   }
 }
 
+/**
+ * Rename a user tag globally. If `newName` already exists, merge attachments.
+ * @param {number} id
+ * @param {string} newName
+ * @returns {{ id: number, name: string }} surviving tag
+ */
+function renameUserTag(id, newName) {
+  try {
+    const bare = normalizeTagName(newName);
+    if (!bare) throw new Error('Tag name required');
+    if (SYSTEM_TAG_NAMES.has(bare)) {
+      throw new Error('Cannot rename to a system tag');
+    }
+    const db = getDb();
+    const src = db.prepare('SELECT * FROM tags WHERE id = ?').get(Number(id));
+    if (!src) throw new Error('Tag not found');
+    if (src.is_system) throw new Error('Cannot rename a system tag');
+    if (src.name === bare) return { id: src.id, name: src.name };
+
+    const dest = db.prepare('SELECT * FROM tags WHERE name = ?').get(bare);
+    if (dest && dest.is_system) {
+      throw new Error('Cannot rename to a system tag');
+    }
+
+    const run = db.transaction(() => {
+      if (dest && dest.id !== src.id) {
+        const links = db
+          .prepare('SELECT * FROM item_tags WHERE tag_id = ?')
+          .all(src.id);
+        const hasDest = db.prepare(
+          `SELECT id FROM item_tags
+           WHERE item_type = ? AND item_id = ? AND tag_id = ?`
+        );
+        const move = db.prepare('UPDATE item_tags SET tag_id = ? WHERE id = ?');
+        const drop = db.prepare('DELETE FROM item_tags WHERE id = ?');
+        for (const link of links) {
+          if (hasDest.get(link.item_type, link.item_id, dest.id)) {
+            drop.run(link.id);
+          } else {
+            move.run(dest.id, link.id);
+          }
+        }
+        db.prepare('DELETE FROM tags WHERE id = ?').run(src.id);
+        return { id: dest.id, name: dest.name };
+      }
+      db.prepare('UPDATE tags SET name = ? WHERE id = ?').run(bare, src.id);
+      return { id: src.id, name: bare };
+    });
+    return run();
+  } catch (err) {
+    logError('renameUserTag', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete a user tag and all item_tags rows. Does not delete the items.
+ * @param {number} id
+ */
+function deleteUserTag(id) {
+  try {
+    const db = getDb();
+    const src = db.prepare('SELECT * FROM tags WHERE id = ?').get(Number(id));
+    if (!src) throw new Error('Tag not found');
+    if (src.is_system) throw new Error('Cannot delete a system tag');
+    const run = db.transaction(() => {
+      db.prepare('DELETE FROM item_tags WHERE tag_id = ?').run(src.id);
+      db.prepare('DELETE FROM tags WHERE id = ?').run(src.id);
+    });
+    run();
+    return true;
+  } catch (err) {
+    logError('deleteUserTag', err);
+    throw err;
+  }
+}
+
 module.exports = {
   getOrCreateTagId,
   getItemTagNames,
@@ -279,6 +357,8 @@ module.exports = {
   listItemIdsWithTag,
   listUserTagsWithCounts,
   listTagItems,
+  renameUserTag,
+  deleteUserTag,
   normalizeTagName,
   normalizeTagNames,
 };

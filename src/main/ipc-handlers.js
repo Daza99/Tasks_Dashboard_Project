@@ -60,6 +60,8 @@ const {
   deleteBills,
   deleteBillPayment,
   deleteBillPayments,
+  listBillCategories,
+  createBillCategory,
 } = require('../services/db/bills');
 const {
   createEvent,
@@ -85,6 +87,8 @@ const {
   listTags,
   listUserTagsWithCounts,
   listTagItems,
+  renameUserTag,
+  deleteUserTag,
 } = require('../services/db/tags');
 const {
   setLocked,
@@ -116,6 +120,7 @@ const {
   getList,
   listLists,
   renameList,
+  updateList,
   setListTags,
   deleteList,
   deleteLists,
@@ -522,6 +527,8 @@ function registerIpcHandlers() {
   ipcMain.handle('bills:deletePaymentsMany', (_e, ids) =>
     deleteBillPayments(ids || [])
   );
+  ipcMain.handle('bills:categories', () => listBillCategories());
+  ipcMain.handle('bills:createCategory', (_e, name) => createBillCategory(name));
 
   // --- Events / Calendar ---
   ipcMain.handle('events:get', (_e, id) => getEvent(id));
@@ -555,6 +562,8 @@ function registerIpcHandlers() {
   );
   ipcMain.handle('tags:inspect', () => inspectTags('manual'));
   ipcMain.handle('tags:inspectLog', (_e, opts) => listInspectLog(opts || {}));
+  ipcMain.handle('tags:rename', (_e, id, newName) => renameUserTag(id, newName));
+  ipcMain.handle('tags:delete', (_e, id) => deleteUserTag(id));
 
   // --- Cleanup containers + padlock ---
   ipcMain.handle('containers:listExpired7', () => listExpired7());
@@ -579,6 +588,7 @@ function registerIpcHandlers() {
   ipcMain.handle('lists:get', (_e, id) => getList(id));
   ipcMain.handle('lists:create', (_e, data) => createList(data));
   ipcMain.handle('lists:rename', (_e, id, name) => renameList(id, name));
+  ipcMain.handle('lists:update', (_e, id, fields) => updateList(id, fields || {}));
   ipcMain.handle('lists:setTags', (_e, id, tags) => setListTags(id, tags));
   ipcMain.handle('lists:delete', (_e, id) => deleteList(id));
   ipcMain.handle('lists:deleteMany', (_e, ids) => deleteLists(ids || []));

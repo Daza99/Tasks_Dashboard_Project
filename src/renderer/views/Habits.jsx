@@ -20,8 +20,15 @@ import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { matchesEntitySearch } from '../../utils/entity-search.js';
 
-const FREQS = ['daily', 'weekly', 'monthly'];
-const FILTER_OPTS = ['all', 'daily', 'weekly', 'monthly'];
+const FREQS = ['daily', '3day', 'weekly', 'monthly'];
+const FILTER_OPTS = ['all', 'daily', '3day', 'weekly', 'monthly'];
+
+/** Stored freq → UI label (3day is two words). */
+function freqLabel(f) {
+  if (f === 'all') return 'All';
+  if (f === '3day') return '3 Day';
+  return f.charAt(0).toUpperCase() + f.slice(1);
+}
 
 /** Parse tags for create/update — drop system names from user field. */
 function parseTagsInput(raw) {
@@ -42,6 +49,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
   const [tagsInput, setTagsInput] = useState('');
   const [priority, setPriority] = useState(DEFAULT_PRIORITY);
   const [details, setDetails] = useState('');
+  const [showOnCalendar, setShowOnCalendar] = useState(false);
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
@@ -52,6 +60,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
   const [editTags, setEditTags] = useState('');
   const [editPriority, setEditPriority] = useState(DEFAULT_PRIORITY);
   const [editDetails, setEditDetails] = useState('');
+  const [editOnCalendar, setEditOnCalendar] = useState(false);
   const [freqFilter, setFreqFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -111,12 +120,14 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
         tags: parseTagsInput(tagsInput),
         priority,
         description: details.trim() || null,
+        show_on_calendar: showOnCalendar,
       });
       setName('');
       setNudge('');
       setTagsInput('');
       setPriority(DEFAULT_PRIORITY);
       setDetails('');
+      setShowOnCalendar(false);
       invalidateTagCatalog();
       await load();
       await refresh();
@@ -134,6 +145,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
     setEditTags(userTagsDisplay(h.tags));
     setEditPriority(h.priority ?? DEFAULT_PRIORITY);
     setEditDetails(h.description || '');
+    setEditOnCalendar(Number(h.show_on_calendar) !== 0);
   }
 
   async function saveEdit(e) {
@@ -146,6 +158,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
         tags: parseTagsInput(editTags),
         priority: editPriority,
         description: editDetails.trim() || null,
+        show_on_calendar: editOnCalendar,
       });
       setEditingId(null);
       invalidateTagCatalog();
@@ -164,6 +177,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
 
   async function remove(id) {
     await window.api.deleteHabit(id);
+    setEditingId(null);
     await load();
     await refresh();
   }
@@ -204,7 +218,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
         >
           {FILTER_OPTS.map((f) => (
             <option key={f} value={f}>
-              {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+              {freqLabel(f)}
             </option>
           ))}
         </select>
@@ -227,7 +241,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
       <p className="module-view__hint">
         {isArchive
           ? 'Shelved habits. Activate restores them to the active list.'
-          : 'Daily / weekly / monthly check-in. Optional nudge fires a #nudge popup.'}
+          : 'Daily / 3 Day / weekly / monthly check-in. Optional nudge fires a #nudge popup.'}
       </p>
 
       {isArchive ? (
@@ -256,7 +270,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
                 className={frequency === f ? 'active' : ''}
                 onClick={() => setFrequency(f)}
               >
-                {f}
+                {f === '3day' ? '3 Day' : f}
               </button>
             ))}
             <button type="button" onClick={() => setMode('archive')}>
@@ -283,6 +297,14 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
           <div className="reminder-meta-row">
             <div className="reminder-meta-row__left">
               <PrioritySelect id="habit-priority" value={priority} onChange={setPriority} />
+              <label className="cal-appt-check">
+                <input
+                  type="checkbox"
+                  checked={showOnCalendar}
+                  onChange={(e) => setShowOnCalendar(e.target.checked)}
+                />
+                Add to Calendar
+              </label>
             </div>
             <DetailsInline
               value={details}
@@ -335,7 +357,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
                       className={editFreq === f ? 'active' : ''}
                       onClick={() => setEditFreq(f)}
                     >
-                      {f}
+                      {f === '3day' ? '3 Day' : f}
                     </button>
                   ))}
                 </div>
@@ -363,6 +385,14 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
                       value={editPriority}
                       onChange={setEditPriority}
                     />
+                    <label className="cal-appt-check">
+                      <input
+                        type="checkbox"
+                        checked={editOnCalendar}
+                        onChange={(e) => setEditOnCalendar(e.target.checked)}
+                      />
+                      Add to Calendar
+                    </label>
                   </div>
                   <DetailsInline
                     value={editDetails}
@@ -372,6 +402,13 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
                   />
                 </div>
                 <div className="item-row__actions">
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => remove(editingId)}
+                  >
+                    Delete
+                  </button>
                   <button type="submit">Save</button>
                   <button type="button" onClick={() => setEditingId(null)}>
                     Cancel
@@ -401,7 +438,7 @@ export default function HabitsView({ editId = null, onEditConsumed }) {
                         {h.name}
                       </strong>
                       <div className="module-list__meta">
-                        {h.frequency}
+                        {freqLabel(h.frequency)}
                         {h.nudge_time ? ` · nudge ${h.nudge_time}` : ''}
                         {` · streak ${h.streak || 0}`}
                         {!isArchive && h.completed_today ? ' · done today' : ''}

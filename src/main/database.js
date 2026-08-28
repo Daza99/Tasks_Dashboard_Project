@@ -189,6 +189,7 @@ function migrateSchema() {
   addHabit('last_nudge_date', 'last_nudge_date DATE');
   addHabit('description', 'description TEXT');
   addHabit('priority', 'priority INTEGER DEFAULT 3');
+  addHabit('show_on_calendar', 'show_on_calendar INTEGER DEFAULT 0');
 
   const billCols = db.prepare('PRAGMA table_info(bills)').all().map((c) => c.name);
   const addBill = (col, ddl) => {
@@ -300,6 +301,25 @@ function migrateSchema() {
     ).run();
   }
 
+  // Existing monthly habits were auto-synced; keep them on calendar.
+  const habitCalFlag = db
+    .prepare("SELECT value FROM settings WHERE key = 'habits_cal_optin_v1'")
+    .get();
+  if (!habitCalFlag || habitCalFlag.value !== '1') {
+    db.prepare(
+      `UPDATE habits SET show_on_calendar = 1 WHERE frequency = 'monthly'`
+    ).run();
+    db.prepare(
+      `INSERT INTO settings (key, value) VALUES ('habits_cal_optin_v1', '1')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run();
+  }
+
+  const taskCols = db.prepare('PRAGMA table_info(tasks)').all().map((c) => c.name);
+  if (!taskCols.includes('show_on_calendar')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN show_on_calendar INTEGER DEFAULT 0');
+  }
+
   migrateContainerColumns();
   migrateCalendarLinks();
   migrateListsLocal();
@@ -307,6 +327,7 @@ function migrateSchema() {
   migrateListsHashtagRetagAfterInspector();
   migrateTagInspector();
   migrateNotesModule();
+  migrateBillCategories();
   migrateWallpaperColors();
 }
 
@@ -322,6 +343,36 @@ function migrateNotesModule() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+}
+
+/** Bill category catalog (dropdown + typeahead). Seed from existing bills. */
+function migrateBillCategories() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bill_categories (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  const flag = db
+    .prepare("SELECT value FROM settings WHERE key = 'bill_categories_seed_v1'")
+    .get();
+  if (!flag || flag.value !== '1') {
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT trim(category) AS name FROM bills
+         WHERE category IS NOT NULL AND trim(category) != ''`
+      )
+      .all();
+    const ins = db.prepare('INSERT OR IGNORE INTO bill_categories (name) VALUES (?)');
+    for (const r of rows) {
+      if (r.name) ins.run(r.name);
+    }
+    db.prepare(
+      `INSERT INTO settings (key, value) VALUES ('bill_categories_seed_v1', '1')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run();
+  }
 }
 
 /**
@@ -413,6 +464,7 @@ function migrateListsLocal() {
   const listCols = db.prepare('PRAGMA table_info(lists)').all().map((c) => c.name);
   if (!listCols.includes('content')) db.exec('ALTER TABLE lists ADD COLUMN content TEXT');
   if (!listCols.includes('style_json')) db.exec('ALTER TABLE lists ADD COLUMN style_json TEXT');
+  if (!listCols.includes('description')) db.exec('ALTER TABLE lists ADD COLUMN description TEXT');
 
   const flag = db.prepare("SELECT value FROM settings WHERE key = 'lists_local_v1'").get();
   if (flag && flag.value === '1') return;

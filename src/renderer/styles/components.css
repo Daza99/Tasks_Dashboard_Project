@@ -1213,6 +1213,13 @@
   color: #000;
   background: #fff;
 }
+.module-filter-bar__checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: flex-start;
+  padding-top: 2px;
+}
 .module-filter-bar__check {
   display: flex;
   align-items: center;
@@ -1222,6 +1229,9 @@
   padding-bottom: 8px;
   cursor: pointer;
   user-select: none;
+}
+.module-filter-bar__checks .module-filter-bar__check {
+  padding-bottom: 0;
 }
 
 /* Tags catalog */
@@ -1248,6 +1258,11 @@
   align-items: baseline;
   gap: 8px;
   padding: 8px 4px 2px;
+}
+.module-list__item .tags-catalog__head {
+  padding: 4px 0;
+  flex: 1;
+  min-width: 0;
 }
 .tags-catalog__name {
   font-weight: 600;
@@ -1356,16 +1371,18 @@
 }
 
 /* Ghost tag autocomplete (TagInput / TagSearchInput / Quick Add / Lists).
-   Chrome is locked to Dark Glass navy — custom/Light Glass --input-bg/--text-muted
-   can match and hide the ghost suffix. Opaque fill so wallpaper cannot wash it. */
+   Navy fill on the wrapper; field is transparent so ghost-rest shows through. */
 .tag-input {
   position: relative;
   width: 100%;
   font: inherit;
+  background: #28374f;
+  border-radius: 8px;
 }
 .tag-input__ghost {
   position: absolute;
   inset: 0;
+  z-index: 0;
   display: flex;
   align-items: center;
   padding: 8px 10px;
@@ -1386,8 +1403,9 @@
    post-fix log: bg stayed Light Glass rgba(255,255,255,0.9). */
 .tag-input input.tag-input__field {
   position: relative;
+  z-index: 1;
   width: 100%;
-  background: #28374f !important;
+  background: transparent !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   border-radius: 8px;
   padding: 8px 10px;
@@ -1460,10 +1478,23 @@
   color: var(--button-text);
 }
 /* Save/Cancel: beat muted .item-row__actions override */
-.edit-form .item-row__actions button:not(.danger) {
+.edit-form .item-row__actions button:not(.danger),
+.create-form .item-row__actions button:not(.danger):not(.btn-light) {
   color: var(--button-text);
   border-color: var(--button-text);
   filter: brightness(1.12);
+}
+.create-form .item-row__actions button.btn-light {
+  color: #111;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  filter: none;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.create-form .item-row__actions button.btn-primary {
+  padding: 8px 14px;
+  font-size: 13px;
 }
 .module-list__row {
   display: flex;
@@ -1480,6 +1511,17 @@
 
 .bill-amount-row {
   flex-wrap: wrap;
+}
+.bill-cat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.bill-cat-row select,
+.bill-cat-row input[type='text'] {
+  flex: 1 1 140px;
+  min-width: 0;
 }
 .bill-check {
   display: inline-flex;
@@ -2088,6 +2130,7 @@
 .lists-detail h2 {
   margin: 0 0 4px;
   font-size: 16px;
+  cursor: text;
 }
 .lists-detail__head {
   display: flex;
@@ -2100,6 +2143,43 @@
 .lists-detail__title {
   min-width: 0;
   flex: 1 1 160px;
+}
+.lists-detail__tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.lists-detail__tools .lists-hashtag-editor {
+  flex: 1;
+}
+.lists-title-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: text;
+}
+.list-editor__body {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.4fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.list-editor__body .details-inline,
+.list-editor__body .details-inline__textarea {
+  min-height: 120px;
+}
+.lists-folder__row .details-preview {
+  -webkit-line-clamp: 1;
+  margin-top: 4px;
 }
 .lists-hashtag-editor {
   display: flex;
@@ -2791,6 +2871,18 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+.tracker-list-toolbar__right button.danger {
+  color: #b00020;
+  background: #fff;
+  border: 1px solid rgba(176, 0, 32, 0.45);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.tracker-list-toolbar__right button.danger:disabled {
+  color: #111;
+  opacity: 0.45;
 }
 .tracker-list__main {
   display: flex;

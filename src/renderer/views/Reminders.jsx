@@ -51,6 +51,18 @@ function scopeFromTags(tags = []) {
   return 'today';
 }
 
+/** Same ids as bills quarterly tooltip: title = 3 Months. */
+const REM_RECUR = [
+  { id: 'daily', label: 'Daily' },
+  { id: 'monthly', label: 'Monthly' },
+  { id: 'fortnight', label: 'Fortnight' },
+  { id: 'quarterly', label: 'Quarterly', title: '3 Months' },
+];
+
+function knownRecurrence(id) {
+  return REM_RECUR.some((r) => r.id === id) ? id : null;
+}
+
 /** Local yyyy-MM-dd for the create-form scope. */
 function createDueDate(scope, date) {
   if (scope === 'today') return todayKey();
@@ -87,7 +99,7 @@ export default function RemindersView({
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [tagsInput, setTagsInput] = useState('');
   const [appointment, setAppointment] = useState(false);
-  const [daily, setDaily] = useState(false);
+  const [recurrence, setRecurrence] = useState(null); // daily | monthly | fortnight | quarterly | null
   const [nudge, setNudge] = useState(false);
   const [nudgeMode, setNudgeMode] = useState('day_before');
   const [customDate, setCustomDate] = useState(() => todayKey());
@@ -102,7 +114,7 @@ export default function RemindersView({
   const [editDue, setEditDue] = useState('');
   const [editTags, setEditTags] = useState('');
   const [editAppointment, setEditAppointment] = useState(false);
-  const [editDaily, setEditDaily] = useState(false);
+  const [editRecurrence, setEditRecurrence] = useState(null);
   const [editNudge, setEditNudge] = useState(false);
   const [editNudgeMode, setEditNudgeMode] = useState('day_before');
   const [editCustomDate, setEditCustomDate] = useState(() => todayKey());
@@ -194,7 +206,7 @@ export default function RemindersView({
         datetime: buildDatetime(),
         tags: normalizeUserTagNames(tagsInput),
         is_appointment: scope !== 'open' && appointment,
-        recurrence: scope !== 'open' && daily ? 'daily' : null,
+        recurrence: scope !== 'open' ? recurrence : null,
         description: details.trim() || null,
         nudge: scope !== 'open' && nudge,
         nudge_mode: scope !== 'open' && nudge ? nudgeMode : null,
@@ -206,7 +218,7 @@ export default function RemindersView({
       setTitle('');
       setTagsInput('');
       setAppointment(false);
-      setDaily(false);
+      setRecurrence(null);
       setNudge(false);
       setNudgeMode('day_before');
       setDetails('');
@@ -226,7 +238,7 @@ export default function RemindersView({
     setEditDue(toLocalInput(r.datetime));
     setEditTags(userTagsDisplay(r.tags));
     setEditAppointment(Number(r.is_appointment) === 1);
-    setEditDaily(r.recurrence === 'daily');
+    setEditRecurrence(knownRecurrence(r.recurrence));
     const hasNudge = Boolean(r.nudge_datetime);
     setEditNudge(hasNudge);
     setEditNudgeMode(r.nudge_mode === 'custom' ? 'custom' : 'day_before');
@@ -261,7 +273,7 @@ export default function RemindersView({
         scope: editScope,
         tags: normalizeUserTagNames(editTags),
         is_appointment: editScope !== 'open' && editAppointment,
-        recurrence: editScope !== 'open' && editDaily ? 'daily' : null,
+        recurrence: editScope !== 'open' ? editRecurrence : null,
         description: editDetails.trim() || null,
         nudge: editScope !== 'open' && editNudge,
         nudge_mode: editScope !== 'open' && editNudge ? editNudgeMode : null,
@@ -332,7 +344,7 @@ export default function RemindersView({
     <div className="module-view">
       <h1>Reminders</h1>
       <p className="module-view__hint">
-        Scope required: Today / Tomorrow / Date / Open. Tick Appointment to put it on the calendar.
+        Scope required: Today / Tomorrow / Date / Open. Tick Add to Calendar to put it on the calendar.
       </p>
 
       <form className="create-form glass-inset" onSubmit={create}>
@@ -351,7 +363,7 @@ export default function RemindersView({
               onClick={() => {
                 setScope(s);
                 if (s === 'open') {
-                  setDaily(false);
+                  setRecurrence(null);
                   setNudge(false);
                 }
               }}
@@ -377,16 +389,18 @@ export default function RemindersView({
                   checked={appointment}
                   onChange={(e) => setAppointment(e.target.checked)}
                 />
-                Appointment (add to calendar)
+                Add to Calendar
               </label>
-              <label className="cal-appt-check">
-                <input
-                  type="checkbox"
-                  checked={daily}
-                  onChange={(e) => setDaily(e.target.checked)}
-                />
-                Daily
-              </label>
+              {REM_RECUR.map((opt) => (
+                <label key={opt.id} className="cal-appt-check" title={opt.title}>
+                  <input
+                    type="checkbox"
+                    checked={recurrence === opt.id}
+                    onChange={() => setRecurrence((cur) => (cur === opt.id ? null : opt.id))}
+                  />
+                  {opt.label}
+                </label>
+              ))}
               <NudgeRow
                 nudge={nudge}
                 mode={nudgeMode}
@@ -489,7 +503,7 @@ export default function RemindersView({
                       onClick={() => {
                         setEditScope(s);
                         if (s === 'open') {
-                          setEditDaily(false);
+                          setEditRecurrence(null);
                           setEditNudge(false);
                         }
                       }}
@@ -518,16 +532,20 @@ export default function RemindersView({
                           checked={editAppointment}
                           onChange={(e) => setEditAppointment(e.target.checked)}
                         />
-                        Appointment (add to calendar)
+                        Add to Calendar
                       </label>
-                      <label className="cal-appt-check">
-                        <input
-                          type="checkbox"
-                          checked={editDaily}
-                          onChange={(e) => setEditDaily(e.target.checked)}
-                        />
-                        Daily
-                      </label>
+                      {REM_RECUR.map((opt) => (
+                        <label key={opt.id} className="cal-appt-check" title={opt.title}>
+                          <input
+                            type="checkbox"
+                            checked={editRecurrence === opt.id}
+                            onChange={() =>
+                              setEditRecurrence((cur) => (cur === opt.id ? null : opt.id))
+                            }
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
                       <NudgeRow
                         nudge={editNudge}
                         mode={editNudgeMode}
@@ -611,7 +629,7 @@ export default function RemindersView({
                       {userTagsOnly(r.tags).length
                         ? ` · ${formatTagsDisplay(userTagsOnly(r.tags))}`
                         : ''}
-                      {r.recurrence === 'daily' ? ' · daily' : ''}{' '}
+                      {knownRecurrence(r.recurrence) ? ` · ${r.recurrence}` : ''}{' '}
                       · {fmt(r.datetime)}
                     </div>
                     <DetailsPreview text={r.description} />

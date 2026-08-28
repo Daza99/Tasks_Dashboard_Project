@@ -66,13 +66,14 @@ function enrichList(row) {
  * Create a list. type is todo | bullet.
  * Optional tag (bare or #prefixed) is attached via item_tags + whitelist file.
  */
-function createList({ name, type, tag }) {
+function createList({ name, type, tag, description }) {
   try {
     const listName = uniqueTitleFor('list', name);
     assertType(type);
+    const details = description != null ? String(description).trim() || null : null;
     const info = getDb()
-      .prepare('INSERT INTO lists (name, type) VALUES (?, ?)')
-      .run(listName, type);
+      .prepare('INSERT INTO lists (name, type, description) VALUES (?, ?, ?)')
+      .run(listName, type, details);
     const id = Number(info.lastInsertRowid);
     const bare = normalizeTagName(tag);
     if (bare) {
@@ -135,12 +136,29 @@ function listLists(opts = {}) {
 }
 
 function renameList(id, name) {
+  return updateList(id, { name });
+}
+
+/**
+ * Patch list name and/or details. Empty details stores null.
+ * @param {number} id
+ * @param {{ name?: string, description?: string|null }} fields
+ */
+function updateList(id, fields = {}) {
   try {
-    const listName = uniqueTitleFor('list', name, id);
-    getDb().prepare('UPDATE lists SET name = ? WHERE id = ?').run(listName, id);
+    const row = getDb().prepare('SELECT id FROM lists WHERE id = ?').get(id);
+    if (!row) throw new Error('List not found');
+    if (fields.name !== undefined) {
+      const listName = uniqueTitleFor('list', fields.name, id);
+      getDb().prepare('UPDATE lists SET name = ? WHERE id = ?').run(listName, id);
+    }
+    if (fields.description !== undefined) {
+      const details = fields.description != null ? String(fields.description).trim() || null : null;
+      getDb().prepare('UPDATE lists SET description = ? WHERE id = ?').run(details, id);
+    }
     return getList(id);
   } catch (err) {
-    logError('renameList', err);
+    logError('updateList', err);
     throw err;
   }
 }
@@ -369,6 +387,7 @@ module.exports = {
   getList,
   listLists,
   renameList,
+  updateList,
   setListTags,
   deleteList,
   deleteLists,

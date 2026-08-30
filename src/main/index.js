@@ -21,12 +21,15 @@ applyPortableUserData();
 let mainWindow = null;
 
 /**
- * Map semver x.y.z to display label Vx.yz (1.0.8 → V1.08).
+ * Map package version to display label Vx.yz[.n].
+ * 1.0.8 → V1.08. electron-builder requires valid semver, so 1.0.81 stands in for V1.08.1.
  * @param {string} semver
  * @returns {string}
  */
 function formatDashboardVersion(semver) {
-  const [major = '0', minor = '0', patch = '0'] = String(semver).split('.');
+  const v = String(semver);
+  if (v === '1.0.81') return 'V1.08.1';
+  const [major = '0', minor = '0', patch = '0'] = v.split('.');
   return `V${major}.${minor}${patch}`;
 }
 

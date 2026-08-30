@@ -253,13 +253,16 @@ function registerNotificationIpc() {
     try {
       const { id, itemType } = parsePayload(payload);
       if (itemType === 'countdown') return true;
+      // Cap custom hours at 72h; do not raise a floor (default snooze is 10m)
+      const mins = Number(minutes);
+      const useMins = Number.isFinite(mins) ? Math.min(mins, 72 * 60) : minutes;
       markResolved(itemType, id);
-      if (itemType === 'task') snoozeTask(id, minutes);
-      else if (itemType === 'bill') snoozeBill(id, minutes);
-      else if (itemType === 'bill_nudge') snoozeBillNudge(id, minutes);
-      else if (itemType === 'habit') snoozeHabit(id, minutes);
-      else if (itemType === 'reminder_nudge') snoozeReminderNudge(id, minutes);
-      else snoozeReminder(id, minutes);
+      if (itemType === 'task') snoozeTask(id, useMins);
+      else if (itemType === 'bill') snoozeBill(id, useMins);
+      else if (itemType === 'bill_nudge') snoozeBillNudge(id, useMins);
+      else if (itemType === 'habit') snoozeHabit(id, useMins);
+      else if (itemType === 'reminder_nudge') snoozeReminderNudge(id, useMins);
+      else snoozeReminder(id, useMins);
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession(itemType, id);
       // Bill session keys include alertKind — clear both variants

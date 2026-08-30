@@ -35,6 +35,7 @@
         color: var(--notif-text);
         box-sizing: border-box;
         overflow: hidden;
+        position: relative;
       }
       .chrome {
         display: flex;
@@ -128,6 +129,7 @@
       }
       .actions {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
         justify-content: flex-end;
         flex: 0 0 auto;
@@ -145,6 +147,73 @@
         border-color: var(--notif-border);
         background: transparent;
         color: var(--notif-text);
+      }
+      /* Solid white / #111 — same contrast shell as .confirm-dialog */
+      .snooze-plus-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 14px 14px 12px;
+        background: #fff;
+        color: #111;
+        color-scheme: light;
+        border-radius: 11px;
+        -webkit-app-region: no-drag;
+      }
+      .snooze-plus-overlay[hidden] {
+        display: none !important;
+      }
+      .snooze-plus-overlay h2 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        font-weight: 600;
+        color: #111;
+      }
+      .snooze-plus-overlay label {
+        display: block;
+        font-size: 12px;
+        color: #111;
+        margin-bottom: 4px;
+      }
+      .snooze-plus-overlay input[type="number"] {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        color: #111;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font: inherit;
+        font-size: 14px;
+      }
+      .snooze-plus-hint {
+        margin: 6px 0 12px;
+        font-size: 11px;
+        color: #111;
+        opacity: 0.7;
+      }
+      .snooze-plus-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .snooze-plus-actions button {
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        background: #fff;
+        color: #111;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .snooze-plus-actions button.primary {
+        background: #111;
+        border-color: #111;
+        color: #fff;
       }
     </style>
   </head>
@@ -166,8 +235,29 @@
       <div class="actions">
         <button type="button" class="secondary" id="btn-view">Edit</button>
         <button type="button" class="secondary" id="btn-snooze">Snooze</button>
+        <button type="button" class="secondary" id="btn-snooze-plus">Snooze +</button>
         <button type="button" class="secondary" id="btn-delete" hidden>Delete</button>
         <button type="button" id="btn-done">Done</button>
+      </div>
+      <div id="snooze-plus-overlay" class="snooze-plus-overlay" hidden>
+        <form id="snooze-plus-form">
+          <h2 id="snooze-plus-title">Snooze for</h2>
+          <label for="snooze-hours">Hours</label>
+          <input
+            type="number"
+            id="snooze-hours"
+            min="0.5"
+            max="72"
+            step="0.5"
+            value="1"
+            aria-labelledby="snooze-plus-title"
+          />
+          <p class="snooze-plus-hint">0.5 – 72</p>
+          <div class="snooze-plus-actions">
+            <button type="button" id="btn-snooze-plus-cancel">Cancel</button>
+            <button type="submit" class="primary">Snooze</button>
+          </div>
+        </form>
       </div>
     </div>
     <script>
@@ -215,6 +305,7 @@
       document.getElementById('btn-snooze').textContent = 'Snooze ' + snoozeMins + 'm';
       if (itemType === 'countdown') {
         document.getElementById('btn-snooze').hidden = true;
+        document.getElementById('btn-snooze-plus').hidden = true;
         const del = document.getElementById('btn-delete');
         del.hidden = false;
         del.onclick = () => window.notifApi.delete(payload);
@@ -245,12 +336,49 @@
         });
       }
 
+      const overlay = document.getElementById('snooze-plus-overlay');
+      const hoursInput = document.getElementById('snooze-hours');
+
+      /** Clamp hours to 0.5–72 in 0.5 steps; return minutes or null. */
+      function hoursToMinutes(raw) {
+        if (raw === '' || raw == null) return null;
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return null;
+        const snapped = Math.round(n * 2) / 2;
+        const hours = Math.min(72, Math.max(0.5, snapped));
+        return Math.round(hours * 60);
+      }
+
+      function openSnoozePlus() {
+        overlay.hidden = false;
+        hoursInput.value = '1';
+        requestAnimationFrame(() => hoursInput.focus());
+      }
+
+      function closeSnoozePlus() {
+        overlay.hidden = true;
+      }
+
       document.getElementById('btn-done').onclick = () => {
         window.notifApi.complete(payload);
       };
       document.getElementById('btn-snooze').onclick = () => {
         window.notifApi.snooze(payload, snoozeMins);
       };
+      document.getElementById('btn-snooze-plus').onclick = openSnoozePlus;
+      document.getElementById('btn-snooze-plus-cancel').onclick = closeSnoozePlus;
+      document.getElementById('snooze-plus-form').onsubmit = (e) => {
+        e.preventDefault();
+        const minutes = hoursToMinutes(hoursInput.value);
+        if (minutes == null) return;
+        window.notifApi.snooze(payload, minutes);
+      };
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || overlay.hidden) return;
+        e.preventDefault();
+        e.stopPropagation();
+        closeSnoozePlus();
+      });
       document.getElementById('btn-view').onclick = () => {
         window.notifApi.view(payload);
       };

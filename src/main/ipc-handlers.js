@@ -62,12 +62,17 @@ const {
   deleteBillPayments,
   listBillCategories,
   createBillCategory,
+  countBillsWithCategory,
+  renameBillCategory,
+  deleteBillCategory,
+  mergeBillCategories,
 } = require('../services/db/bills');
 const {
   createEvent,
   getEvent,
   listEventsForDay,
   listEventsInRange,
+  listCalendarYearOptions,
   updateEvent,
   deleteEvent,
 } = require('../services/db/events');
@@ -506,7 +511,9 @@ function registerIpcHandlers() {
       fields?.due_date !== undefined ||
       fields?.nudge !== undefined ||
       fields?.nudge_datetime !== undefined ||
-      fields?.nudge_mode !== undefined
+      fields?.nudge_mode !== undefined ||
+      fields?.date_offset_days !== undefined ||
+      fields?.remind_days_before !== undefined
     ) {
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession('bill', id);
@@ -517,7 +524,15 @@ function registerIpcHandlers() {
     refreshOpenNotifications('bill', id);
     return row;
   });
-  ipcMain.handle('bills:markPaid', (_e, id, opts) => markPaid(id, opts || {}));
+  ipcMain.handle('bills:markPaid', (_e, id, opts) => {
+    const row = markPaid(id, opts || {});
+    const { clearFiredSession } = require('./scheduler');
+    clearFiredSession('bill', id);
+    clearFiredSession('bill', `${id}:due`);
+    clearFiredSession('bill', `${id}:before`);
+    clearFiredSession('bill_nudge', id);
+    return row;
+  });
   ipcMain.handle('bills:amountStats', (_e, name) => getBillAmountStats(name));
   ipcMain.handle('bills:listPayments', (_e, opts) => listBillPayments(opts || {}));
   ipcMain.handle('bills:paymentFilterOptions', () => listBillPaymentFilterOptions());
@@ -529,12 +544,23 @@ function registerIpcHandlers() {
   );
   ipcMain.handle('bills:categories', () => listBillCategories());
   ipcMain.handle('bills:createCategory', (_e, name) => createBillCategory(name));
+  ipcMain.handle('bills:countCategory', (_e, name) => countBillsWithCategory(name));
+  ipcMain.handle('bills:renameCategory', (_e, from, to) =>
+    renameBillCategory(from, to)
+  );
+  ipcMain.handle('bills:deleteCategory', (_e, name) => deleteBillCategory(name));
+  ipcMain.handle('bills:mergeCategories', (_e, keep, mergeAway) =>
+    mergeBillCategories(keep, mergeAway)
+  );
 
   // --- Events / Calendar ---
   ipcMain.handle('events:get', (_e, id) => getEvent(id));
   ipcMain.handle('events:listDay', (_e, day) => listEventsForDay(day));
   ipcMain.handle('events:listRange', (_e, start, end) =>
     listEventsInRange(start, end)
+  );
+  ipcMain.handle('events:yearOptions', (_e, visitedYear) =>
+    listCalendarYearOptions(visitedYear)
   );
   ipcMain.handle('events:create', (_e, data) => createEvent(data));
   ipcMain.handle('events:update', (_e, id, fields) => updateEvent(id, fields));

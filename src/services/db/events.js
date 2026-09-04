@@ -1,7 +1,7 @@
 /**
  * Calendar events CRUD.
  */
-const { getDb } = require('../../main/database');
+const { getDb, getAllSettings, setSetting } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { startOfDay, endOfDay } = require('./reminders');
 const { dateKey } = require('./habits');
@@ -22,7 +22,7 @@ const VISIBLE = 'AND COALESCE(e.hidden, 0) = 0';
 const EVENT_WITH_NUDGE = `SELECT e.*,
        COALESCE(
          r.nudge_datetime,
-         CASE WHEN e.occurrence_date = b.due_date THEN b.nudge_datetime END
+         CASE WHEN e.occurrence_date = date(b.due_date, CAST(COALESCE(b.date_offset_days, 0) AS TEXT) || ' days') THEN b.nudge_datetime END
        ) AS nudge_datetime
        FROM events e
        LEFT JOIN reminders r ON e.source_type = 'reminder' AND e.source_id = r.id
@@ -159,12 +159,77 @@ function deleteEvent(id) {
   }
 }
 
+/** Local calendar year from a row; skip open-sentinel / junk. */
+function yearFromEventRow(row) {
+  const occ = row.occurrence_date;
+  if (occ && !String(occ).startsWith('9999')) {
+    const y = Number(String(occ).slice(0, 4));
+    if (y > 1970 && y < 2100) return y;
+  }
+  const iso = row.start_datetime;
+  if (!iso || String(iso).startsWith('9999')) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  if (y > 1970 && y < 2100) return y;
+  return null;
+}
+
+/** Earliest visible event year, or null if none. */
+function earliestVisibleEventYear() {
+  const rows = getDb()
+    .prepare(
+      `SELECT occurrence_date, start_datetime FROM events
+       WHERE COALESCE(hidden, 0) = 0`
+    )
+    .all();
+  let min = null;
+  for (const row of rows) {
+    const y = yearFromEventRow(row);
+    if (y == null) continue;
+    if (min == null || y < min) min = y;
+  }
+  return min;
+}
+
+/**
+ * Year dropdown: contiguous floor … currentYear+5. Floor never rises.
+ * @param {number} [visitedYear] — year on screen (‹ › can lower the floor)
+ * @returns {number[]}
+ */
+function listCalendarYearOptions(visitedYear) {
+  try {
+    const now = new Date().getFullYear();
+    const persisted = parseInt(getAllSettings().calendar_year_min, 10);
+    const eventMin = earliestVisibleEventYear();
+    const visited = Number(visitedYear);
+    const candidates = [now];
+    if (Number.isFinite(persisted)) candidates.push(persisted);
+    if (eventMin != null) candidates.push(eventMin);
+    if (Number.isFinite(visited) && visited > 1970 && visited < 2100) {
+      candidates.push(visited);
+    }
+    const floor = Math.min(...candidates);
+    if (!Number.isFinite(persisted) || floor < persisted) {
+      setSetting('calendar_year_min', String(floor));
+    }
+    const max = now + 5;
+    const out = [];
+    for (let y = floor; y <= max; y += 1) out.push(y);
+    return out;
+  } catch (err) {
+    logError('listCalendarYearOptions', err);
+    throw err;
+  }
+}
+
 module.exports = {
   createEvent,
   getEvent,
   listEventsForDay,
   listEventsInRange,
   listEventsToday,
+  listCalendarYearOptions,
   updateEvent,
   deleteEvent,
 };

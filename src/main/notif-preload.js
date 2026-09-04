@@ -4,7 +4,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('notifApi', {
-  complete: (payload) => ipcRenderer.invoke('notif:complete', payload),
+  complete: (payload, opts) => ipcRenderer.invoke('notif:complete', payload, opts),
   snooze: (payload, minutes) => ipcRenderer.invoke('notif:snooze', payload, minutes),
   ignore: (payload) => ipcRenderer.invoke('notif:ignore', payload),
   delete: (payload) => ipcRenderer.invoke('notif:delete', payload),

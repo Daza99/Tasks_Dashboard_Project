@@ -82,7 +82,12 @@ CREATE TABLE IF NOT EXISTS bills (
     show_on_calendar INTEGER DEFAULT 1,
     nudge_datetime TEXT,
     nudge_mode TEXT,
-    nudge_alerted INTEGER DEFAULT 0
+    nudge_alerted INTEGER DEFAULT 0,
+    remind_days_before INTEGER NOT NULL DEFAULT 3,
+    billing_day INTEGER,
+    date_offset_days INTEGER NOT NULL DEFAULT 0,
+    biller_region TEXT,
+    payment_type TEXT
 );
 
 -- Actual amounts paid per cycle; average keyed by bill_name
@@ -93,6 +98,8 @@ CREATE TABLE IF NOT EXISTS bill_payments (
     amount REAL NOT NULL,
     due_date DATE,
     paid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    late INTEGER DEFAULT 0,
+    schedule_changed INTEGER DEFAULT 0,
     FOREIGN KEY(bill_id) REFERENCES bills(id) ON DELETE SET NULL
 );
 

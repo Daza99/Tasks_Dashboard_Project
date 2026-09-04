@@ -1,17 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { format, isValid, parseISO } from 'date-fns';
+import { addDays, format, isValid, parseISO } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import BillPayConfirm from '../components/BillPayConfirm';
+import BillPayDateDialog from '../components/BillPayDateDialog';
 import PrioritySelect from '../components/PrioritySelect';
 import DetailsInline from '../components/DetailsInline';
 import DetailsPreview from '../components/DetailsPreview';
 import NudgeCustomDialog from '../components/NudgeCustomDialog';
 import ConfirmDialog from '../components/ConfirmDialog';
 import PromptDialog from '../components/PromptDialog';
+import BillCategoryManageDialog from '../components/BillCategoryManageDialog';
 import ListSelectToolbar from '../components/ListSelectToolbar';
 import TagSearchInput from '../components/TagSearchInput';
+import TagInput from '../components/TagInput';
 import { NudgePreview, NudgeRow, todayKey } from '../components/NudgeRow';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
+import {
+  formatTagsDisplay,
+  normalizeUserTagNames,
+  userTagsDisplay,
+} from '../../utils/tag-helpers.js';
+import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { useSelectedCard } from '../hooks/useSelectedCard';
 import { useVisibleSelection } from '../hooks/useVisibleSelection';
@@ -26,6 +35,11 @@ const RECUR = [
   { id: 'quarterly', label: 'quarterly', title: '3 Months' },
   { id: 'yearly', label: 'yearly' },
 ];
+
+const PAID_DATE_TITLE =
+  'Paid late? Only use this when the biller moved the billing date.';
+const OFFSET_DAYS_TITLE =
+  'If this biller consistently posts a day or two after the stated date (e.g. weekend to Monday). Shifts the watched date only; billing day is unchanged.';
 
 /** ISO from local date + HH:mm (bills use 09:00 default). */
 function localToIso(date, time) {
@@ -57,6 +71,43 @@ function dateFromIso(iso) {
 
 const CAT_NEW = '__new__';
 const CAT_NONE = '';
+
+const REGIONS = [
+  { id: '', label: 'Region' },
+  { id: 'nz', label: 'NZ' },
+  { id: 'us', label: 'US' },
+  { id: 'uk', label: 'UK' },
+  { id: 'other', label: 'Other' },
+];
+const PAY_TYPES = [
+  { id: '', label: 'Payment type' },
+  { id: 'card', label: 'Card' },
+  { id: 'bank', label: 'Bank direct debit' },
+];
+
+/** Watch date = base due + offset (yyyy-mm-dd). */
+function addDaysKey(iso, days) {
+  try {
+    const d = parseISO(`${iso}T12:00:00`);
+    if (!isValid(d)) return iso;
+    return format(addDays(d, Number(days) || 0), 'yyyy-MM-dd');
+  } catch {
+    return iso;
+  }
+}
+
+/** Next base due preview for Paid + date default. */
+function advanceBasePreview(iso, recurrence, billingDay) {
+  const d = parseISO(`${iso}T12:00:00`);
+  if (!isValid(d) || !recurrence) return iso;
+  if (recurrence === 'fortnight') return format(addDays(d, 14), 'yyyy-MM-dd');
+  const months = recurrence === 'yearly' ? 12 : recurrence === 'quarterly' ? 3 : 1;
+  const moved = new Date(d.getFullYear(), d.getMonth() + months, 1);
+  const last = new Date(moved.getFullYear(), moved.getMonth() + 1, 0).getDate();
+  const day = Math.min(Number(billingDay) || d.getDate(), last);
+  moved.setDate(day);
+  return format(moved, 'yyyy-MM-dd');
+}
 
 const MONTHS = [
   { id: 'ALL', label: 'ALL' },
@@ -123,6 +174,11 @@ export default function BillsView({
   const [customDate, setCustomDate] = useState(() => todayKey());
   const [customTime, setCustomTime] = useState('09:00');
   const [customOpen, setCustomOpen] = useState(null); // 'create' | 'edit' | null
+  const [remindDays, setRemindDays] = useState(3);
+  const [offsetDays, setOffsetDays] = useState(0);
+  const [billerRegion, setBillerRegion] = useState('');
+  const [paymentType, setPaymentType] = useState('');
+  const [tagsInput, setTagsInput] = useState('');
   const [stats, setStats] = useState({ count: 0, average: null, canAverage: false });
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -135,6 +191,10 @@ export default function BillsView({
   const [editCustomTime, setEditCustomTime] = useState('09:00');
   const [payingId, setPayingId] = useState(null);
   const [payActual, setPayActual] = useState('');
+  const [payMode, setPayMode] = useState('paid');
+  const [payDateBill, setPayDateBill] = useState(null);
+  const [payDateOpts, setPayDateOpts] = useState(null);
+  const [payNewDate, setPayNewDate] = useState('');
   const [editStats, setEditStats] = useState({
     count: 0,
     average: null,
@@ -153,6 +213,8 @@ export default function BillsView({
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptFor, setPromptFor] = useState('create'); // create | edit
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageName, setManageName] = useState('');
   const catBeforeNew = useRef(CAT_NONE);
 
   async function load() {
@@ -221,24 +283,26 @@ export default function BillsView({
     onSeedConsumed?.();
   }, [seedDate]);
 
-  // Today bills cannot use Day Before (would be yesterday).
+  // Today watch cannot use Day Before (would be yesterday).
   useEffect(() => {
-    if (nudge && nudgeMode === 'day_before' && due === todayKey()) {
+    const watch = addDaysKey(due, offsetDays);
+    if (nudge && nudgeMode === 'day_before' && watch === todayKey()) {
       setNudgeMode('custom');
-      setCustomDate(due);
+      setCustomDate(watch);
       setCustomTime('09:00');
     }
-  }, [nudge, nudgeMode, due]);
+  }, [nudge, nudgeMode, due, offsetDays]);
 
   useEffect(() => {
     if (!editNudge || editNudgeMode !== 'day_before') return;
     const editDue = edit.due_date || todayKey();
-    if (editDue === todayKey()) {
+    const watch = addDaysKey(editDue, Number(edit.date_offset_days) || 0);
+    if (watch === todayKey()) {
       setEditNudgeMode('custom');
-      setEditCustomDate(editDue);
+      setEditCustomDate(watch);
       setEditCustomTime('09:00');
     }
-  }, [editNudge, editNudgeMode, edit.due_date]);
+  }, [editNudge, editNudgeMode, edit.due_date, edit.date_offset_days]);
 
   function applyNudgeOn(dueDate, setOn, setMode, setCDate, setCTime) {
     setOn(true);
@@ -319,6 +383,11 @@ export default function BillsView({
         nudge_mode: nudge ? nudgeMode : null,
         nudge_datetime:
           nudge && nudgeMode === 'custom' ? localToIso(customDate, customTime) : null,
+        remind_days_before: Number(remindDays) || 0,
+        date_offset_days: Number(offsetDays) || 0,
+        biller_region: billerRegion || null,
+        payment_type: paymentType || null,
+        tags: normalizeUserTagNames(tagsInput),
       });
       setName('');
       setAmount('');
@@ -331,6 +400,12 @@ export default function BillsView({
       setNudgeMode('day_before');
       setCustomDate(todayKey());
       setCustomTime('09:00');
+      setRemindDays(3);
+      setOffsetDays(0);
+      setBillerRegion('');
+      setPaymentType('');
+      setTagsInput('');
+      invalidateTagCatalog();
       await loadCategories();
       await load();
       await refresh();
@@ -349,6 +424,35 @@ export default function BillsView({
     }
     if (apply === 'create') setCategory(v);
     else setEdit((prev) => ({ ...prev, category: v }));
+  }
+
+  /** Open manage dialog; select stays on the Category Edit placeholder. */
+  function onCategoryEditPick(name) {
+    if (!name) return;
+    setManageName(name);
+    setManageOpen(true);
+  }
+
+  /** Retarget assignment dropdowns after rename / delete / merge. */
+  function remapAssigned(prev, result) {
+    if (!prev) return prev;
+    if (result.action === 'rename' && prev === result.from) return result.to;
+    if (result.action === 'delete' && prev === result.name) return CAT_NONE;
+    if (result.action === 'merge' && prev === result.mergeAway) return result.keep;
+    return prev;
+  }
+
+  async function onCategoryManaged(result) {
+    setManageOpen(false);
+    setManageName('');
+    await loadCategories();
+    await load();
+    await refresh();
+    setCategory((prev) => remapAssigned(prev, result));
+    setEdit((prev) => ({
+      ...prev,
+      category: remapAssigned(prev.category || CAT_NONE, result),
+    }));
   }
 
   async function onNewCategory(name) {
@@ -378,6 +482,11 @@ export default function BillsView({
       priority: b.priority ?? DEFAULT_PRIORITY,
       description: b.description || '',
       show_on_calendar: Number(b.show_on_calendar) !== 0,
+      remind_days_before: b.remind_days_before ?? 3,
+      date_offset_days: b.date_offset_days ?? 0,
+      biller_region: b.biller_region || '',
+      payment_type: b.payment_type || '',
+      tags: userTagsDisplay(b.tags),
     });
     const hasNudge = Boolean(b.nudge_datetime);
     setEditNudge(hasNudge);
@@ -410,8 +519,14 @@ export default function BillsView({
           editNudge && editNudgeMode === 'custom'
             ? localToIso(editCustomDate, editCustomTime)
             : null,
+        remind_days_before: Number(edit.remind_days_before) || 0,
+        date_offset_days: Number(edit.date_offset_days) || 0,
+        biller_region: edit.biller_region || null,
+        payment_type: edit.payment_type || null,
+        tags: normalizeUserTagNames(edit.tags || ''),
       });
       setEditingId(null);
+      invalidateTagCatalog();
       await loadCategories();
       await load();
       await refresh();
@@ -420,28 +535,54 @@ export default function BillsView({
     }
   }
 
-  /** Mark paid — Electron has no window.prompt; estimate/avg uses inline actual. */
-  async function paid(b, actualOverride) {
+  /** Mark paid — estimate/avg uses inline actual; change-schedule opens a date dialog. */
+  async function paid(b, actualOverride, mode = 'paid') {
     setError('');
     const needsActual =
       b.amount_mode === 'estimate' || b.amount_mode === 'average';
     if (needsActual && actualOverride === undefined) {
       setPayingId(b.id);
+      setPayMode(mode);
       setPayActual(String(b.amount));
       return;
     }
-    let opts;
+    let opts = {};
     if (needsActual) {
       const actual = Number(actualOverride);
       if (!Number.isFinite(actual)) {
         setError('Invalid actual amount');
         return;
       }
-      opts = { actual_amount: actual };
+      opts.actual_amount = actual;
+    }
+    if (mode === 'late') opts.late = true;
+    if (mode === 'change') {
+      setPayDateBill(b);
+      setPayDateOpts(opts);
+      setPayNewDate(advanceBasePreview(b.due_date, b.recurrence, b.billing_day));
+      setPayingId(null);
+      return;
     }
     try {
       await window.api.markBillPaid(b.id, opts);
       setPayingId(null);
+      invalidateTagCatalog();
+      await load();
+      await refresh();
+    } catch (err) {
+      setError(err?.message || String(err));
+    }
+  }
+
+  async function confirmPayDate(date) {
+    const b = payDateBill;
+    const opts = { ...(payDateOpts || {}), new_due_date: date };
+    setPayDateBill(null);
+    setPayDateOpts(null);
+    if (!b) return;
+    try {
+      await window.api.markBillPaid(b.id, opts);
+      invalidateTagCatalog();
       await load();
       await refresh();
     } catch (err) {
@@ -472,6 +613,8 @@ export default function BillsView({
   }
 
   const isHistory = mode === 'history';
+  const createWatch = addDaysKey(due, offsetDays);
+  const editWatch = addDaysKey(edit.due_date || todayKey(), Number(edit.date_offset_days) || 0);
   const filteredBills = useMemo(
     () =>
       rows.filter((b) =>
@@ -694,6 +837,9 @@ export default function BillsView({
               Calc Average
             </label>
             <input type="date" value={due} onChange={(e) => setDue(e.target.value)} required />
+            {createWatch !== due && (
+              <span className="bill-watch-hint">Shows as {createWatch}</span>
+            )}
             <label className="bill-check">
               <input
                 type="checkbox"
@@ -717,20 +863,74 @@ export default function BillsView({
                 </option>
               ))}
             </select>
-            <input
-              type="text"
-              value={category}
-              list="bill-categories"
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="Category (optional)"
-              aria-label="Category"
-            />
-            <datalist id="bill-categories">
-              {categories.map((c) => (
-                <option key={c} value={c} />
+            <select
+              value=""
+              onChange={(e) => onCategoryEditPick(e.target.value)}
+              aria-label="Category Edit (choose one below)"
+            >
+              <option value="">Category Edit (choose one below)</option>
+              {categories.map((name) => (
+                <option key={`manage-${name}`} value={name}>
+                  {name}
+                </option>
               ))}
-            </datalist>
+            </select>
           </div>
+          <div className="bill-cat-row">
+            <label className="edit-label">
+              Remind days before
+              <input
+                type="number"
+                min="0"
+                max="30"
+                value={remindDays}
+                onChange={(e) => setRemindDays(e.target.value)}
+                aria-label="Remind me N days before"
+              />
+            </label>
+            <label className="edit-label" title={OFFSET_DAYS_TITLE}>
+              Adjust dates by days
+              <input
+                type="number"
+                min="-14"
+                max="14"
+                value={offsetDays}
+                onChange={(e) => setOffsetDays(e.target.value)}
+                aria-label="Adjust dates by X days"
+              />
+            </label>
+            <select
+              value={billerRegion}
+              onChange={(e) => setBillerRegion(e.target.value)}
+              aria-label="Biller region"
+            >
+              {REGIONS.map((r) => (
+                <option key={r.id || 'none'} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={paymentType}
+              onChange={(e) => setPaymentType(e.target.value)}
+              aria-label="Payment type"
+            >
+              {PAY_TYPES.map((r) => (
+                <option key={r.id || 'none'} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="bill-meta-hint">
+            US/UK card billers may post a day after the stated date.
+          </p>
+          <TagInput
+            value={tagsInput}
+            onChange={setTagsInput}
+            placeholder="#tag"
+            aria-label="Bill tags"
+          />
           <div className="reminder-meta-row">
             <div className="reminder-meta-row__left">
               <div className="kind-toggle" role="group" aria-label="Recurrence">
@@ -753,14 +953,20 @@ export default function BillsView({
               <NudgeRow
                 nudge={nudge}
                 mode={nudgeMode}
-                dueDate={due}
+                dueDate={createWatch}
                 dayBeforeTitle="09:00, one day before due"
                 onNudgeChange={(on) => {
                   if (!on) {
                     setNudge(false);
                     return;
                   }
-                  applyNudgeOn(due, setNudge, setNudgeMode, setCustomDate, setCustomTime);
+                  applyNudgeOn(
+                    createWatch,
+                    setNudge,
+                    setNudgeMode,
+                    setCustomDate,
+                    setCustomTime
+                  );
                 }}
                 onDayBefore={() => {
                   setNudge(true);
@@ -774,7 +980,7 @@ export default function BillsView({
               <NudgePreview
                 nudge={nudge}
                 mode={nudgeMode}
-                dueDate={due}
+                dueDate={createWatch}
                 dueTime="09:00"
                 customDate={customDate}
                 customTime={customTime}
@@ -823,7 +1029,7 @@ export default function BillsView({
 
       <NudgeCustomDialog
         open={customOpen === 'create'}
-        dueDate={due}
+        dueDate={createWatch}
         time={customTime}
         initialDate={customDate}
         prompt={`When to ping before the bill is due (date method: ${methodHint}).`}
@@ -838,7 +1044,7 @@ export default function BillsView({
       />
       <NudgeCustomDialog
         open={customOpen === 'edit'}
-        dueDate={edit.due_date || todayKey()}
+        dueDate={editWatch}
         time={editCustomTime}
         initialDate={editCustomDate}
         prompt={`When to ping before the bill is due (date method: ${methodHint}).`}
@@ -872,6 +1078,8 @@ export default function BillsView({
                       ${Number(p.amount).toFixed(2)}
                       {p.due_date ? ` · due ${p.due_date}` : ''}
                       {' · '}paid {formatPaidAt(p.paid_at)}
+                      {Number(p.late) ? ' · Late' : ''}
+                      {Number(p.schedule_changed) ? ' · Date changed' : ''}
                     </div>
                   </div>
                 </div>
@@ -951,6 +1159,13 @@ export default function BillsView({
                       onChange={(e) => setEdit({ ...edit, due_date: e.target.value })}
                       required
                     />
+                    {editWatch !== (edit.due_date || '') && (
+                      <span className="bill-watch-hint">Shows as {editWatch}</span>
+                    )}
+                    {['monthly', 'quarterly', 'yearly'].includes(edit.recurrence) &&
+                      b.billing_day && (
+                        <span className="bill-watch-hint">Billing day {b.billing_day}</span>
+                      )}
                     <label className="bill-check">
                       <input
                         type="checkbox"
@@ -978,20 +1193,78 @@ export default function BillsView({
                         </option>
                       ))}
                     </select>
-                    <input
-                      type="text"
-                      value={edit.category}
-                      list="bill-categories-edit"
-                      onChange={(e) => setEdit({ ...edit, category: e.target.value })}
-                      placeholder="Category"
-                      aria-label="Category"
-                    />
-                    <datalist id="bill-categories-edit">
-                      {categories.map((c) => (
-                        <option key={c} value={c} />
+                    <select
+                      value=""
+                      onChange={(e) => onCategoryEditPick(e.target.value)}
+                      aria-label="Category Edit (choose one below)"
+                    >
+                      <option value="">Category Edit (choose one below)</option>
+                      {categories.map((name) => (
+                        <option key={`edit-manage-${name}`} value={name}>
+                          {name}
+                        </option>
                       ))}
-                    </datalist>
+                    </select>
                   </div>
+                  <div className="bill-cat-row">
+                    <label className="edit-label">
+                      Remind days before
+                      <input
+                        type="number"
+                        min="0"
+                        max="30"
+                        value={edit.remind_days_before ?? 3}
+                        onChange={(e) =>
+                          setEdit({ ...edit, remind_days_before: e.target.value })
+                        }
+                        aria-label="Remind me N days before"
+                      />
+                    </label>
+                    <label className="edit-label" title={OFFSET_DAYS_TITLE}>
+                      Adjust dates by days
+                      <input
+                        type="number"
+                        min="-14"
+                        max="14"
+                        value={edit.date_offset_days ?? 0}
+                        onChange={(e) =>
+                          setEdit({ ...edit, date_offset_days: e.target.value })
+                        }
+                        aria-label="Adjust dates by X days"
+                      />
+                    </label>
+                    <select
+                      value={edit.biller_region || ''}
+                      onChange={(e) => setEdit({ ...edit, biller_region: e.target.value })}
+                      aria-label="Biller region"
+                    >
+                      {REGIONS.map((r) => (
+                        <option key={r.id || 'none'} value={r.id}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={edit.payment_type || ''}
+                      onChange={(e) => setEdit({ ...edit, payment_type: e.target.value })}
+                      aria-label="Payment type"
+                    >
+                      {PAY_TYPES.map((r) => (
+                        <option key={r.id || 'none'} value={r.id}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="bill-meta-hint">
+                    US/UK card billers may post a day after the stated date.
+                  </p>
+                  <TagInput
+                    value={edit.tags || ''}
+                    onChange={(v) => setEdit({ ...edit, tags: v })}
+                    placeholder="#tag"
+                    aria-label="Bill tags"
+                  />
                   <div className="reminder-meta-row">
                     <div className="reminder-meta-row__left">
                       <div className="kind-toggle">
@@ -1015,7 +1288,7 @@ export default function BillsView({
                       <NudgeRow
                         nudge={editNudge}
                         mode={editNudgeMode}
-                        dueDate={edit.due_date || todayKey()}
+                        dueDate={editWatch}
                         dayBeforeTitle="09:00, one day before due"
                         onNudgeChange={(on) => {
                           if (!on) {
@@ -1023,7 +1296,7 @@ export default function BillsView({
                             return;
                           }
                           applyNudgeOn(
-                            edit.due_date || todayKey(),
+                            editWatch,
                             setEditNudge,
                             setEditNudgeMode,
                             setEditCustomDate,
@@ -1042,7 +1315,7 @@ export default function BillsView({
                       <NudgePreview
                         nudge={editNudge}
                         mode={editNudgeMode}
-                        dueDate={edit.due_date || todayKey()}
+                        dueDate={editWatch}
                         dueTime="09:00"
                         customDate={editCustomDate}
                         customTime={editCustomTime}
@@ -1092,9 +1365,23 @@ export default function BillsView({
                             {amountModeLabel(b.amount_mode)}
                           </span>
                         )}
-                        {' · '}due {b.due_date} · {b.paid_status}
-                        {b.recurrence ? ` · ${b.recurrence}` : ''}
+                        {' · '}due {b.watch_date || b.due_date}
+                        {Number(b.date_offset_days) ||
+                        (b.billing_day &&
+                          String(b.due_date || '').slice(8) !==
+                            String(b.billing_day).padStart(2, '0'))
+                          ? ` (day ${b.billing_day})`
+                          : ''}
+                        {' · '}
+                        {b.paid_status}
+                        {' · '}
+                        {b.recurrence || 'once'}
+                        {Number(b.remind_days_before) > 0
+                          ? ` · Rem ${addDaysKey(b.watch_date || b.due_date, -Number(b.remind_days_before))}`
+                          : ''}
+                        {b.nudge_datetime ? ` · Nudge ${dateFromIso(b.nudge_datetime)}` : ''}
                         {b.category ? ` · ${b.category}` : ''}
+                        {b.tags?.length ? ` · ${formatTagsDisplay(b.tags)}` : ''}
                       </div>
                       <DetailsPreview text={b.description} />
                     </div>
@@ -1104,14 +1391,28 @@ export default function BillsView({
                       <BillPayConfirm
                         value={payActual}
                         onChange={setPayActual}
-                        onConfirm={() => paid(b, payActual)}
+                        onConfirm={() => paid(b, payActual, payMode)}
                         onCancel={() => setPayingId(null)}
                       />
                     )}
                     {b.paid_status !== 'paid' && payingId !== b.id && (
-                      <button type="button" onClick={() => paid(b)}>
-                        Paid
-                      </button>
+                      <>
+                        <button type="button" onClick={() => paid(b, undefined, 'paid')}>
+                          Paid
+                        </button>
+                        <button type="button" onClick={() => paid(b, undefined, 'late')}>
+                          Paid Late
+                        </button>
+                        {b.recurrence ? (
+                          <button
+                            type="button"
+                            title={PAID_DATE_TITLE}
+                            onClick={() => paid(b, undefined, 'change')}
+                          >
+                            Paid + date
+                          </button>
+                        ) : null}
+                      </>
                     )}
                     <button type="button" onClick={() => beginEdit(b)}>
                       Edit
@@ -1156,6 +1457,22 @@ export default function BillsView({
         placeholder="e.g. Utilities"
         onConfirm={onNewCategory}
         onCancel={cancelPrompt}
+      />
+      <BillCategoryManageDialog
+        open={manageOpen}
+        categoryName={manageName}
+        categories={categories}
+        onCancel={() => setManageOpen(false)}
+        onDone={onCategoryManaged}
+      />
+      <BillPayDateDialog
+        open={Boolean(payDateBill)}
+        initialDate={payNewDate}
+        onConfirm={confirmPayDate}
+        onCancel={() => {
+          setPayDateBill(null);
+          setPayDateOpts(null);
+        }}
       />
     </div>
   );

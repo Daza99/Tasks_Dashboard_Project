@@ -8,6 +8,8 @@ import {
   addDays,
   addMonths,
   subMonths,
+  setMonth,
+  setYear,
   isSameMonth,
   isSameDay,
   parseISO,
@@ -20,6 +22,21 @@ import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 
 const CHIP_CAP = 3;
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 function toLocalInput(iso) {
   if (!iso) return '';
@@ -72,6 +89,10 @@ export default function CalendarView({
   const { refresh } = useBrief();
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
+  const [yearOptions, setYearOptions] = useState(() => {
+    const y = new Date().getFullYear();
+    return Array.from({ length: 6 }, (_, i) => y + i);
+  });
   const [monthEvents, setMonthEvents] = useState([]);
   const [dayEvents, setDayEvents] = useState([]);
   const [title, setTitle] = useState('');
@@ -118,6 +139,12 @@ export default function CalendarView({
   );
   const pickedHasLinked = pickedEvents.some(isLinked);
 
+  const yearsShown = useMemo(() => {
+    const y = cursor.getFullYear();
+    if (yearOptions.includes(y)) return yearOptions;
+    return [...yearOptions, y].sort((a, b) => a - b);
+  }, [yearOptions, cursor.getFullYear()]);
+
   async function loadMonth() {
     const startIso = startOfWeek(monthStart, { weekStartsOn: 1 }).toISOString();
     const endIso = endOfWeek(monthEnd, { weekStartsOn: 1 }).toISOString();
@@ -141,6 +168,13 @@ export default function CalendarView({
       await loadMonth();
     })();
   }, [cursor.getMonth(), cursor.getFullYear()]);
+
+  useEffect(() => {
+    (async () => {
+      const years = await window.api.listCalendarYearOptions(cursor.getFullYear());
+      setYearOptions(years);
+    })();
+  }, [cursor.getFullYear()]);
 
   useEffect(() => {
     loadDay(selected);
@@ -214,6 +248,18 @@ export default function CalendarView({
     if (!menu) return;
     onCreateRequest?.(type, menu.date);
     setMenu(null);
+  }
+
+  /** Jump the grid to a month in the current year; clamp day-of-month. */
+  function jumpMonth(monthIndex) {
+    setCursor((c) => setMonth(c, monthIndex));
+    setSelected((s) => setMonth(s, monthIndex));
+  }
+
+  /** Jump the grid to a year; clamp day-of-month (e.g. Feb 29). */
+  function jumpYear(year) {
+    setCursor((c) => setYear(c, year));
+    setSelected((s) => setYear(s, year));
   }
 
   /** Inline edit — same as the day-list Edit button. */
@@ -335,7 +381,32 @@ export default function CalendarView({
         <button type="button" className="btn-compact" onClick={() => setCursor(subMonths(cursor, 1))}>
           ‹
         </button>
-        <strong>{format(cursor, 'MMMM yyyy')}</strong>
+        <div className="cal-nav__pickers">
+          <select
+            className="cal-nav__select"
+            aria-label="Month"
+            value={cursor.getMonth()}
+            onChange={(e) => jumpMonth(Number(e.target.value))}
+          >
+            {MONTH_NAMES.map((name, i) => (
+              <option key={name} value={i}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="cal-nav__select"
+            aria-label="Year"
+            value={cursor.getFullYear()}
+            onChange={(e) => jumpYear(Number(e.target.value))}
+          >
+            {yearsShown.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
         <button type="button" className="btn-compact" onClick={() => setCursor(addMonths(cursor, 1))}>
           ›
         </button>

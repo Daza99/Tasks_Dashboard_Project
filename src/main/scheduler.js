@@ -119,10 +119,16 @@ function pollDueBills() {
       if (firedThisSession.has(key)) continue;
       markBillAlerted(bill.id, bill.alertKind);
       firedThisSession.add(key);
+      const amt = `$${Number(bill.amount).toFixed(2)}`;
+      const title =
+        bill.alertKind === 'before'
+          ? `In ${bill.leadDays} days: ${bill.name} (${amt})`
+          : `Due: ${bill.name} (${amt})`;
       showItemNotification({
         id: bill.id,
-        title: `Due: ${bill.name} ($${Number(bill.amount).toFixed(2)})`,
+        title,
         itemType: 'bill',
+        tags: bill.tags,
       });
     }
   } catch (err) {

@@ -1,24 +1,68 @@
 /**
  * Bills CRUD, paid/overdue, recurrence advance, alert queries.
  * amount_mode: fixed | estimate | average; payments logged for name-based averages.
+ * due_date = clamped base; watch_date = due_date + date_offset_days.
  */
 const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { dateKey } = require('./habits');
+const { addTag, removeTag, getItemTagNames, syncUserTags } = require('./tags');
 const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
 const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const STATUSES = ['pending', 'paid', 'overdue'];
 const AMOUNT_MODES = ['fixed', 'estimate', 'average'];
 const RECURRENCES = ['monthly', 'fortnight', 'quarterly', 'yearly'];
+const REGIONS = ['nz', 'us', 'uk', 'other'];
+const PAYMENT_TYPES = ['card', 'bank'];
 /** Min payment history rows (by name) before Calc Average unlocks. */
 const AVG_MIN_SAMPLES = 6;
 
-/** Add months to YYYY-MM-DD (clamps day). */
+/** SQLite watch date (base due + offset; negative offsets work). */
+function watchSql(alias) {
+  const p = alias ? `${alias}.` : '';
+  return `date(${p}due_date, CAST(COALESCE(${p}date_offset_days, 0) AS TEXT) || ' days')`;
+}
+
+function parseIsoDate(iso) {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  return { y, m, d };
+}
+
+function isoYmd(year, month, day) {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** Last calendar day of month (month 1–12). */
+function lastDayOfMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function clampDay(year, month, day) {
+  const last = lastDayOfMonth(year, month);
+  const n = Number(day);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(Math.round(n), last);
+}
+
+function billingDayFromDue(dueDate) {
+  const d = Number(String(dueDate).slice(8, 10));
+  return Number.isFinite(d) && d >= 1 && d <= 31 ? d : 1;
+}
+
+/** Keep billing_day, clamp to last day of the target month (no overflow). */
+function addMonthsKeepDay(isoDate, months, billingDay) {
+  const { y, m } = parseIsoDate(isoDate);
+  const dt = new Date(y, m - 1 + Number(months), 1);
+  const ny = dt.getFullYear();
+  const nm = dt.getMonth() + 1;
+  return isoYmd(ny, nm, clampDay(ny, nm, billingDay));
+}
+
+/** Add months to YYYY-MM-DD, clamping the source day to the target month. */
 function addMonthsIso(isoDate, months) {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  const dt = new Date(y, m - 1 + months, d);
-  return dateKey(dt);
+  const { d } = parseIsoDate(isoDate);
+  return addMonthsKeepDay(isoDate, months, d);
 }
 
 /** Add days to YYYY-MM-DD. */
@@ -28,17 +72,52 @@ function addDaysIso(isoDate, days) {
   return dateKey(dt);
 }
 
-/** Local due date at 09:00 → ISO (matches calendar dateAtNine). */
+/** Displayed/watched date = clamped base + offset. */
+function watchDateFrom(dueDate, offsetDays) {
+  if (!dueDate) return dueDate;
+  return addDaysIso(dueDate, Number(offsetDays) || 0);
+}
+
+function clampRemindDays(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return 3;
+  return Math.max(0, Math.min(30, Math.round(v)));
+}
+
+function clampOffset(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(-14, Math.min(14, Math.round(v)));
+}
+
+function normalizeRegion(v) {
+  if (v == null || v === '') return null;
+  return REGIONS.includes(v) ? v : null;
+}
+
+function normalizePaymentType(v) {
+  if (v == null || v === '') return null;
+  return PAYMENT_TYPES.includes(v) ? v : null;
+}
+
+/** Local date at 09:00 → ISO (matches calendar dateAtNine). */
 function dueAtNine(dueDate) {
   const [y, m, d] = String(dueDate).split('-').map(Number);
   return new Date(y, m - 1, d, 9, 0, 0).toISOString();
 }
 
-function advanceDue(dueDate, recurrence) {
-  if (recurrence === 'monthly') return addMonthsIso(dueDate, 1);
+/**
+ * Next base due. Monthly/quarterly/yearly keep billing_day and clamp.
+ * @param {string} dueDate
+ * @param {string|null} recurrence
+ * @param {number} [billingDay]
+ */
+function advanceDue(dueDate, recurrence, billingDay) {
+  const day = billingDay || billingDayFromDue(dueDate);
+  if (recurrence === 'monthly') return addMonthsKeepDay(dueDate, 1, day);
   if (recurrence === 'fortnight') return addDaysIso(dueDate, 14);
-  if (recurrence === 'quarterly') return addMonthsIso(dueDate, 3);
-  if (recurrence === 'yearly') return addMonthsIso(dueDate, 12);
+  if (recurrence === 'quarterly') return addMonthsKeepDay(dueDate, 3, day);
+  if (recurrence === 'yearly') return addMonthsKeepDay(dueDate, 12, day);
   return null;
 }
 
@@ -47,10 +126,12 @@ function normalizeAmountMode(mode) {
 }
 
 /**
- * Resolve nudge columns from create/update payload + due date.
- * Off → all null. day_before = due 09:00 minus 1 calendar day.
+ * Resolve nudge columns. Off → all null. day_before = watch 09:00 minus 1 calendar day.
  */
-function resolveNudgeFields(dueDate, { nudge, nudge_mode, nudge_datetime } = {}) {
+function resolveNudgeFields(
+  dueDate,
+  { nudge, nudge_mode, nudge_datetime, date_offset_days } = {}
+) {
   if (!nudge) {
     return { nudge_datetime: null, nudge_mode: null, nudge_alerted: 0 };
   }
@@ -68,7 +149,8 @@ function resolveNudgeFields(dueDate, { nudge, nudge_mode, nudge_datetime } = {})
   if (!dueDate) {
     return { nudge_datetime: null, nudge_mode: null, nudge_alerted: 0 };
   }
-  const due = new Date(dueAtNine(dueDate));
+  const watch = watchDateFrom(dueDate, date_offset_days);
+  const due = new Date(dueAtNine(watch));
   due.setDate(due.getDate() - 1);
   return {
     nudge_datetime: due.toISOString(),
@@ -91,11 +173,19 @@ function shiftNudgeWithDue(nudgeIso, fromDue, toDue) {
 
 function enrich(row) {
   if (!row) return null;
+  const offset = Number(row.date_offset_days) || 0;
+  const billingDay = row.billing_day || billingDayFromDue(row.due_date);
+  const watch_date = watchDateFrom(row.due_date, offset);
   return {
     ...row,
     title: row.name,
     amount_mode: normalizeAmountMode(row.amount_mode),
     show_on_calendar: Number(row.show_on_calendar) !== 0 ? 1 : 0,
+    billing_day: billingDay,
+    date_offset_days: offset,
+    remind_days_before: clampRemindDays(row.remind_days_before),
+    watch_date,
+    tags: getItemTagNames('bill', row.id),
   };
 }
 
@@ -113,6 +203,11 @@ function createBill({
   nudge = false,
   nudge_mode = null,
   nudge_datetime = null,
+  remind_days_before = 3,
+  date_offset_days = 0,
+  biller_region = null,
+  payment_type = null,
+  tags = [],
 }) {
   try {
     const billName = uniqueTitleFor('bill', name);
@@ -129,16 +224,23 @@ function createBill({
     const onCal = show_on_calendar ? 1 : 0;
     const cat = category != null ? String(category).trim() || null : null;
     if (cat) createBillCategory(cat);
+    const offset = clampOffset(date_offset_days);
+    const lead = clampRemindDays(remind_days_before);
+    const billingDay = billingDayFromDue(due_date);
+    const region = normalizeRegion(biller_region);
+    const payType = normalizePaymentType(payment_type);
     const nudgeFields = resolveNudgeFields(due_date, {
       nudge,
       nudge_mode,
       nudge_datetime,
+      date_offset_days: offset,
     });
     const info = getDb()
       .prepare(
         `INSERT INTO bills (name, amount, amount_mode, due_date, recurrence, paid_status, category,
-           priority, description, show_on_calendar, nudge_datetime, nudge_mode, nudge_alerted)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`
+           priority, description, show_on_calendar, nudge_datetime, nudge_mode, nudge_alerted,
+           remind_days_before, billing_day, date_offset_days, biller_region, payment_type)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         billName,
@@ -152,9 +254,19 @@ function createBill({
         onCal,
         nudgeFields.nudge_datetime,
         nudgeFields.nudge_mode,
-        nudgeFields.nudge_alerted
+        nudgeFields.nudge_alerted,
+        lead,
+        billingDay,
+        offset,
+        region,
+        payType
       );
-    const row = getBill(Number(info.lastInsertRowid));
+    const id = Number(info.lastInsertRowid);
+    if (tags && (Array.isArray(tags) ? tags.length : String(tags).trim())) {
+      syncUserTags('bill', id, tags);
+    }
+    syncOnceTag(id, rec);
+    const row = getBill(id);
     require('./calendar-sync').syncBill(row);
     return row;
   } catch (err) {
@@ -170,11 +282,12 @@ function getBill(id) {
 
 function listBills({ includePaid = true } = {}) {
   try {
+    const watch = watchSql();
     const rows = getDb()
       .prepare(
         `SELECT * FROM bills
          ${includePaid ? '' : "WHERE paid_status != 'paid'"}
-         ORDER BY COALESCE(priority, 3) ASC, due_date ASC, name COLLATE NOCASE ASC`
+         ORDER BY COALESCE(priority, 3) ASC, ${watch} ASC, name COLLATE NOCASE ASC`
       )
       .all();
     return rows.map(enrich);
@@ -229,13 +342,35 @@ function updateBill(id, fields) {
         : Number(cur.show_on_calendar) !== 0
           ? 1
           : 0;
-
+    const offset =
+      fields.date_offset_days !== undefined
+        ? clampOffset(fields.date_offset_days)
+        : clampOffset(cur.date_offset_days);
+    const lead =
+      fields.remind_days_before !== undefined
+        ? clampRemindDays(fields.remind_days_before)
+        : clampRemindDays(cur.remind_days_before);
     const dueChanged = fields.due_date !== undefined && fields.due_date !== cur.due_date;
+    const billing_day = dueChanged
+      ? billingDayFromDue(due_date)
+      : cur.billing_day || billingDayFromDue(due_date);
+    const region =
+      fields.biller_region !== undefined
+        ? normalizeRegion(fields.biller_region)
+        : normalizeRegion(cur.biller_region);
+    const payType =
+      fields.payment_type !== undefined
+        ? normalizePaymentType(fields.payment_type)
+        : normalizePaymentType(cur.payment_type);
+
+    const offsetChanged = offset !== clampOffset(cur.date_offset_days);
+    const leadChanged = lead !== clampRemindDays(cur.remind_days_before);
+    const watchChanged = dueChanged || offsetChanged;
     const nudgeTouched =
       fields.nudge !== undefined ||
       fields.nudge_mode !== undefined ||
       fields.nudge_datetime !== undefined ||
-      (dueChanged && cur.nudge_mode === 'day_before');
+      (watchChanged && cur.nudge_mode === 'day_before');
 
     let nudge_datetime = cur.nudge_datetime;
     let nudge_mode = cur.nudge_mode;
@@ -255,18 +390,24 @@ function updateBill(id, fields) {
         nudge: nudgeOn,
         nudge_mode: mode,
         nudge_datetime: customAt,
+        date_offset_days: offset,
       });
       nudge_datetime = resolved.nudge_datetime;
       nudge_mode = resolved.nudge_mode;
       nudge_alerted = resolved.nudge_alerted;
     }
 
+    const resetLead = dueChanged || offsetChanged || leadChanged;
+    const resetDue = watchChanged;
     const db = getDb();
     db.prepare(
       `UPDATE bills SET name = ?, amount = ?, amount_mode = ?, due_date = ?, recurrence = ?,
        category = ?, paid_status = ?, priority = ?, description = ?,
-       show_on_calendar = ?, nudge_datetime = ?, nudge_mode = ?, nudge_alerted = ?
-       ${dueChanged ? ', alerted_before = 0, alerted_due = 0, snooze_until = NULL' : ''}
+       show_on_calendar = ?, nudge_datetime = ?, nudge_mode = ?, nudge_alerted = ?,
+       remind_days_before = ?, billing_day = ?, date_offset_days = ?,
+       biller_region = ?, payment_type = ?
+       ${resetLead ? ', alerted_before = 0' : ''}
+       ${resetDue ? ', alerted_due = 0, snooze_until = NULL' : ''}
        WHERE id = ?`
     ).run(
       name,
@@ -282,16 +423,22 @@ function updateBill(id, fields) {
       nudge_datetime,
       nudge_mode,
       nudge_alerted,
+      lead,
+      billing_day,
+      offset,
+      region,
+      payType,
       id
     );
 
-    // Keep denormalized payment names in sync for name-based averages
     if (name !== cur.name) {
       db.prepare('UPDATE bill_payments SET bill_name = ? WHERE bill_id = ?').run(
         name,
         id
       );
     }
+    if (fields.tags !== undefined) syncUserTags('bill', id, fields.tags);
+    syncOnceTag(id, recurrence);
     const row = getBill(id);
     require('./calendar-sync').syncBill(row, {
       prevDueDate: dueChanged ? cur.due_date : undefined,
@@ -303,10 +450,48 @@ function updateBill(id, fields) {
   }
 }
 
+/** #once follows recurrence: present only when the bill is not repeating. */
+function syncOnceTag(id, recurrence) {
+  if (recurrence) removeTag('bill', id, 'once');
+  else addTag('bill', id, 'once');
+}
+
+/** Apply pay-status hashtags (accumulate; never strip). */
+function applyPayTags(id, { late, scheduleChanged }) {
+  addTag('bill', id, 'paid');
+  if (late) addTag('bill', id, 'paidlate');
+  if (scheduleChanged) addTag('bill', id, 'paidlatechange');
+}
+
 /**
- * Mark paid. Logs actual to bill_payments, then advances recurring due_date.
+ * Shift day_before/custom nudge onto the next due.
+ * @param {object} cur
+ * @param {string} nextDue
+ * @param {number} offset
+ */
+function nextNudgeFields(cur, nextDue, offset) {
+  if (cur.nudge_mode === 'day_before' && cur.nudge_datetime) {
+    return resolveNudgeFields(nextDue, {
+      nudge: true,
+      nudge_mode: 'day_before',
+      date_offset_days: offset,
+    });
+  }
+  if (cur.nudge_mode === 'custom' && cur.nudge_datetime) {
+    return {
+      nudge_datetime: shiftNudgeWithDue(cur.nudge_datetime, cur.due_date, nextDue),
+      nudge_mode: 'custom',
+      nudge_alerted: 0,
+    };
+  }
+  return { nudge_datetime: null, nudge_mode: null, nudge_alerted: 0 };
+}
+
+/**
+ * Mark paid. Logs actual to bill_payments, then advances recurring due_date
+ * unless new_due_date is set (biller moved the date).
  * @param {number} id
- * @param {{ actual_amount?: number }} [opts] — defaults to standing bill.amount
+ * @param {{ actual_amount?: number, late?: boolean, new_due_date?: string }} [opts]
  */
 function markPaid(id, opts = {}) {
   try {
@@ -315,10 +500,21 @@ function markPaid(id, opts = {}) {
     let actual =
       opts.actual_amount !== undefined ? Number(opts.actual_amount) : cur.amount;
     if (!Number.isFinite(actual)) actual = cur.amount;
+    const late = Boolean(opts.late);
+    const newDueRaw = opts.new_due_date ? String(opts.new_due_date).trim() : '';
+    const scheduleChanged = Boolean(newDueRaw);
+    if (scheduleChanged && !/^\d{4}-\d{2}-\d{2}$/.test(newDueRaw)) {
+      throw new Error('new_due_date must be yyyy-mm-dd');
+    }
+    if (scheduleChanged && !cur.recurrence) {
+      throw new Error('Cannot change schedule on a once bill');
+    }
+
+    const offset = clampOffset(cur.date_offset_days);
+    const billingDay = cur.billing_day || billingDayFromDue(cur.due_date);
 
     const db = getDb();
     const tx = db.transaction(() => {
-      // Exact dup = same bill name + amount + due_date (fortnightly differs by due_date)
       const exactDup = db
         .prepare(
           `SELECT id FROM bill_payments
@@ -331,47 +527,56 @@ function markPaid(id, opts = {}) {
 
       if (!exactDup) {
         db.prepare(
-          `INSERT INTO bill_payments (bill_id, bill_name, amount, due_date)
-           VALUES (?, ?, ?, ?)`
-        ).run(id, cur.name, actual, cur.due_date);
+          `INSERT INTO bill_payments (bill_id, bill_name, amount, due_date, late, schedule_changed)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(id, cur.name, actual, cur.due_date, late ? 1 : 0, scheduleChanged ? 1 : 0);
+      } else if (late || scheduleChanged) {
+        db.prepare(
+          `UPDATE bill_payments SET
+             late = CASE WHEN ? = 1 THEN 1 ELSE late END,
+             schedule_changed = CASE WHEN ? = 1 THEN 1 ELSE schedule_changed END
+           WHERE id = ?`
+        ).run(late ? 1 : 0, scheduleChanged ? 1 : 0, exactDup.id);
       }
 
-      const next = advanceDue(cur.due_date, cur.recurrence);
-      if (next) {
-        let nextNudge = cur.nudge_datetime;
-        let nextNudgeMode = cur.nudge_mode;
-        let nextNudgeAlerted = 0;
-        if (cur.nudge_mode === 'day_before' && cur.nudge_datetime) {
-          const resolved = resolveNudgeFields(next, {
-            nudge: true,
-            nudge_mode: 'day_before',
-          });
-          nextNudge = resolved.nudge_datetime;
-          nextNudgeMode = resolved.nudge_mode;
-        } else if (cur.nudge_mode === 'custom' && cur.nudge_datetime) {
-          nextNudge = shiftNudgeWithDue(cur.nudge_datetime, cur.due_date, next);
-        } else {
-          nextNudge = null;
-          nextNudgeMode = null;
-          nextNudgeAlerted = 0;
-        }
+      if (scheduleChanged) {
+        const nextDay = billingDayFromDue(newDueRaw);
+        const nudge = nextNudgeFields(cur, newDueRaw, offset);
         db.prepare(
-          `UPDATE bills SET paid_status = 'pending', due_date = ?,
+          `UPDATE bills SET paid_status = 'pending', due_date = ?, billing_day = ?,
            alerted_before = 0, alerted_due = 0, snooze_until = NULL,
            nudge_datetime = ?, nudge_mode = ?, nudge_alerted = ?
            WHERE id = ?`
-        ).run(next, nextNudge, nextNudgeMode, nextNudgeAlerted, id);
+        ).run(
+          newDueRaw,
+          nextDay,
+          nudge.nudge_datetime,
+          nudge.nudge_mode,
+          nudge.nudge_alerted,
+          id
+        );
       } else {
-        db.prepare(
-          `UPDATE bills SET paid_status = 'paid',
-           alerted_before = 1, alerted_due = 1, snooze_until = NULL
-           WHERE id = ?`
-        ).run(id);
+        const next = advanceDue(cur.due_date, cur.recurrence, billingDay);
+        if (next) {
+          const nudge = nextNudgeFields(cur, next, offset);
+          db.prepare(
+            `UPDATE bills SET paid_status = 'pending', due_date = ?,
+             alerted_before = 0, alerted_due = 0, snooze_until = NULL,
+             nudge_datetime = ?, nudge_mode = ?, nudge_alerted = ?
+             WHERE id = ?`
+          ).run(next, nudge.nudge_datetime, nudge.nudge_mode, nudge.nudge_alerted, id);
+        } else {
+          db.prepare(
+            `UPDATE bills SET paid_status = 'paid',
+             alerted_before = 1, alerted_due = 1, snooze_until = NULL
+             WHERE id = ?`
+          ).run(id);
+        }
       }
+      applyPayTags(id, { late, scheduleChanged });
     });
     tx();
     const row = getBill(id);
-    // Leave the paid occurrence; upsert the new due_date
     require('./calendar-sync').syncBill(row);
     return row;
   } catch (err) {
@@ -452,7 +657,9 @@ function listBillPayments(opts = {}) {
 
     return getDb()
       .prepare(
-        `SELECT id, bill_id, bill_name, amount, due_date, paid_at
+        `SELECT id, bill_id, bill_name, amount, due_date, paid_at,
+                COALESCE(late, 0) AS late,
+                COALESCE(schedule_changed, 0) AS schedule_changed
          FROM bill_payments
          WHERE ${where.join(' AND ')}
          ORDER BY ${orderBy}`
@@ -503,7 +710,9 @@ function listBillPaymentFilterOptions() {
 function deleteBill(id) {
   try {
     require('./calendar-sync').deleteEventsForSource('bill', id);
-    getDb().prepare('DELETE FROM bills WHERE id = ?').run(id);
+    const db = getDb();
+    db.prepare(`DELETE FROM item_tags WHERE item_type = 'bill' AND item_id = ?`).run(id);
+    db.prepare('DELETE FROM bills WHERE id = ?').run(id);
     return true;
   } catch (err) {
     logError('deleteBill', err);
@@ -526,10 +735,12 @@ function deleteBills(ids) {
     if (!list.length) return 0;
     const db = getDb();
     const delRow = db.prepare('DELETE FROM bills WHERE id = ?');
+    const delTags = db.prepare(`DELETE FROM item_tags WHERE item_type = 'bill' AND item_id = ?`);
     const run = db.transaction((idList) => {
       let n = 0;
       for (const id of idList) {
         require('./calendar-sync').deleteEventsForSource('bill', id);
+        delTags.run(id);
         const r = delRow.run(id);
         if (r.changes) n += 1;
       }
@@ -584,16 +795,17 @@ function markOverdueBills() {
   try {
     const today = dateKey();
     const db = getDb();
+    const watch = watchSql();
     const rows = db
       .prepare(
         `SELECT id, name FROM bills
-         WHERE paid_status = 'pending' AND due_date < ?`
+         WHERE paid_status = 'pending' AND ${watch} < ?`
       )
       .all(today);
     if (rows.length) {
       db.prepare(
         `UPDATE bills SET paid_status = 'overdue'
-         WHERE paid_status = 'pending' AND due_date < ?`
+         WHERE paid_status = 'pending' AND ${watch} < ?`
       ).run(today);
     }
     return rows;
@@ -607,10 +819,11 @@ function markOverdueBills() {
 function listBillsForBrief() {
   try {
     const today = dateKey();
+    const watch = watchSql();
     const dueToday = getDb()
       .prepare(
         `SELECT * FROM bills
-         WHERE paid_status IN ('pending', 'overdue') AND due_date = ?
+         WHERE paid_status IN ('pending', 'overdue') AND ${watch} = ?
          ORDER BY name COLLATE NOCASE`
       )
       .all(today)
@@ -618,8 +831,8 @@ function listBillsForBrief() {
     const overdue = getDb()
       .prepare(
         `SELECT * FROM bills
-         WHERE paid_status = 'overdue' AND due_date < ?
-         ORDER BY due_date ASC`
+         WHERE paid_status = 'overdue' AND ${watch} < ?
+         ORDER BY ${watch} ASC`
       )
       .all(today)
       .map(enrich);
@@ -637,20 +850,21 @@ function listBillsForBrief() {
  */
 function listBillsForWeekBrief(weekStartKey, weekEndKey) {
   try {
+    const watch = watchSql();
     const dueThisWeek = getDb()
       .prepare(
         `SELECT * FROM bills
          WHERE paid_status IN ('pending', 'overdue')
-           AND due_date >= ? AND due_date <= ?
-         ORDER BY due_date ASC, name COLLATE NOCASE`
+           AND ${watch} >= ? AND ${watch} <= ?
+         ORDER BY ${watch} ASC, name COLLATE NOCASE`
       )
       .all(weekStartKey, weekEndKey)
       .map(enrich);
     const overdue = getDb()
       .prepare(
         `SELECT * FROM bills
-         WHERE paid_status = 'overdue' AND due_date < ?
-         ORDER BY due_date ASC`
+         WHERE paid_status = 'overdue' AND ${watch} < ?
+         ORDER BY ${watch} ASC`
       )
       .all(weekStartKey)
       .map(enrich);
@@ -662,8 +876,8 @@ function listBillsForWeekBrief(weekStartKey, weekEndKey) {
 }
 
 /**
- * Pending/overdue bills needing due-day popup (day-before is optional Nudge).
- * @returns {{ id, name, title, amount, due_date, alertKind: 'due' }[]}
+ * Pending/overdue bills needing lead or due-day popup (nudge is separate).
+ * @returns {{ alertKind: 'before'|'due' }[]}
  */
 function listDueBillAlerts() {
   try {
@@ -677,8 +891,18 @@ function listDueBillAlerts() {
       .all();
     const out = [];
     for (const b of rows) {
-      if (b.due_date === today && !b.alerted_due) {
-        out.push({ ...enrich(b), alertKind: 'due' });
+      const en = enrich(b);
+      const watch = en.watch_date;
+      if (watch === today && !b.alerted_due) {
+        out.push({ ...en, alertKind: 'due' });
+        continue;
+      }
+      const leadDays = clampRemindDays(b.remind_days_before);
+      if (leadDays > 0 && watch > today && !b.alerted_before) {
+        const leadDate = addDaysIso(watch, -leadDays);
+        if (leadDate <= today) {
+          out.push({ ...en, alertKind: 'before', leadDays });
+        }
       }
     }
     return out;
@@ -744,6 +968,126 @@ function createBillCategory(name) {
   }
 }
 
+/** Exact-name row from the catalog, or null. */
+function getBillCategoryExact(db, name) {
+  return db.prepare('SELECT name FROM bill_categories WHERE name = ?').get(name) || null;
+}
+
+/**
+ * How many bills use this exact category string.
+ * @param {string} name
+ * @returns {number}
+ */
+function countBillsWithCategory(name) {
+  try {
+    const src = String(name || '').trim();
+    if (!src) return 0;
+    const row = getDb()
+      .prepare('SELECT COUNT(*) AS n FROM bills WHERE category = ?')
+      .get(src);
+    return Number(row?.n) || 0;
+  } catch (err) {
+    logError('countBillsWithCategory', err);
+    throw err;
+  }
+}
+
+/**
+ * Rename a catalog row and retag matching bills. NOCASE collision → use Merge.
+ * @param {string} from
+ * @param {string} to
+ * @returns {{ from: string, to: string, renamed: number }}
+ */
+function renameBillCategory(from, to) {
+  try {
+    const src = String(from || '').trim();
+    const dest = String(to || '').trim();
+    if (!src || !dest) throw new Error('Category name required');
+    const db = getDb();
+    if (!getBillCategoryExact(db, src)) throw new Error('Category not found');
+    if (dest === src) return { from: src, to: dest, renamed: 0 };
+
+    const clash = db
+      .prepare(
+        'SELECT name FROM bill_categories WHERE name = ? COLLATE NOCASE AND name != ?'
+      )
+      .get(dest, src);
+    if (clash) {
+      throw new Error(`A category named "${clash.name}" already exists. Use Merge.`);
+    }
+
+    const run = db.transaction(() => {
+      const bills = db
+        .prepare('UPDATE bills SET category = ? WHERE category = ?')
+        .run(dest, src);
+      db.prepare('UPDATE bill_categories SET name = ? WHERE name = ?').run(dest, src);
+      return bills.changes;
+    });
+    return { from: src, to: dest, renamed: run() };
+  } catch (err) {
+    logError('renameBillCategory', err);
+    throw err;
+  }
+}
+
+/**
+ * Drop a catalog row; bills using it become Uncategorized.
+ * @param {string} name
+ * @returns {{ name: string, uncategorized: number }}
+ */
+function deleteBillCategory(name) {
+  try {
+    const src = String(name || '').trim();
+    if (!src) throw new Error('Category name required');
+    const db = getDb();
+    if (!getBillCategoryExact(db, src)) throw new Error('Category not found');
+
+    const run = db.transaction(() => {
+      const bills = db
+        .prepare('UPDATE bills SET category = NULL WHERE category = ?')
+        .run(src);
+      db.prepare('DELETE FROM bill_categories WHERE name = ?').run(src);
+      return bills.changes;
+    });
+    return { name: src, uncategorized: run() };
+  } catch (err) {
+    logError('deleteBillCategory', err);
+    throw err;
+  }
+}
+
+/**
+ * Move bills from mergeAway onto keep, then delete mergeAway from the catalog.
+ * @param {string} keep
+ * @param {string} mergeAway
+ * @returns {{ keep: string, mergeAway: string, moved: number }}
+ */
+function mergeBillCategories(keep, mergeAway) {
+  try {
+    const keepName = String(keep || '').trim();
+    const awayName = String(mergeAway || '').trim();
+    if (!keepName || !awayName) throw new Error('Keep and Merge away are required');
+    if (keepName === awayName) throw new Error('Keep and Merge away must differ');
+    const db = getDb();
+    if (!getBillCategoryExact(db, keepName)) throw new Error('Keep category not found');
+    if (!getBillCategoryExact(db, awayName)) {
+      throw new Error('Merge away category not found');
+    }
+
+    const run = db.transaction(() => {
+      const bills = db
+        .prepare('UPDATE bills SET category = ? WHERE category = ?')
+        .run(keepName, awayName);
+      db.prepare('DELETE FROM bill_categories WHERE name = ?').run(awayName);
+      return bills.changes;
+    });
+    return { keep: keepName, mergeAway: awayName, moved: run() };
+  } catch (err) {
+    logError('mergeBillCategories', err);
+    throw err;
+  }
+}
+
 /** Snooze only the nudge; bill due is unchanged. */
 function snoozeBillNudge(id, minutes = 10) {
   try {
@@ -801,7 +1145,8 @@ function dismissBillAlert(id) {
     const b = getDb().prepare('SELECT * FROM bills WHERE id = ?').get(id);
     if (!b) return null;
     const today = dateKey();
-    if (b.due_date === today) {
+    const watch = watchDateFrom(b.due_date, b.date_offset_days);
+    if (watch === today) {
       getDb()
         .prepare('UPDATE bills SET alerted_due = 1, snooze_until = NULL WHERE id = ?')
         .run(id);
@@ -845,8 +1190,15 @@ module.exports = {
   dismissBillNudge,
   advanceDue,
   addMonthsIso,
+  addDaysIso,
+  watchDateFrom,
+  billingDayFromDue,
   listBillCategories,
   createBillCategory,
+  countBillsWithCategory,
+  renameBillCategory,
+  deleteBillCategory,
+  mergeBillCategories,
   STATUSES,
   AMOUNT_MODES,
   AVG_MIN_SAMPLES,

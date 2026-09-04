@@ -26,6 +26,7 @@ const {
   dismissBillNudge,
   snoozeBillNudge,
   getBill,
+  advanceDue,
 } = require('../services/db/bills');
 const {
   markCheckin,
@@ -229,14 +230,14 @@ function registerNotificationIpc() {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
-  ipcMain.handle('notif:complete', (_e, payload) => {
+  ipcMain.handle('notif:complete', (_e, payload, opts) => {
     try {
       const { id, itemType } = parsePayload(payload);
       markResolved(itemType, id);
       if (itemType === 'countdown') {
         /* already done — Done just dismisses */
       } else if (itemType === 'task') completeTask(id);
-      else if (itemType === 'bill') markPaid(id);
+      else if (itemType === 'bill') markPaid(id, opts || {});
       else if (itemType === 'bill_nudge') dismissBillNudge(id);
       else if (itemType === 'habit') markCheckin(id);
       else if (itemType === 'reminder_nudge') dismissReminderNudge(id);
@@ -338,6 +339,8 @@ function registerNotificationIpc() {
         return {
           details: entry.details || null,
           createdAt: entry.createdAt || null,
+          nextDueDate: entry.nextDueDate || null,
+          recurring: Boolean(entry.recurring),
         };
       }
     }
@@ -423,9 +426,27 @@ function showItemNotification(item) {
     const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : [];
     const details = resolveDetails(itemType, item.id, item.description);
     const createdAt = resolveCreatedAt(itemType, item.id, item.created_at);
-    // Extra height for Created line (~18px) vs prior 180/200/260
-    const height = details ? 278 : tags.length ? 218 : 198;
-    const bounds = cornerBounds(settings.notif_position, 340, height);
+    let nextDueDate = null;
+    let recurring = false;
+    if (itemType === 'bill') {
+      try {
+        const bill = getBill(item.id);
+        if (bill?.recurrence) {
+          recurring = true;
+          nextDueDate = advanceDue(bill.due_date, bill.recurrence, bill.billing_day);
+        }
+      } catch (err) {
+        logError('showItemNotification bill next due', err);
+      }
+    }
+    // Extra height for Created line (~18px) vs prior 180/200/260; bills get pay-row wrap
+    let height = details ? 278 : tags.length ? 218 : 198;
+    let width = 340;
+    if (itemType === 'bill') {
+      height += 40;
+      width = 400;
+    }
+    const bounds = cornerBounds(settings.notif_position, width, height);
     // Query strings cannot carry '#' — HTML prepends it
     const stripHash = (hex) => String(hex || '').replace(/^#/, '');
 
@@ -456,6 +477,8 @@ function showItemNotification(item) {
       id: item.id,
       details,
       createdAt,
+      nextDueDate,
+      recurring,
     });
 
     const query = {

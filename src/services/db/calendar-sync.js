@@ -10,7 +10,7 @@ const { getDb } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { dateKey, isDueOn } = require('./habits');
 const { createEvent, getEvent, deleteEvent } = require('./events');
-const { advanceDue, addMonthsIso } = require('./bills');
+const { advanceDue, addMonthsIso, addDaysIso, watchDateFrom } = require('./bills');
 
 /** How far to persist recurring bill chips from local today. */
 const BILL_HORIZON_MONTHS = 12;
@@ -230,25 +230,30 @@ function billHorizonDate() {
 }
 
 /**
- * Recurrence dates from current due through horizon. Always includes due_date.
- * @param {string} dueDate
- * @param {string|null} recurrence
+ * Recurrence watch dates from current due through horizon.
+ * @param {object} bill
  * @param {string} horizon
  * @returns {string[]}
  */
-function billOccurrenceDates(dueDate, recurrence, horizon) {
+function billOccurrenceDates(bill, horizon) {
+  const dueDate = bill?.due_date;
   if (!dueDate) return [];
-  if (!recurrence) return [dueDate];
+  const offset = Number(bill.date_offset_days) || 0;
+  const billingDay = bill.billing_day || Number(String(dueDate).slice(8, 10));
+  const watched = (base) => addDaysIso(base, offset);
+  if (!bill.recurrence) return [watched(dueDate)];
   const out = [];
   let d = dueDate;
   for (let i = 0; i < BILL_OCCURRENCE_CAP; i += 1) {
-    if (d > horizon) break;
-    out.push(d);
-    const next = advanceDue(d, recurrence);
+    const w = watched(d);
+    if (w > horizon) break;
+    out.push(w);
+    const next = advanceDue(d, bill.recurrence, billingDay);
     if (!next || next <= d) break;
     d = next;
   }
-  if (!out.includes(dueDate)) out.unshift(dueDate);
+  const first = watched(dueDate);
+  if (!out.includes(first)) out.unshift(first);
   return out;
 }
 
@@ -286,14 +291,20 @@ function syncBill(bill, { prevDueDate } = {}) {
 
   const title = `${bill.name} Due`;
   const details = billEventDescription(bill);
-  const series = billOccurrenceDates(bill.due_date, bill.recurrence, billHorizonDate());
+  const series = billOccurrenceDates(bill, billHorizonDate());
   const seriesSet = new Set(series);
-  const cutoff =
+  const offset = Number(bill.date_offset_days) || 0;
+  const curWatch = watchDateFrom(bill.due_date, offset);
+  const prevWatch =
     prevDueDate && prevDueDate !== bill.due_date
-      ? prevDueDate < bill.due_date
-        ? prevDueDate
-        : bill.due_date
-      : bill.due_date;
+      ? watchDateFrom(prevDueDate, offset)
+      : null;
+  const cutoff =
+    prevWatch && prevWatch !== curWatch
+      ? prevWatch < curWatch
+        ? prevWatch
+        : curWatch
+      : curWatch;
 
   for (const occ of series) {
     upsertLinkedEvent({

@@ -287,9 +287,12 @@ function searchBills(parsed, filters) {
     alias: 'b',
     itemType: 'bill',
     textCols: ['b.name', 'b.category', 'b.description'],
-    hasTags: false,
+    hasTags: true,
   });
-  const ym = yearMonthSql('b.due_date', filters);
+  const ym = yearMonthSql(
+    `date(b.due_date, CAST(COALESCE(b.date_offset_days, 0) AS TEXT) || ' days')`,
+    filters
+  );
   const extra = [];
   const extraVals = [];
   if (isSet(filters.priority)) {
@@ -323,7 +326,7 @@ function searchBills(parsed, filters) {
         .filter(Boolean)
         .join(' · '),
       date: r.due_date,
-      tags: [],
+      tags: getItemTagNames('bill', r.id),
       status: r.paid_status,
       locked: false,
     })
@@ -599,7 +602,7 @@ const PROVIDERS = {
 const YEAR_SOURCES = [
   { table: 'tasks', expr: 'COALESCE(due_datetime, created_at)' },
   { table: 'reminders', expr: 'datetime' },
-  { table: 'bills', expr: 'due_date' },
+  { table: 'bills', expr: "date(due_date, CAST(COALESCE(date_offset_days, 0) AS TEXT) || ' days')" },
   { table: 'habits', expr: 'created_at' },
   { table: 'events', expr: 'start_datetime' },
   { table: 'transactions', expr: 'date' },

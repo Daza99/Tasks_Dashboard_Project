@@ -178,7 +178,8 @@
         color: #111;
         margin-bottom: 4px;
       }
-      .snooze-plus-overlay input[type="number"] {
+      .snooze-plus-overlay input[type="number"],
+      .snooze-plus-overlay input[type="date"] {
         display: block;
         width: 100%;
         box-sizing: border-box;
@@ -237,7 +238,21 @@
         <button type="button" class="secondary" id="btn-snooze">Snooze</button>
         <button type="button" class="secondary" id="btn-snooze-plus">Snooze +</button>
         <button type="button" class="secondary" id="btn-delete" hidden>Delete</button>
+        <button type="button" class="secondary" id="btn-paid-late" hidden>Paid Late</button>
+        <button type="button" class="secondary" id="btn-paid-date" hidden title="Paid late? Only use this when the biller moved the billing date.">Paid + date</button>
         <button type="button" id="btn-done">Done</button>
+      </div>
+      <div id="pay-date-overlay" class="snooze-plus-overlay" hidden>
+        <form id="pay-date-form">
+          <h2 id="pay-date-title">New billing date</h2>
+          <label for="pay-new-date">Future due date (yyyy-mm-dd)</label>
+          <input type="date" id="pay-new-date" required />
+          <p class="snooze-plus-hint">Records this payment and sets the next due date.</p>
+          <div class="snooze-plus-actions">
+            <button type="button" id="btn-pay-date-cancel">Cancel</button>
+            <button type="submit" class="primary">Pay + set date</button>
+          </div>
+        </form>
       </div>
       <div id="snooze-plus-overlay" class="snooze-plus-overlay" hidden>
         <form id="snooze-plus-form">
@@ -318,7 +333,18 @@
         document.getElementById('created').textContent = created
           ? 'Created ' + created
           : '';
+        if (itemType === 'bill' && meta && meta.nextDueDate) {
+          document.getElementById('pay-new-date').value = meta.nextDueDate;
+        }
+        if (itemType === 'bill' && meta && meta.recurring) {
+          document.getElementById('btn-paid-date').hidden = false;
+        }
       }).catch(() => {});
+
+      if (itemType === 'bill') {
+        document.getElementById('btn-done').textContent = 'Paid';
+        document.getElementById('btn-paid-late').hidden = false;
+      }
 
       if (window.notifApi.onRefresh) {
         window.notifApi.onRefresh((payload) => {
@@ -338,6 +364,8 @@
 
       const overlay = document.getElementById('snooze-plus-overlay');
       const hoursInput = document.getElementById('snooze-hours');
+      const payOverlay = document.getElementById('pay-date-overlay');
+      const payDateInput = document.getElementById('pay-new-date');
 
       /** Clamp hours to 0.5–72 in 0.5 steps; return minutes or null. */
       function hoursToMinutes(raw) {
@@ -359,8 +387,28 @@
         overlay.hidden = true;
       }
 
+      function openPayDate() {
+        payOverlay.hidden = false;
+        requestAnimationFrame(() => payDateInput.focus());
+      }
+
+      function closePayDate() {
+        payOverlay.hidden = true;
+      }
+
       document.getElementById('btn-done').onclick = () => {
         window.notifApi.complete(payload);
+      };
+      document.getElementById('btn-paid-late').onclick = () => {
+        window.notifApi.complete(payload, { late: true });
+      };
+      document.getElementById('btn-paid-date').onclick = openPayDate;
+      document.getElementById('btn-pay-date-cancel').onclick = closePayDate;
+      document.getElementById('pay-date-form').onsubmit = (e) => {
+        e.preventDefault();
+        const d = (payDateInput.value || '').trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+        window.notifApi.complete(payload, { new_due_date: d });
       };
       document.getElementById('btn-snooze').onclick = () => {
         window.notifApi.snooze(payload, snoozeMins);
@@ -374,7 +422,14 @@
         window.notifApi.snooze(payload, minutes);
       };
       document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape' || overlay.hidden) return;
+        if (e.key !== 'Escape') return;
+        if (!payOverlay.hidden) {
+          e.preventDefault();
+          e.stopPropagation();
+          closePayDate();
+          return;
+        }
+        if (overlay.hidden) return;
         e.preventDefault();
         e.stopPropagation();
         closeSnoozePlus();

@@ -45,6 +45,7 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
   const [expiredOpen, setExpiredOpen] = useState(true);
   const [payingId, setPayingId] = useState(null);
   const [payActual, setPayActual] = useState('');
+  const [payMode, setPayMode] = useState('paid');
 
   function openModule(id) {
     onNavigate?.(id);
@@ -77,20 +78,22 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
   }
 
   /** Mark paid — no window.prompt (unsupported in Electron); inline actual for estimate/avg. */
-  async function payBill(b, actualOverride) {
+  async function payBill(b, actualOverride, mode = 'paid') {
     const needsActual =
       b.amount_mode === 'estimate' || b.amount_mode === 'average';
     if (needsActual && actualOverride === undefined) {
       setPayingId(b.id);
+      setPayMode(mode);
       setPayActual(String(b.amount));
       return;
     }
-    let opts;
+    const opts = {};
     if (needsActual) {
       const actual = Number(actualOverride);
       if (!Number.isFinite(actual)) return;
-      opts = { actual_amount: actual };
+      opts.actual_amount = actual;
     }
+    if (mode === 'late') opts.late = true;
     try {
       await window.api.markBillPaid(b.id, opts);
       setPayingId(null);
@@ -164,13 +167,18 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
           <BillPayConfirm
             value={payActual}
             onChange={setPayActual}
-            onConfirm={() => payBill(b, payActual)}
+            onConfirm={() => payBill(b, payActual, payMode)}
             onCancel={() => setPayingId(null)}
           />
         ) : (
-          <button type="button" onClick={() => payBill(b)}>
-            Paid
-          </button>
+          <>
+            <button type="button" onClick={() => payBill(b, undefined, 'paid')}>
+              Paid
+            </button>
+            <button type="button" onClick={() => payBill(b, undefined, 'late')}>
+              Paid Late
+            </button>
+          </>
         )}
         <button type="button" onClick={() => onEditRequest?.('bill', b.id)}>
           Edit

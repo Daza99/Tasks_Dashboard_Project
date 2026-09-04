@@ -205,6 +205,51 @@ function migrateSchema() {
   addBill('nudge_datetime', 'nudge_datetime TEXT');
   addBill('nudge_mode', 'nudge_mode TEXT');
   addBill('nudge_alerted', 'nudge_alerted INTEGER DEFAULT 0');
+  addBill('remind_days_before', 'remind_days_before INTEGER NOT NULL DEFAULT 3');
+  addBill('billing_day', 'billing_day INTEGER');
+  addBill('date_offset_days', 'date_offset_days INTEGER NOT NULL DEFAULT 0');
+  addBill('biller_region', 'biller_region TEXT');
+  addBill('payment_type', 'payment_type TEXT');
+  db.prepare(
+    `UPDATE bills SET billing_day = CAST(strftime('%d', due_date) AS INTEGER)
+     WHERE billing_day IS NULL AND due_date IS NOT NULL`
+  ).run();
+
+  // One-shot: #once on non-recurring bills (user tag; searchable)
+  const onceFlag = db
+    .prepare("SELECT value FROM settings WHERE key = 'bill_once_tag_v1'")
+    .get();
+  if (!onceFlag || onceFlag.value !== '1') {
+    db.prepare(
+      `INSERT INTO tags (name, is_system)
+       SELECT 'once', 0
+       WHERE NOT EXISTS (SELECT 1 FROM tags WHERE name = 'once')`
+    ).run();
+    db.prepare(
+      `INSERT INTO item_tags (item_type, item_id, tag_id)
+       SELECT 'bill', b.id, t.id
+       FROM bills b
+       JOIN tags t ON t.name = 'once'
+       WHERE (b.recurrence IS NULL OR trim(b.recurrence) = '')
+         AND NOT EXISTS (
+           SELECT 1 FROM item_tags it
+           WHERE it.item_type = 'bill' AND it.item_id = b.id AND it.tag_id = t.id
+         )`
+    ).run();
+    db.prepare(
+      `DELETE FROM item_tags
+       WHERE item_type = 'bill'
+         AND tag_id = (SELECT id FROM tags WHERE name = 'once')
+         AND item_id IN (
+           SELECT id FROM bills
+           WHERE recurrence IS NOT NULL AND trim(recurrence) != ''
+         )`
+    ).run();
+    db.prepare(
+      `INSERT INTO settings (key, value) VALUES ('bill_once_tag_v1', '1')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run();
+  }
 
   const remCols = db.prepare('PRAGMA table_info(reminders)').all().map((c) => c.name);
   if (!remCols.includes('description')) {
@@ -242,9 +287,18 @@ function migrateSchema() {
       amount REAL NOT NULL,
       due_date DATE,
       paid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      late INTEGER DEFAULT 0,
+      schedule_changed INTEGER DEFAULT 0,
       FOREIGN KEY(bill_id) REFERENCES bills(id) ON DELETE SET NULL
     );
   `);
+  const payCols = db.prepare('PRAGMA table_info(bill_payments)').all().map((c) => c.name);
+  if (!payCols.includes('late')) {
+    db.exec('ALTER TABLE bill_payments ADD COLUMN late INTEGER DEFAULT 0');
+  }
+  if (!payCols.includes('schedule_changed')) {
+    db.exec('ALTER TABLE bill_payments ADD COLUMN schedule_changed INTEGER DEFAULT 0');
+  }
 
   // One-shot: remove exact payment dupes (same name + amount + due_date), keep oldest id
   const dedupeFlag = db

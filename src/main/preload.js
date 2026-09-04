@@ -105,10 +105,18 @@ contextBridge.exposeInMainWorld('api', {
   deleteBillPayments: (ids) => ipcRenderer.invoke('bills:deletePaymentsMany', ids),
   listBillCategories: () => ipcRenderer.invoke('bills:categories'),
   createBillCategory: (name) => ipcRenderer.invoke('bills:createCategory', name),
+  countBillsWithCategory: (name) => ipcRenderer.invoke('bills:countCategory', name),
+  renameBillCategory: (from, to) =>
+    ipcRenderer.invoke('bills:renameCategory', from, to),
+  deleteBillCategory: (name) => ipcRenderer.invoke('bills:deleteCategory', name),
+  mergeBillCategories: (keep, mergeAway) =>
+    ipcRenderer.invoke('bills:mergeCategories', keep, mergeAway),
 
   getEvent: (id) => ipcRenderer.invoke('events:get', id),
   listEventsDay: (day) => ipcRenderer.invoke('events:listDay', day),
   listEventsRange: (start, end) => ipcRenderer.invoke('events:listRange', start, end),
+  listCalendarYearOptions: (visitedYear) =>
+    ipcRenderer.invoke('events:yearOptions', visitedYear),
   createEvent: (data) => ipcRenderer.invoke('events:create', data),
   updateEvent: (id, fields) => ipcRenderer.invoke('events:update', id, fields),
   deleteEvent: (id) => ipcRenderer.invoke('events:delete', id),

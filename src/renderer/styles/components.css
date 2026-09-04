@@ -1523,6 +1523,9 @@
   flex: 1 1 140px;
   min-width: 0;
 }
+.bill-cat-row .edit-label input[type='number'] {
+  width: 5.5rem;
+}
 .bill-check {
   display: inline-flex;
   align-items: center;
@@ -1542,6 +1545,17 @@
   font-size: 10px;
   color: var(--text-muted);
   font-style: italic;
+}
+.bill-watch-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.bill-meta-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
 }
 
 .bill-pay-confirm {
@@ -1653,6 +1667,29 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
+  gap: 8px;
+}
+.cal-nav__pickers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.cal-nav__select {
+  appearance: auto;
+  background: var(--button-bg);
+  border: 1px solid var(--button-text);
+  color: var(--text-primary);
+  border-radius: var(--radius-chip);
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+/* Windows native option popup is light — force readable black text */
+.cal-nav__select option {
+  color: #000;
+  background: #fff;
 }
 .cal-grid {
   display: grid;
@@ -1993,6 +2030,61 @@
   border: 1px solid #ccc;
   border-radius: 6px;
   font: inherit;
+}
+.bill-cat-manage {
+  width: min(480px, calc(100vw - 32px));
+}
+.bill-cat-manage .confirm-dialog__input {
+  margin: 0;
+}
+.bill-cat-manage__block {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin: 0 0 14px;
+}
+.bill-cat-manage__block .edit-label {
+  flex: 1 1 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #111;
+}
+.bill-cat-manage input,
+.bill-cat-manage select {
+  color: #111;
+}
+.bill-cat-manage select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font: inherit;
+}
+.bill-cat-manage p.bill-cat-manage__error {
+  margin: 0 0 12px;
+  color: #b00020;
+  font-size: 13px;
+}
+.bill-cat-manage .btn-primary {
+  background: #14532d;
+  border: 1px solid #39ff6a;
+  color: #39ff6a;
+}
+.bill-cat-manage .btn-primary:disabled {
+  opacity: 0.45;
+}
+.bill-cat-manage button.danger {
+  background: #fff;
+  border: 1px solid #c0392b;
+  color: #c0392b;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
 }
 .confirm-dialog__actions {
   display: flex;

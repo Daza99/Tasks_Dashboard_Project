@@ -34,10 +34,11 @@ function fmtTaskWhen(iso) {
  * Focus landing: items due today (tasks, reminders, bills, habits) plus overdue tasks.
  * Type: Outfit title + Habits, Sitka Tasks, Source Serif 4 Reminders, IBM Plex Mono Bills.
  * @param {{
- *   onEditRequest?: (type: string, id: number) => void
+ *   onEditRequest?: (type: string, id: number) => void,
+ *   onNavigate?: (viewId: string) => void
  * }} props
  */
-export default function TodayView({ onEditRequest }) {
+export default function TodayView({ onEditRequest, onNavigate }) {
   const { brief, loading, error, refresh } = useBrief();
   const { enterCompact } = useLayout();
   const { methodHint } = useDateFormat();
@@ -117,7 +118,12 @@ export default function TodayView({ onEditRequest }) {
       )}
 
       <section className="today-view__section">
-        <h2 className="today-view__h today-view__h--sitka">Tasks</h2>
+        <div className="today-view__section-head">
+          <h2 className="today-view__h today-view__h--sitka">Tasks</h2>
+          <button type="button" onClick={() => onNavigate?.('tasks')}>
+            Add
+          </button>
+        </div>
         {tasks.length ? (
           <ul className="today-view__list">
             {tasks.map((t) => (
@@ -150,7 +156,12 @@ export default function TodayView({ onEditRequest }) {
       </section>
 
       <section className="today-view__section">
-        <h2 className="today-view__h today-view__h--outfit">Habits</h2>
+        <div className="today-view__section-head">
+          <h2 className="today-view__h today-view__h--outfit">Habits</h2>
+          <button type="button" onClick={() => onNavigate?.('habits')}>
+            Add
+          </button>
+        </div>
         {habits.length ? (
           <ul className="today-view__list">
             {habits.map((h) => (
@@ -185,7 +196,12 @@ export default function TodayView({ onEditRequest }) {
       </section>
 
       <section className="today-view__section">
-        <h2 className="today-view__h today-view__h--serif">Reminders</h2>
+        <div className="today-view__section-head">
+          <h2 className="today-view__h today-view__h--serif">Reminders</h2>
+          <button type="button" onClick={() => onNavigate?.('reminders')}>
+            Add
+          </button>
+        </div>
         {reminders.length ? (
           <ul className="today-view__list">
             {reminders.map((r) => (
@@ -218,7 +234,12 @@ export default function TodayView({ onEditRequest }) {
       </section>
 
       <section className="today-view__section">
-        <h2 className="today-view__h today-view__h--mono">Bills</h2>
+        <div className="today-view__section-head">
+          <h2 className="today-view__h today-view__h--mono">Bills</h2>
+          <button type="button" onClick={() => onNavigate?.('bills')}>
+            Add
+          </button>
+        </div>
         {bills.length ? (
           <ul className="today-view__list">
             {bills.map((b) => (

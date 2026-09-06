@@ -2,7 +2,7 @@
  * Trackers CRUD, period logs, wall-clock stopwatch/countdown.
  * Habits stay binary; this module is counts / ratings / mood / energy / clocks.
  */
-const { getDb } = require('../../main/database');
+const { getDb, getAllSettings } = require('../../main/database');
 const { logError } = require('../../main/logger');
 const { getItemTagNames, syncUserTags } = require('./tags');
 const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
@@ -62,7 +62,7 @@ function normalizeConfig(kind, cfg = {}) {
     if (target != null && !Number.isFinite(target)) {
       throw new Error('Count target must be a number');
     }
-    return { step, unit, target };
+    return { step, unit, target, record: Boolean(c.record) };
   }
   if (kind === 'scale') {
     const min = Number.parseInt(c.min, 10);
@@ -73,8 +73,7 @@ function normalizeConfig(kind, cfg = {}) {
     if (max - min > 100) throw new Error('Scale range too wide (max 100)');
     return { min, max };
   }
-  if (kind === 'mood') return {};
-  if (kind === 'energy') return {};
+  if (kind === 'mood' || kind === 'energy') return { record: Boolean(c.record) };
   if (kind === 'stopwatch') return {};
   if (kind === 'countdown') {
     const duration_ms = Math.round(Number(c.duration_ms) || 0);
@@ -165,7 +164,27 @@ function stampLogsFrom(logs, now = new Date()) {
     .map((l) => ({ id: l.id, logged_at: l.logged_at, value: l.value }));
 }
 
-function periodStats(id, period, createdAt, kind) {
+/**
+ * Numbered Record stamps for the current period.
+ * Count: each + only. Mood/energy: every log (value = face index).
+ */
+function recordLogsFrom(kind, config, inPeriod) {
+  if (!config.record) return [];
+  const rows =
+    kind === 'count'
+      ? inPeriod.filter((l) => Number(l.value) > 0)
+      : kind === 'mood' || kind === 'energy'
+        ? inPeriod
+        : [];
+  return rows.map((l, i) => ({
+    id: l.id,
+    n: i + 1,
+    logged_at: l.logged_at,
+    value: l.value,
+  }));
+}
+
+function periodStats(id, period, createdAt, kind, config = {}) {
   const win = periodWindow(period, createdAt);
   const logs = getDb()
     .prepare(
@@ -176,6 +195,7 @@ function periodStats(id, period, createdAt, kind) {
   const inPeriod = logs.filter((l) => inWindow(l.logged_at, win));
   const last = logs.length ? logs[logs.length - 1] : null;
   const periodTotal = inPeriod.reduce((s, l) => s + (Number(l.value) || 0), 0);
+  const recordLogs = recordLogsFrom(kind, config, inPeriod);
   return {
     period_total: periodTotal,
     period_log_count: inPeriod.length,
@@ -183,6 +203,7 @@ function periodStats(id, period, createdAt, kind) {
     last_logged_at: last ? last.logged_at : null,
     logged_this_period: inPeriod.length > 0,
     stamp_logs: STAMP_KINDS.has(kind) ? stampLogsFrom(logs) : [],
+    record_logs: recordLogs,
   };
 }
 
@@ -192,7 +213,7 @@ function enrich(row) {
   const fresh = getDb().prepare('SELECT * FROM trackers WHERE id = ?').get(row.id);
   if (!fresh) return null;
   const config = normalizeConfig(fresh.kind, parseJson(fresh.config_json));
-  const stats = periodStats(fresh.id, fresh.period, fresh.created_at, fresh.kind);
+  const stats = periodStats(fresh.id, fresh.period, fresh.created_at, fresh.kind, config);
   const now = Date.now();
   return {
     ...fresh,
@@ -632,13 +653,23 @@ function listDueThisPeriod() {
   }
 }
 
+/** Settings date_format for popout stamp labels (ymd | dmy). */
+function popoutDateFormat() {
+  try {
+    return getAllSettings().date_format === 'dmy' ? 'dmy' : 'ymd';
+  } catch {
+    return 'ymd';
+  }
+}
+
 /**
  * Kit-ready popout payload — v1 is a one-element controls array.
  * @param {object} tracker enriched row
  */
 function toPopoutPayload(tracker) {
-  if (!tracker) return { controls: [] };
+  if (!tracker) return { date_format: popoutDateFormat(), controls: [] };
   return {
+    date_format: popoutDateFormat(),
     controls: [
       {
         id: tracker.id,
@@ -657,6 +688,7 @@ function toPopoutPayload(tracker) {
         last_value: tracker.last_value,
         logged_this_period: tracker.logged_this_period,
         created_at: tracker.created_at,
+        record_logs: tracker.record_logs || [],
       },
     ],
   };

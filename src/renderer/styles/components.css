@@ -2987,6 +2987,39 @@
   margin-top: 2px;
   flex-shrink: 0;
 }
+
+/* Count Record: name | stamps | actions */
+.module-list__row--record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 320px) auto;
+  align-items: start;
+}
+.module-list__row--record .item-row__actions {
+  flex-shrink: 0;
+}
+
+/* Count Record: middle-column increment stamps */
+.tracker-record {
+  flex: unset;
+  min-width: 0;
+  max-width: none;
+  max-height: 88px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--accent-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.tracker-record__line {
+  white-space: nowrap;
+}
+
 /* List row: show up to 3 lines; Edit for the rest */
 .details-preview {
   margin-top: 6px;

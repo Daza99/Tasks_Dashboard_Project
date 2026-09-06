@@ -56,10 +56,10 @@ function sizeForPayload(payload) {
     height = span > 12 ? 176 : Math.min(280, 150 + Math.ceil(span / 6) * 28);
     width = span > 12 ? 300 : 340;
   } else if (kind === 'mood' || kind === 'energy') {
-    height = 168;
+    height = cfg.record ? 240 : 168;
     width = 340;
   } else if (kind === 'count') {
-    height = 168;
+    height = cfg.record ? 240 : 168;
   } else if (kind === 'stopwatch' || kind === 'countdown') {
     height = 176;
   }

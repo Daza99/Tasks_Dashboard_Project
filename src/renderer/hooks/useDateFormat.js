@@ -3,6 +3,7 @@ import {
   dateMethodHint,
   formatDateKey,
   formatLocalDateTime,
+  formatStampDateTime,
   resolveDateFormat,
 } from '../../utils/date-format.js';
 
@@ -15,5 +16,6 @@ export function useDateFormat() {
     methodHint: dateMethodHint(dateFormat),
     formatDate: (value) => formatDateKey(value, dateFormat),
     formatDateTime: (iso) => formatLocalDateTime(iso, dateFormat),
+    formatStamp: (iso) => formatStampDateTime(iso, dateFormat),
   };
 }

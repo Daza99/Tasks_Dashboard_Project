@@ -73,3 +73,19 @@ export function formatLocalDateTime(iso, fmt) {
   const date = joinYmd(localParts(d), fmt);
   return `${date} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
+
+/**
+ * Count Record stamp: 2026-09-06 9:16am (settings date + 12h).
+ * @param {string|null|undefined} iso
+ * @param {string} [fmt]
+ */
+export function formatStampDateTime(iso, fmt) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const date = joinYmd(localParts(d), fmt);
+  const h24 = d.getHours();
+  const h12 = h24 % 12 || 12;
+  const ap = h24 < 12 ? 'am' : 'pm';
+  return `${date} ${h12}:${pad2(d.getMinutes())}${ap}`;
+}

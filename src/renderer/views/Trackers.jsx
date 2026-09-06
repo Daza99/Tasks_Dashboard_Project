@@ -100,6 +100,25 @@ function fmtWhen(iso) {
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** Count: `1) date time`. Mood/energy: `1) 🙂 date time`. */
+function recordStampText(kind, log, formatStamp) {
+  const when = formatStamp(log.logged_at);
+  if (kind === 'mood' || kind === 'energy') {
+    const faces = kind === 'energy' ? ENERGY_FACES : MOOD_FACES;
+    const face = faces[Number(log.value) - 1] || '';
+    return `${log.n}) ${face} ${when}`;
+  }
+  return `${log.n}) ${when}`;
+}
+
+function showsRecordStamps(t) {
+  return (
+    (t.kind === 'count' || t.kind === 'mood' || t.kind === 'energy') &&
+    Boolean(t.config?.record) &&
+    (t.record_logs || []).length > 0
+  );
+}
+
 /** Local yyyy-mm-dd. */
 function localDateKey(d = new Date()) {
   const x = new Date(d);
@@ -215,8 +234,9 @@ function DateRangeDialog({
 }
 
 function emptyKindFields(kind) {
-  if (kind === 'count') return { step: '1', unit: '', target: '' };
+  if (kind === 'count') return { step: '1', unit: '', target: '', record: false };
   if (kind === 'scale') return { min: '1', max: '10' };
+  if (kind === 'mood' || kind === 'energy') return { record: false };
   if (kind === 'countdown') return { duration: '5:00', keep: true };
   return {};
 }
@@ -227,9 +247,11 @@ function configFromFields(kind, fields) {
       step: Number(fields.step) || 1,
       unit: fields.unit || '',
       target: fields.target === '' || fields.target == null ? null : Number(fields.target),
+      record: Boolean(fields.record),
     };
   }
   if (kind === 'scale') return { min: Number(fields.min), max: Number(fields.max) };
+  if (kind === 'mood' || kind === 'energy') return { record: Boolean(fields.record) };
   if (kind === 'countdown') {
     const duration_ms = parseDuration(fields.duration);
     if (duration_ms == null) throw new Error('Duration must be mm:ss or h:mm:ss');
@@ -242,7 +264,7 @@ function configFromFields(kind, fields) {
  * Focus view: tracker CRUD + inline log/timer controls + PopOut.
  */
 export default function TrackersView({ editId = null, onEditConsumed }) {
-  const { formatDate, methodHint } = useDateFormat();
+  const { formatDate, formatStamp, methodHint } = useDateFormat();
   const [rows, setRows] = useState([]);
   const [due, setDue] = useState([]);
   const [name, setName] = useState('');
@@ -401,7 +423,10 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
         step: String(t.config?.step ?? 1),
         unit: t.config?.unit || '',
         target: t.config?.target == null ? '' : String(t.config.target),
+        record: Boolean(t.config?.record),
       });
+    } else if (t.kind === 'mood' || t.kind === 'energy') {
+      setEditFields({ record: Boolean(t.config?.record) });
     } else if (t.kind === 'scale') {
       setEditFields({
         min: String(t.config?.min ?? 1),
@@ -503,6 +528,17 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
   }
 
   function kindFieldsUi(fields, setFields, forKind) {
+    const recordCheck = (
+      <label className="cal-appt-check">
+        <input
+          type="checkbox"
+          checked={Boolean(fields.record)}
+          onChange={(e) => setFields({ ...fields, record: e.target.checked })}
+          aria-label="Record timestamps"
+        />
+        Record
+      </label>
+    );
     if (forKind === 'count') {
       return (
         <div className="tracker-kind-fields">
@@ -533,8 +569,12 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
               onChange={(e) => setFields({ ...fields, target: e.target.value })}
             />
           </label>
+          {recordCheck}
         </div>
       );
+    }
+    if (forKind === 'mood' || forKind === 'energy') {
+      return <div className="tracker-kind-fields">{recordCheck}</div>;
     }
     if (forKind === 'scale') {
       return (
@@ -672,7 +712,7 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
               );
             })}
           </div>
-          {logs.length > 0 && (
+          {logs.length > 0 && !t.config?.record && (
             <div className="tracker-stamps" aria-label="Logged changes">
               {logs.map((l) => {
                 const frozen = isoToDateKey(l.logged_at) !== todayKey;
@@ -952,7 +992,9 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
             ) : (
               <>
                 <div
-                  className="module-list__row"
+                  className={`module-list__row${
+                    showsRecordStamps(t) ? ' module-list__row--record' : ''
+                  }`}
                   onDoubleClick={rowDblClick(() => beginEdit(t))}
                 >
                   <div className="tracker-list__main">
@@ -978,6 +1020,15 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
                       <DetailsPreview text={t.description} />
                     </div>
                   </div>
+                  {showsRecordStamps(t) && (
+                    <div className="tracker-record" aria-label="Logged stamps">
+                      {t.record_logs.map((l) => (
+                        <div key={l.id} className="tracker-record__line">
+                          {recordStampText(t.kind, l, formatStamp)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="item-row__actions">
                     <button type="button" onClick={() => setResetId(t.id)}>
                       Reset

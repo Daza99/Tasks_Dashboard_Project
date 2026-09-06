@@ -101,7 +101,7 @@ function AppInner() {
   let focusContent = <StubView viewId={activeView || 'module'} />;
   if (activeView === 'today') {
     focusContent = (
-      <TodayView onEditRequest={requestEdit} />
+      <TodayView onEditRequest={requestEdit} onNavigate={setActiveView} />
     );
   } else if (activeView === 'settings') focusContent = <SettingsView />;
   else if (activeView === 'tasks') {

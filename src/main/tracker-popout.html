@@ -141,6 +141,21 @@
       button.face.active {
         filter: none;
       }
+      .stamps {
+        flex: 1;
+        min-height: 0;
+        max-height: 88px;
+        overflow: auto;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        border: 1px solid #4a5a6a;
+        border-radius: 8px;
+        padding: 6px 8px;
+        background: rgba(255, 255, 255, 0.45);
+      }
+      .stamp {
+        white-space: nowrap;
+      }
     </style>
   </head>
   <body>
@@ -160,7 +175,7 @@
       const ENERGY = ["😩", "😪", "😐", "🙂"];
       const FACE_LABELS = ["Very bad", "Bad", "Neutral", "Good", "Great"];
       const ENERGY_LABELS = ["Very tired", "Tired", "Neutral", "Normal"];
-      let state = { controls: [] };
+      let state = { controls: [], date_format: "ymd" };
       let tickId = null;
 
       function formatMs(ms) {
@@ -170,6 +185,22 @@
         const s = n % 60;
         if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
         return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+      }
+
+      /** ISO → 2026-09-06 9:16am (settings ymd/dmy + 12h). */
+      function formatStamp(iso, fmt) {
+        if (!iso) return "";
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return String(iso);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const date = fmt === "dmy" ? day + "-" + m + "-" + y : y + "-" + m + "-" + day;
+        const h24 = d.getHours();
+        const h12 = h24 % 12 || 12;
+        const min = String(d.getMinutes()).padStart(2, "0");
+        const ap = h24 < 12 ? "am" : "pm";
+        return date + " " + h12 + ":" + min + ap;
       }
 
       /** created_at ISO → local yyyy-mm-dd */
@@ -184,6 +215,29 @@
         const m = String(d.getMonth() + 1).padStart(2, "0");
         const day = String(d.getDate()).padStart(2, "0");
         return y + "-" + m + "-" + day;
+      }
+
+      /** Record list: count = n) when; mood/energy = n) face when. */
+      function appendRecordStamps(wrap, c) {
+        if (!c.config || !c.config.record) return;
+        const list = document.createElement("div");
+        list.className = "stamps";
+        list.setAttribute("aria-label", "Logged stamps");
+        const faces =
+          c.kind === "energy" ? ENERGY : c.kind === "mood" ? FACES : null;
+        for (const l of c.record_logs || []) {
+          const line = document.createElement("div");
+          line.className = "stamp";
+          const when = formatStamp(l.logged_at, state.date_format);
+          if (faces) {
+            const face = faces[Number(l.value) - 1] || "";
+            line.textContent = l.n + ") " + face + " " + when;
+          } else {
+            line.textContent = l.n + ") " + when;
+          }
+          list.appendChild(line);
+        }
+        wrap.appendChild(list);
       }
 
       function liveDisplay(c) {
@@ -250,6 +304,7 @@
             row.appendChild(plus);
             row.appendChild(undo);
             wrap.appendChild(row);
+            appendRecordStamps(wrap, c);
           } else if (c.kind === "scale") {
             const min = c.config.min;
             const max = c.config.max;
@@ -298,6 +353,7 @@
               row.appendChild(b);
             });
             wrap.appendChild(row);
+            appendRecordStamps(wrap, c);
           } else if (c.kind === "stopwatch" || c.kind === "countdown") {
             const clock = document.createElement("div");
             clock.className = "clock";
@@ -338,12 +394,12 @@
       document.getElementById("editBtn").onclick = () => window.trackerApi.edit();
 
       window.trackerApi.onState((payload) => {
-        state = payload || { controls: [] };
+        state = payload || { controls: [], date_format: "ymd" };
         render();
       });
 
       window.trackerApi.getState().then((payload) => {
-        state = payload || { controls: [] };
+        state = payload || { controls: [], date_format: "ymd" };
         render();
       });
 

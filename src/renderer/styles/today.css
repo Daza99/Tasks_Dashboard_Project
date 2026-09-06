@@ -70,14 +70,36 @@
   margin-top: 28px;
 }
 
+/* Title + Add on one row; Add uses the same borderless text as row actions. */
+.today-view__section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
 /* Same size; Sitka Tasks / Outfit Habits / Source Serif 4 Reminders / Plex Bills. */
 .today-view__h {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 1.65rem;
   font-weight: 500;
   letter-spacing: 0.01em;
   line-height: 1.2;
   text-transform: none;
+  color: var(--text-primary);
+}
+
+.today-view__section-head button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+
+.today-view__section-head button:hover {
   color: var(--text-primary);
 }
 

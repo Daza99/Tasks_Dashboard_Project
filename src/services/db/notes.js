@@ -80,8 +80,9 @@ function createNote({ title, tags = [], category = null }) {
 
 /**
  * List notes, newest updated first.
- * @param {{ category?: string, query?: string }} [opts]
+ * @param {{ category?: string, query?: string, year?: number, month?: number }} [opts]
  *   category: omitted/all = no filter; '' / uncategorized = blank category
+ *   year/month: local calendar of created_at (optional for other callers)
  */
 function listNotes(opts = {}) {
   try {
@@ -95,6 +96,16 @@ function listNotes(opts = {}) {
         parts.push('category = ?');
         vals.push(cat);
       }
+    }
+    const year = Number(opts.year);
+    if (Number.isFinite(year)) {
+      parts.push(`CAST(strftime('%Y', created_at, 'localtime') AS INTEGER) = ?`);
+      vals.push(year);
+    }
+    const month = Number(opts.month);
+    if (Number.isFinite(month) && month >= 1 && month <= 12) {
+      parts.push(`CAST(strftime('%m', created_at, 'localtime') AS INTEGER) = ?`);
+      vals.push(month);
     }
     const q = String(opts.query || '').trim();
     if (q) {

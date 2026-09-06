@@ -62,6 +62,14 @@ const SYSTEM_TAGS = [
   'nudge',
 ];
 
+/** Calendar chip fills. Keep in sync with SettingsTheme.jsx DEFAULT_CAL_MARKERS. */
+const DEFAULT_CAL_MARKERS = {
+  '--cal-bill': '#e53935',
+  '--cal-reminder': '#1e3a8a',
+  '--cal-task': '#7c3aed',
+  '--cal-habit': '#ea580c',
+};
+
 const DEFAULT_DARK_THEME = {
   name: 'Dark Glass',
   '--bg': 'transparent',
@@ -86,6 +94,7 @@ const DEFAULT_DARK_THEME = {
   '--action-text': 'rgba(242, 245, 248, 0.55)',
   '--clock-color': '#39ff6a',
   '--font-clock': '"Cascadia Mono", "Consolas", "Courier New", monospace',
+  ...DEFAULT_CAL_MARKERS,
 };
 
 const DEFAULT_LIGHT_THEME = {
@@ -112,6 +121,7 @@ const DEFAULT_LIGHT_THEME = {
   '--action-text': 'rgba(18, 24, 31, 0.6)',
   '--clock-color': '#056b32',
   '--font-clock': '"Cascadia Mono", "Consolas", "Courier New", monospace',
+  ...DEFAULT_CAL_MARKERS,
 };
 
 /** In-memory Custom / New starter — not a themes row. */
@@ -139,6 +149,7 @@ const DEFAULT_NEUTRAL_THEME = {
   '--action-text': 'rgba(236, 236, 236, 0.55)',
   '--clock-color': '#c4c8ce',
   '--font-clock': '"Cascadia Mono", "Consolas", "Courier New", monospace',
+  ...DEFAULT_CAL_MARKERS,
 };
 
 const BUILTIN_THEME_NAMES = ['Dark Glass', 'Light Glass'];
@@ -976,6 +987,7 @@ function listCustomThemes() {
  */
 function saveCustomTheme(payload) {
   try {
+    const { uniqueTitleFor } = require('../utils/unique-title.cjs');
     const json = JSON.stringify({ ...cssVarsOnly(DEFAULT_DARK_THEME), ...cssVarsOnly(payload?.vars) });
     const id = payload && payload.id != null ? Number(payload.id) : null;
     if (id) {
@@ -983,9 +995,10 @@ function saveCustomTheme(payload) {
       if (!row || isBuiltinThemeName(row.name)) {
         throw new Error('Cannot overwrite built-in theme');
       }
-      const name = payload?.name != null ? String(payload.name).trim().slice(0, 40) : '';
-      if (name && isBuiltinThemeName(name)) throw new Error('Reserved theme name');
-      if (name) {
+      const proposed = payload?.name != null ? String(payload.name).trim().slice(0, 40) : '';
+      if (proposed) {
+        const name = uniqueTitleFor('theme', proposed, row.id);
+        if (isBuiltinThemeName(name)) throw new Error('Reserved theme name');
         getDb()
           .prepare('UPDATE themes SET theme_json = ?, name = ? WHERE id = ?')
           .run(json, name, row.id);
@@ -996,8 +1009,9 @@ function saveCustomTheme(payload) {
       setSetting('theme_custom_id', String(row.id));
       setSetting('theme_base', 'custom');
     } else {
-      const name = String(payload?.name || '').trim().slice(0, 40);
-      if (!name) throw new Error('Name required');
+      const proposed = String(payload?.name || '').trim().slice(0, 40);
+      if (!proposed) throw new Error('Name required');
+      const name = uniqueTitleFor('theme', proposed);
       if (isBuiltinThemeName(name)) throw new Error('Reserved theme name');
       const info = getDb()
         .prepare('INSERT INTO themes (name, theme_json, is_default) VALUES (?, ?, 0)')

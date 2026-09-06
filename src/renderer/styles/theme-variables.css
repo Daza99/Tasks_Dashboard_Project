@@ -21,6 +21,11 @@
   --button-text: #39ff6a;
   --action-text: rgba(242, 245, 248, 0.55);
   --clock-color: #39ff6a;
+  /* Calendar month-chip fills by source_type */
+  --cal-bill: #e53935;
+  --cal-reminder: #1e3a8a;
+  --cal-task: #7c3aed;
+  --cal-habit: #ea580c;
   /* Module tab brand colors (always-on outlines — equal weight) */
   --tab-tasks: #39ff6a;
   --tab-tasks-dim: rgba(57, 255, 106, 0.14);

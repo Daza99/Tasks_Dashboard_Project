@@ -12,6 +12,7 @@ const ENTITY_TITLES = Object.freeze({
   list: { table: 'lists', column: 'name', untitled: 'Untitled List' },
   event: { table: 'events', column: 'title', untitled: 'Untitled Event' },
   bill: { table: 'bills', column: 'name', untitled: 'Untitled Bill', unique: false },
+  theme: { table: 'themes', column: 'name', untitled: 'Untitled Theme' },
 });
 
 /** Trailing " (n)" like Explorer copy: History Lesson (1) */

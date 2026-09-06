@@ -17,6 +17,22 @@ import {
 
 const CAT_NEW = '__new__';
 const CAT_NONE = '';
+const NOTE_YEAR_FLOOR = 2026;
+
+const MONTHS = [
+  { id: 1, label: 'January' },
+  { id: 2, label: 'February' },
+  { id: 3, label: 'March' },
+  { id: 4, label: 'April' },
+  { id: 5, label: 'May' },
+  { id: 6, label: 'June' },
+  { id: 7, label: 'July' },
+  { id: 8, label: 'August' },
+  { id: 9, label: 'September' },
+  { id: 10, label: 'October' },
+  { id: 11, label: 'November' },
+  { id: 12, label: 'December' },
+];
 
 function createdLabel(iso) {
   if (!iso) return '';
@@ -27,6 +43,27 @@ function createdLabel(iso) {
   }
 }
 
+/** Year dropdown: 2026 … currentYear+1. Older years stay as time moves on. */
+function noteYearOptions(now = new Date()) {
+  const current = now.getFullYear();
+  const floor = Math.min(NOTE_YEAR_FLOOR, current);
+  const max = current + 1;
+  const years = [];
+  for (let y = floor; y <= max; y += 1) years.push(y);
+  return years;
+}
+
+/** Local calendar year/month of a SQLite UTC `created_at`. */
+function createdYearMonth(iso, now = new Date()) {
+  if (!iso) return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  const s = String(iso).trim();
+  const hasTz = /[zZ]$/.test(s) || /[+-]\d{2}:?\d{2}$/.test(s);
+  const isoLike = s.includes('T') ? s : s.replace(' ', 'T');
+  const d = new Date(hasTz ? isoLike : `${isoLike}Z`);
+  if (Number.isNaN(d.getTime())) return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+}
+
 /**
  * Focus Notes — folder rail + combined MD/bullet pad.
  * @param {{ editId?: number|null, onEditConsumed?: () => void }} props
@@ -35,6 +72,8 @@ export default function NotesView({ editId = null, onEditConsumed }) {
   const [notes, setNotes] = useState([]);
   const [categories, setCategories] = useState([]);
   const [filterCat, setFilterCat] = useState('all');
+  const [filterYear, setFilterYear] = useState(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState(() => new Date().getMonth() + 1);
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -58,6 +97,11 @@ export default function NotesView({ editId = null, onEditConsumed }) {
   selectedIdRef.current = selectedId;
 
   const popped = useMemo(() => new Set(poppedIds.map(Number)), [poppedIds]);
+  const yearOptions = useMemo(() => {
+    const base = noteYearOptions();
+    if (base.includes(filterYear)) return base;
+    return [...base, filterYear].sort((a, b) => a - b);
+  }, [filterYear]);
   const selectedPopped =
     selectedId != null &&
     (popped.has(Number(selectedId)) || returningId === Number(selectedId));
@@ -66,18 +110,30 @@ export default function NotesView({ editId = null, onEditConsumed }) {
     setCategories(await window.api.listNoteCategories());
   }
 
-  async function loadNotes() {
+  /**
+   * Reload the folder list for category + year + month.
+   * @param {{ year?: number, month?: number, category?: string }} [overrides]
+   */
+  async function loadNotes(overrides = {}) {
+    const year = overrides.year ?? filterYear;
+    const month = overrides.month ?? filterMonth;
+    const cat = overrides.category !== undefined ? overrides.category : filterCat;
     const rows = await window.api.listNotes({
-      category: filterCat === 'all' ? undefined : filterCat,
+      category: cat === 'all' ? undefined : cat,
+      year,
+      month,
     });
     setNotes(rows);
-    if (selectedId && !rows.some((n) => n.id === selectedId)) {
+    const keepId = selectedIdRef.current;
+    if (keepId && !rows.some((n) => n.id === keepId)) {
+      selectedIdRef.current = null;
       setSelectedId(null);
       setDetail(null);
     }
   }
 
   async function openNote(id) {
+    selectedIdRef.current = id;
     setSelectedId(id);
     const row = await window.api.getNote(id);
     setDetail(row);
@@ -90,7 +146,7 @@ export default function NotesView({ editId = null, onEditConsumed }) {
 
   useEffect(() => {
     loadNotes();
-  }, [filterCat]);
+  }, [filterCat, filterYear, filterMonth]);
 
   /** Diff popout ids; hold the in-app pad until getNote if the selected note returned. */
   function applyPopoutIds(raw) {
@@ -140,9 +196,23 @@ export default function NotesView({ editId = null, onEditConsumed }) {
 
   useEffect(() => {
     if (editId == null) return;
-    setFilterCat('all');
-    openNote(editId);
-    onEditConsumed?.();
+    let cancelled = false;
+    (async () => {
+      setFilterCat('all');
+      try {
+        const row = await window.api.getNote(editId);
+        if (cancelled) return;
+        const ym = createdYearMonth(row?.created_at);
+        setFilterYear(ym.year);
+        setFilterMonth(ym.month);
+        await openNote(editId);
+      } finally {
+        if (!cancelled) onEditConsumed?.();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [editId]);
 
   async function create(e) {
@@ -159,8 +229,13 @@ export default function NotesView({ editId = null, onEditConsumed }) {
       setTitle('');
       setTagsInput('');
       setCategory(CAT_NONE);
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      setFilterYear(year);
+      setFilterMonth(month);
       await loadCategories();
-      await loadNotes();
+      await loadNotes({ year, month });
       await openNote(note.id);
     } catch (err) {
       setError(err?.message || String(err));
@@ -285,8 +360,8 @@ export default function NotesView({ editId = null, onEditConsumed }) {
     <div className="module-view lists-view">
       <h1>Notes</h1>
       <p className="module-view__hint">
-        Combined markdown and bullet notepad. Filter by category or search
-        title, details, and #tags.
+        Combined markdown and bullet notepad. Filter by category, year, and
+        month. Search matches title, details, and #tags inside that month.
       </p>
       {error ? <p className="stub-empty">{error}</p> : null}
 
@@ -303,7 +378,35 @@ export default function NotesView({ editId = null, onEditConsumed }) {
             ))}
           </select>
         </label>
-        <label className="module-filter-bar__field module-filter-bar__field--grow">
+        <label className="module-filter-bar__field">
+          Year
+          <select
+            value={filterYear}
+            onChange={(e) => setFilterYear(Number(e.target.value))}
+            aria-label="Filter year"
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="module-filter-bar__field">
+          Month
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(Number(e.target.value))}
+            aria-label="Filter month"
+          >
+            {MONTHS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="module-filter-bar__field module-filter-bar__field--search-half">
           Search
           <TagSearchInput
             value={search}

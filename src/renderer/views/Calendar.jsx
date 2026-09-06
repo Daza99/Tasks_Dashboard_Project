@@ -61,6 +61,14 @@ function isLinked(ev) {
   return Boolean(ev?.source_type && ev.source_id != null);
 }
 
+const CAL_CHIP_TYPES = new Set(['bill', 'reminder', 'task', 'habit']);
+
+/** Type modifier for month-grid chips; manual events stay untyped. */
+function chipTypeClass(ev) {
+  const t = ev?.source_type;
+  return CAL_CHIP_TYPES.has(t) ? ` cal-chip--${t}` : '';
+}
+
 /** Keep a fixed context menu inside the viewport. */
 function clampMenuPos(clientX, clientY, w = 200, h = 130) {
   const pad = 8;
@@ -355,9 +363,9 @@ export default function CalendarView({
           <button
             key={ev.id}
             type="button"
-            className={`cal-chip${picked.has(ev.id) ? ' cal-chip--selected' : ''}${
-              isLinked(ev) ? ' cal-chip--linked' : ''
-            }`}
+            className={`cal-chip${chipTypeClass(ev)}${
+              picked.has(ev.id) ? ' cal-chip--selected' : ''
+            }${isLinked(ev) ? ' cal-chip--linked' : ''}`}
             onClick={(e) => onChipClick(e, ev, day)}
           >
             <CalEntryLabel ev={ev} />

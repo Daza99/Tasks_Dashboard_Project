@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useDatabase } from '../context/DatabaseContext';
 import PromptDialog from '../components/PromptDialog';
+import ConfirmDialog from '../components/ConfirmDialog';
 import ColorPalettePopover from '../components/ColorPalettePopover';
 import {
   CLOCK_FONTS,
@@ -12,6 +13,14 @@ import {
 } from '../../utils/theme-color.js';
 
 const NEW_ID = 'new';
+
+/** Factory calendar chip colors. Keep in sync with DEFAULT_CAL_MARKERS in database.js */
+const DEFAULT_CAL_MARKERS = {
+  '--cal-bill': '#e53935',
+  '--cal-reminder': '#1e3a8a',
+  '--cal-task': '#7c3aed',
+  '--cal-habit': '#ea580c',
+};
 
 /**
  * Theme color chip. Only the 36px square opens the palette.
@@ -84,6 +93,9 @@ export default function SettingsTheme() {
   const [dirty, setDirty] = useState(false);
   const [nameOpen, setNameOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [overwriteOpen, setOverwriteOpen] = useState(false);
+  const [overwriteTarget, setOverwriteTarget] = useState(null);
+  const [nameDraft, setNameDraft] = useState('');
   const [error, setError] = useState('');
 
   const brightKey =
@@ -159,12 +171,19 @@ export default function SettingsTheme() {
     setDirty(false);
   }
 
+  function clearNameFlow() {
+    setNameOpen(false);
+    setOverwriteOpen(false);
+    setOverwriteTarget(null);
+    setNameDraft('');
+  }
+
   async function persist(payload) {
     const t = await confirmCustomTheme(payload);
     setDirty(false);
     setSelectedId(String(t.id));
-    setNameOpen(false);
     setRenameOpen(false);
+    clearNameFlow();
     setPresets(await window.api.listCustomThemes());
     setError('');
     return t;
@@ -173,6 +192,8 @@ export default function SettingsTheme() {
   function onConfirm() {
     if (!draft) return;
     if (selectedId === NEW_ID) {
+      setNameDraft('');
+      setOverwriteTarget(null);
       setNameOpen(true);
       return;
     }
@@ -181,10 +202,30 @@ export default function SettingsTheme() {
     });
   }
 
-  function onNameSave(name) {
+  /** List pick → overwrite confirm; typed name (incl. Tab ghost) → insert. */
+  function onNameSave(name, picked) {
+    if (picked) {
+      setOverwriteTarget(picked);
+      setNameDraft(name);
+      setNameOpen(false);
+      setOverwriteOpen(true);
+      return;
+    }
     persist({ name, vars: draft }).catch((err) => {
       setError(err?.message || String(err));
     });
+  }
+
+  function onOverwriteConfirm() {
+    if (!overwriteTarget) return;
+    persist({ id: Number(overwriteTarget.id), vars: draft }).catch((err) => {
+      setError(err?.message || String(err));
+    });
+  }
+
+  function onOverwriteCancel() {
+    setOverwriteOpen(false);
+    setNameOpen(true);
   }
 
   function onRenameSave(name) {
@@ -203,6 +244,11 @@ export default function SettingsTheme() {
     } catch (err) {
       setError(err?.message || String(err));
     }
+  }
+
+  /** Restore the four calendar marker fills in draft only; Confirm still required. */
+  function onResetMarkers() {
+    patchDraft({ ...DEFAULT_CAL_MARKERS });
   }
 
   const fontValue = draft?.['--font-clock'] || CLOCK_FONTS[0].value;
@@ -342,49 +388,98 @@ export default function SettingsTheme() {
               </button>
             </div>
 
-            <div className="theme-swatches">
-              <ColorSwatch
-                label="Bg"
-                value={draft['--panel-bg']}
-                onChange={onBg}
-                dirty={dirty}
-                setDirty={setDirty}
-              />
-              <ColorSwatch
-                label="Button bg"
-                value={draft['--button-bg']}
-                onChange={onButtonBg}
-                dirty={dirty}
-                setDirty={setDirty}
-              />
-              <ColorSwatch
-                label="Button label"
-                value={draft['--button-text']}
-                onChange={onButtonText}
-                dirty={dirty}
-                setDirty={setDirty}
-              />
-              <ColorSwatch
-                label="Row actions (Done / Edit)"
-                value={draft['--action-text']}
-                onChange={(h) => patchDraft({ '--action-text': h })}
-                dirty={dirty}
-                setDirty={setDirty}
-              />
-              <ColorSwatch
-                label="Delete"
-                value={draft['--danger']}
-                onChange={(h) => patchDraft({ '--danger': h })}
-                dirty={dirty}
-                setDirty={setDirty}
-              />
-              <ColorSwatch
-                label="Clock"
-                value={draft['--clock-color']}
-                onChange={(h) => patchDraft({ '--clock-color': h })}
-                dirty={dirty}
-                setDirty={setDirty}
-              />
+            <div className="theme-custom-layout__swatches">
+              <div className="theme-markers">
+                <div className="theme-markers__head">
+                  <span className="theme-markers__title">Calendar Markers</span>
+                  <button
+                    type="button"
+                    className="btn-primary theme-reset theme-markers__reset"
+                    onClick={onResetMarkers}
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="theme-swatches">
+                  <ColorSwatch
+                    label="Bills"
+                    value={draft['--cal-bill']}
+                    onChange={(h) => patchDraft({ '--cal-bill': h })}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Reminders"
+                    value={draft['--cal-reminder']}
+                    onChange={(h) => patchDraft({ '--cal-reminder': h })}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Tasks"
+                    value={draft['--cal-task']}
+                    onChange={(h) => patchDraft({ '--cal-task': h })}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Habits"
+                    value={draft['--cal-habit']}
+                    onChange={(h) => patchDraft({ '--cal-habit': h })}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                </div>
+              </div>
+              <div className="theme-swatches-block">
+                <div className="theme-markers__head">
+                  <span className="theme-swatches-block__title">General Color Scheme</span>
+                </div>
+                <div className="theme-swatches">
+                  <ColorSwatch
+                    label="Bg"
+                    value={draft['--panel-bg']}
+                    onChange={onBg}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Button bg"
+                    value={draft['--button-bg']}
+                    onChange={onButtonBg}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Button label"
+                    value={draft['--button-text']}
+                    onChange={onButtonText}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Row actions (Done / Edit)"
+                    value={draft['--action-text']}
+                    onChange={(h) => patchDraft({ '--action-text': h })}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Delete"
+                    value={draft['--danger']}
+                    onChange={(h) => patchDraft({ '--danger': h })}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Clock"
+                    value={draft['--clock-color']}
+                    onChange={(h) => patchDraft({ '--clock-color': h })}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </>
@@ -396,8 +491,19 @@ export default function SettingsTheme() {
         message="Name this color set. It will appear in the dropdown."
         confirmLabel="Save"
         placeholder="e.g. Orange Wow"
+        initialValue={nameDraft}
+        initialPicked={overwriteTarget}
+        suggestions={presets}
         onConfirm={onNameSave}
-        onCancel={() => setNameOpen(false)}
+        onCancel={clearNameFlow}
+      />
+      <ConfirmDialog
+        open={overwriteOpen}
+        title="Overwrite saved colors?"
+        message={`Replace the saved colors for “${overwriteTarget?.name || ''}”?`}
+        confirmLabel="Overwrite"
+        onConfirm={onOverwriteConfirm}
+        onCancel={onOverwriteCancel}
       />
       <PromptDialog
         open={renameOpen}

@@ -22,14 +22,16 @@ let mainWindow = null;
 
 /**
  * Map package version to display label Vx.yz[.n].
- * 1.0.8 → V1.08. electron-builder requires valid semver, so 1.0.81 stands in for V1.08.1.
+ * 1.0.8 → V1.08. electron-builder requires valid semver, so 1.0.8N stands in for V1.08.N.
  * @param {string} semver
  * @returns {string}
  */
 function formatDashboardVersion(semver) {
-  const v = String(semver);
-  if (v === '1.0.81') return 'V1.08.1';
-  const [major = '0', minor = '0', patch = '0'] = v.split('.');
+  const [major = '0', minor = '0', patch = '0'] = String(semver).split('.');
+  // 1.0.8N → V1.08.N (electron-builder forbids 1.0.8.N)
+  if (major === '1' && minor === '0' && /^8\d+$/.test(patch)) {
+    return `V1.08.${patch.slice(1)}`;
+  }
   return `V${major}.${minor}${patch}`;
 }
 

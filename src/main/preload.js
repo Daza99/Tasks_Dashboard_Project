@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('api', {
   resetWallpaperDefaults: () => ipcRenderer.invoke('wallpaper:resetDefaults'),
   getPaths: () => ipcRenderer.invoke('app:getPaths'),
   health: () => ipcRenderer.invoke('app:health'),
+  /** Open an http(s) URL in the OS default browser. */
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   chooseDataDir: () => ipcRenderer.invoke('dataDir:choose'),
   migrateDataDir: (dest, opts) => ipcRenderer.invoke('dataDir:migrate', dest, opts),
   resetDataDir: () => ipcRenderer.invoke('dataDir:reset'),
@@ -48,6 +50,8 @@ contextBridge.exposeInMainWorld('api', {
   createTask: (data) => ipcRenderer.invoke('tasks:create', data),
   updateTask: (id, fields) => ipcRenderer.invoke('tasks:update', id, fields),
   completeTask: (id) => ipcRenderer.invoke('tasks:complete', id),
+  setTaskProgress: (id, marker, on) =>
+    ipcRenderer.invoke('tasks:setProgress', id, marker, on),
   deleteTask: (id) => ipcRenderer.invoke('tasks:delete', id),
   deleteTasks: (ids) => ipcRenderer.invoke('tasks:deleteMany', ids),
 
@@ -97,6 +101,8 @@ contextBridge.exposeInMainWorld('api', {
   markBillPaid: (id, opts) => ipcRenderer.invoke('bills:markPaid', id, opts),
   getBillAmountStats: (name) => ipcRenderer.invoke('bills:amountStats', name),
   listBillPayments: (opts) => ipcRenderer.invoke('bills:listPayments', opts),
+  listBillPaymentsForDueMonth: (year, month) =>
+    ipcRenderer.invoke('bills:listPaymentsForDueMonth', year, month),
   listBillPaymentFilterOptions: () =>
     ipcRenderer.invoke('bills:paymentFilterOptions'),
   deleteBill: (id) => ipcRenderer.invoke('bills:delete', id),

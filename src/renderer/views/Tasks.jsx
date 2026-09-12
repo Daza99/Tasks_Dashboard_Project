@@ -6,6 +6,7 @@ import TagSearchInput from '../components/TagSearchInput';
 import LockButton from '../components/LockButton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ListSelectToolbar from '../components/ListSelectToolbar';
+import ModuleRangeFilter from '../components/ModuleRangeFilter';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import {
   formatTagsDisplay,
@@ -17,11 +18,32 @@ import PrioritySelect from '../components/PrioritySelect';
 import DetailsInline from '../components/DetailsInline';
 import DetailsPreview from '../components/DetailsPreview';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
+import { useDateFormat } from '../hooks/useDateFormat';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { useSelectedCard } from '../hooks/useSelectedCard';
 import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { matchesEntitySearch } from '../../utils/entity-search.js';
+import {
+  listsRangeBounds,
+  matchesCreatedRange,
+  sortByCreated,
+} from '../../utils/created-range.js';
+
+const TASK_RANGE_OPTIONS = [
+  { id: 'all', label: 'All' },
+  { id: 'week', label: 'This week' },
+  { id: 'month', label: 'This month' },
+  { id: 'year', label: 'This year' },
+  { id: 'custom', label: 'Custom' },
+];
+
+const TASK_STATE_OPTIONS = [
+  { id: 'all', label: 'All' },
+  { id: 'done', label: 'Done' },
+  { id: 'half_done', label: 'Half done' },
+  { id: 'started', label: 'Started' },
+];
 
 function fmt(iso) {
   if (!iso) return '—';
@@ -61,6 +83,7 @@ export default function TasksView({
   onSeedConsumed,
 }) {
   const { refresh } = useBrief();
+  const { methodHint } = useDateFormat();
   const [tasks, setTasks] = useState([]);
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState('todo_24');
@@ -82,16 +105,23 @@ export default function TasksView({
   const [editOnCalendar, setEditOnCalendar] = useState(false);
   const [editError, setEditError] = useState('');
   const [search, setSearch] = useState('');
+  const [range, setRange] = useState('all');
+  const [stateFilter, setStateFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sortDir, setSortDir] = useState('desc');
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   async function load() {
-    const rows = await window.api.listTasks();
+    const rows = await window.api.listTasks({
+      includeCompleted: stateFilter === 'done',
+    });
     setTasks(rows);
   }
 
   useEffect(() => {
     load();
-  }, []);
+  }, [stateFilter]);
 
   useEffect(() => {
     if (editId == null) return;
@@ -178,19 +208,43 @@ export default function TasksView({
     await refresh();
   }
 
+  /** Immediate toggle; independent of Edit/Save and of the other chip. */
+  async function toggleProgress(id, marker, currentlyOn) {
+    await window.api.setTaskProgress(id, marker, !currentlyOn);
+    await load();
+  }
+
   async function remove(id) {
     await window.api.deleteTask(id);
     await load();
     await refresh();
   }
 
-  const filtered = useMemo(
-    () =>
-      tasks.filter((t) =>
-        matchesEntitySearch(t, search, { textKeys: ['title', 'description'] })
-      ),
-    [tasks, search]
+  const dateFilter = useMemo(
+    () => listsRangeBounds(range, dateFrom, dateTo),
+    [range, dateFrom, dateTo]
   );
+
+  const filtered = useMemo(() => {
+    const next = tasks.filter((t) => {
+      if (!matchesEntitySearch(t, search, { textKeys: ['title', 'description'] })) {
+        return false;
+      }
+      const completed = Boolean(t.completed_at);
+      if (stateFilter === 'done') {
+        if (!completed) return false;
+      } else if (completed) {
+        return false;
+      } else if (stateFilter === 'half_done') {
+        if (!t.tags?.includes('todo_half_done')) return false;
+      } else if (stateFilter === 'started') {
+        if (!t.tags?.includes('todo_started')) return false;
+      }
+      if (range === 'all') return true;
+      return matchesCreatedRange(t.created_at, dateFilter.dateFrom, dateFilter.dateTo);
+    });
+    return sortByCreated(next, sortDir);
+  }, [tasks, search, range, dateFilter, sortDir, stateFilter]);
   const visibleIds = useMemo(() => filtered.map((t) => t.id), [filtered]);
   const selectableIds = useMemo(
     () => filtered.filter((t) => !t.locked).map((t) => t.id),
@@ -223,9 +277,15 @@ export default function TasksView({
 
   return (
     <div className="module-view">
-      <h1>Tasks</h1>
+      <h1>
+        Tasks{' '}
+        <span className="module-view__lede">
+          (Tasks are like goals you want to set with a deadline or leave open.)
+        </span>
+      </h1>
       <p className="module-view__hint">
         Creation requires <strong>24hr</strong> or <strong>Open</strong>. Priority 1 = highest.
+        Range / Custom filter by created date (date method: {methodHint}).
       </p>
 
       <form className="create-form glass-inset" onSubmit={create}>
@@ -235,7 +295,7 @@ export default function TasksView({
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Task title"
         />
-        <div className="reminder-meta-row">
+        <div className="reminder-meta-row reminder-meta-row--details-fill">
           <div className="reminder-meta-row__left">
             <div className="kind-toggle" role="group" aria-label="Task kind">
               <button
@@ -289,6 +349,8 @@ export default function TasksView({
             onChange={setDetails}
             placeholder="Optional task details"
             ariaLabel="Optional task details"
+            wordLimit={1000}
+            continueBullets
           />
         </div>
         <button type="submit" className="btn-primary">
@@ -298,7 +360,34 @@ export default function TasksView({
       </form>
 
       <div className="module-filter-bar glass-inset">
-        <label className="module-filter-bar__field module-filter-bar__field--grow">
+        <ModuleRangeFilter
+          range={range}
+          onRange={setRange}
+          options={TASK_RANGE_OPTIONS}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFrom={setDateFrom}
+          onDateTo={setDateTo}
+          sortDir={sortDir}
+          onSortDir={setSortDir}
+          afterRange={
+            <label className="module-filter-bar__field">
+              State
+              <select
+                value={stateFilter}
+                onChange={(e) => setStateFilter(e.target.value)}
+                aria-label="State filter"
+              >
+                {TASK_STATE_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
+        />
+        <label className="module-filter-bar__field module-filter-bar__field--search-half">
           Search
           <TagSearchInput
             value={search}
@@ -336,7 +425,7 @@ export default function TasksView({
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
                 />
-                <div className="reminder-meta-row">
+                <div className="reminder-meta-row reminder-meta-row--details-fill">
                   <div className="reminder-meta-row__left">
                     <label className="edit-label">
                       Due
@@ -394,6 +483,8 @@ export default function TasksView({
                     onChange={setEditDetails}
                     placeholder="Optional task details"
                     ariaLabel="Optional task details"
+                    wordLimit={1000}
+                    continueBullets
                   />
                 </div>
                 <div className="item-row__actions">
@@ -449,9 +540,43 @@ export default function TasksView({
                       await refresh();
                     }}
                   />
-                  <button type="button" onClick={() => complete(t.id)}>
-                    Done
+                  <button
+                    type="button"
+                    className={`progress-chip${
+                      t.tags?.includes('todo_half_done') ? ' is-on' : ''
+                    }`}
+                    aria-pressed={t.tags?.includes('todo_half_done') ? 'true' : 'false'}
+                    onClick={() =>
+                      toggleProgress(
+                        t.id,
+                        'todo_half_done',
+                        t.tags?.includes('todo_half_done')
+                      )
+                    }
+                  >
+                    Half done
                   </button>
+                  <button
+                    type="button"
+                    className={`progress-chip${
+                      t.tags?.includes('todo_started') ? ' is-on' : ''
+                    }`}
+                    aria-pressed={t.tags?.includes('todo_started') ? 'true' : 'false'}
+                    onClick={() =>
+                      toggleProgress(
+                        t.id,
+                        'todo_started',
+                        t.tags?.includes('todo_started')
+                      )
+                    }
+                  >
+                    Started
+                  </button>
+                  {!t.completed_at && (
+                    <button type="button" onClick={() => complete(t.id)}>
+                      Done
+                    </button>
+                  )}
                   <button type="button" onClick={() => beginEdit(t)}>
                     Edit
                   </button>
@@ -468,7 +593,9 @@ export default function TasksView({
         {!filtered.length && (
           <p className="stub-empty">
             {!tasks.length
-              ? 'No active tasks.'
+              ? stateFilter === 'done'
+                ? 'No completed tasks.'
+                : 'No active tasks.'
               : 'No tasks match these filters.'}
           </p>
         )}

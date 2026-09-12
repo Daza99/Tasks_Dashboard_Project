@@ -159,6 +159,31 @@ function updateTask(id, fields) {
   }
 }
 
+const TASK_PROGRESS = ['todo_started', 'todo_half_done'];
+
+/**
+ * Toggle an independent progress marker (started / half done). Not lifecycle.
+ * @param {number} id
+ * @param {'todo_started'|'todo_half_done'} marker
+ * @param {boolean} on
+ */
+function setTaskProgress(id, marker, on) {
+  try {
+    const bare = String(marker || '');
+    if (!TASK_PROGRESS.includes(bare)) {
+      throw new Error('Invalid progress marker');
+    }
+    const row = getDb().prepare('SELECT id FROM tasks WHERE id = ?').get(id);
+    if (!row) throw new Error('Task not found');
+    if (on) addTag('task', id, bare);
+    else removeTag('task', id, bare);
+    return getTask(id);
+  } catch (err) {
+    logError('setTaskProgress', err);
+    throw err;
+  }
+}
+
 function completeTask(id) {
   try {
     getDb()
@@ -361,6 +386,7 @@ module.exports = {
   getTask,
   listTasks,
   updateTask,
+  setTaskProgress,
   completeTask,
   uncompleteTask,
   deleteTask,

@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS = {
 
 const SYSTEM_TAGS = [
   'todo_24', 'todo_open', 'todo_completed', 'todo_expired', 'todo_alerted',
+  'todo_started', 'todo_half_done',
   'rem_today', 'rem_tomorrow', 'rem_dated', 'rem_open',
   'rem_pending', 'rem_fired', 'rem_grace', 'rem_ignored',
   'rem_completed', 'rem_snoozed', 'locked', 'archived',
@@ -175,6 +176,7 @@ function initDatabase() {
     migrateNotifRandomDefault();
     migrateLightGlassGreenContrast();
     migrateDarkGlassBg();
+    migrateCalendarHiddenOptOut();
     seedSystemTags();
     seedThemes();
     try {
@@ -783,6 +785,38 @@ function migrateDarkGlassBg() {
     if (!id) setSetting('wallpaper_color_id', '');
   }
   setSetting('theme_dark_bg_v1', '1');
+}
+
+/**
+ * One-time: leftover events.hidden=1 (old calendar-only hide) → untick source
+ * and drop its event rows so tick + Save can restore.
+ */
+function migrateCalendarHiddenOptOut() {
+  const s = getAllSettings();
+  if (s.calendar_remove_opts_out_v1 === '1') return;
+  const conn = getDb();
+  const rows = conn
+    .prepare(
+      `SELECT DISTINCT source_type, source_id FROM events
+       WHERE COALESCE(hidden, 0) = 1
+         AND source_type IS NOT NULL AND source_id IS NOT NULL`
+    )
+    .all();
+  for (const row of rows) {
+    if (row.source_type === 'bill') {
+      conn.prepare('UPDATE bills SET show_on_calendar = 0 WHERE id = ?').run(row.source_id);
+    } else if (row.source_type === 'habit') {
+      conn.prepare('UPDATE habits SET show_on_calendar = 0 WHERE id = ?').run(row.source_id);
+    } else if (row.source_type === 'task') {
+      conn.prepare('UPDATE tasks SET show_on_calendar = 0 WHERE id = ?').run(row.source_id);
+    } else if (row.source_type === 'reminder') {
+      conn.prepare('UPDATE reminders SET is_appointment = 0 WHERE id = ?').run(row.source_id);
+    }
+    conn
+      .prepare('DELETE FROM events WHERE source_type = ? AND source_id = ?')
+      .run(row.source_type, row.source_id);
+  }
+  setSetting('calendar_remove_opts_out_v1', '1');
 }
 
 /** Existing DBs: INSERT OR IGNORE won't add brightness keys. */

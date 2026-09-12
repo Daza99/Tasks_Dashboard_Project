@@ -6,6 +6,7 @@ import TagSearchInput from '../components/TagSearchInput';
 import LockButton from '../components/LockButton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ListSelectToolbar from '../components/ListSelectToolbar';
+import ModuleRangeFilter from '../components/ModuleRangeFilter';
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import {
   formatTagsDisplay,
@@ -17,11 +18,13 @@ import DetailsInline from '../components/DetailsInline';
 import DetailsPreview from '../components/DetailsPreview';
 import NudgeCustomDialog from '../components/NudgeCustomDialog';
 import { NudgePreview, NudgeRow, todayKey } from '../components/NudgeRow';
+import { useDateFormat } from '../hooks/useDateFormat';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { useSelectedCard } from '../hooks/useSelectedCard';
 import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { matchesEntitySearch } from '../../utils/entity-search.js';
+import { matchesCreatedRange, sortByCreated } from '../../utils/created-range.js';
 
 function fmt(iso) {
   if (!iso || String(iso).startsWith('9999')) return 'Open';
@@ -59,6 +62,12 @@ const REM_RECUR = [
   { id: 'quarterly', label: 'Quarterly', title: '3 Months' },
 ];
 
+const REM_RANGE_OPTIONS = [
+  { id: 'all', label: 'All' },
+  ...REM_RECUR.map(({ id, label }) => ({ id, label })),
+  { id: 'custom', label: 'Custom' },
+];
+
 function knownRecurrence(id) {
   return REM_RECUR.some((r) => r.id === id) ? id : null;
 }
@@ -92,6 +101,7 @@ export default function RemindersView({
   onSeedConsumed,
 }) {
   const { refresh } = useBrief();
+  const { methodHint } = useDateFormat();
   const [rows, setRows] = useState([]);
   const [title, setTitle] = useState('');
   const [scope, setScope] = useState('today');
@@ -124,6 +134,10 @@ export default function RemindersView({
   const editRowRef = useScrollEditIntoView(editingId);
   const { selectedId, setSelectedId, listRef } = useSelectedCard();
   const [search, setSearch] = useState('');
+  const [range, setRange] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sortDir, setSortDir] = useState('desc');
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   async function load() {
@@ -303,13 +317,19 @@ export default function RemindersView({
     await refresh();
   }
 
-  const filtered = useMemo(
-    () =>
-      rows.filter((r) =>
-        matchesEntitySearch(r, search, { textKeys: ['title', 'description'] })
-      ),
-    [rows, search]
-  );
+  const filtered = useMemo(() => {
+    const next = rows.filter((r) => {
+      if (!matchesEntitySearch(r, search, { textKeys: ['title', 'description'] })) {
+        return false;
+      }
+      if (range === 'custom') {
+        return matchesCreatedRange(r.created_at, dateFrom || undefined, dateTo || undefined);
+      }
+      if (range === 'all') return true;
+      return r.recurrence === range;
+    });
+    return sortByCreated(next, sortDir);
+  }, [rows, search, range, dateFrom, dateTo, sortDir]);
   const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
   const selectableIds = useMemo(
     () => filtered.filter((r) => !r.locked).map((r) => r.id),
@@ -344,7 +364,8 @@ export default function RemindersView({
     <div className="module-view">
       <h1>Reminders</h1>
       <p className="module-view__hint">
-        Scope required: Today / Tomorrow / Date / Open. Tick Add to Calendar to put it on the calendar.
+        Scope required: Today / Tomorrow / Date / Open. Tick Add to Calendar to put it on the
+        calendar. Range / Custom filter by created date (date method: {methodHint}).
       </p>
 
       <form className="create-form glass-inset" onSubmit={create}>
@@ -456,7 +477,18 @@ export default function RemindersView({
       </form>
 
       <div className="module-filter-bar glass-inset">
-        <label className="module-filter-bar__field module-filter-bar__field--grow">
+        <ModuleRangeFilter
+          range={range}
+          onRange={setRange}
+          options={REM_RANGE_OPTIONS}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFrom={setDateFrom}
+          onDateTo={setDateTo}
+          sortDir={sortDir}
+          onSortDir={setSortDir}
+        />
+        <label className="module-filter-bar__field module-filter-bar__field--search-half">
           Search
           <TagSearchInput
             value={search}

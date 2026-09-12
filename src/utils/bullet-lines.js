@@ -67,6 +67,29 @@ export function insertPrefixedNewline(text, caret, mode) {
   return { text: before + insert + after, caret: before.length + insert.length };
 }
 
+/**
+ * Textarea Enter: continue `- ` / `* ` on the next line, or drop an empty bullet.
+ * @param {string} text
+ * @param {number} caret
+ * @returns {{ text: string, caret: number }|null} null = native newline
+ */
+export function continueBulletOnEnter(text, caret) {
+  const value = String(text || '');
+  const pos = Math.max(0, Math.min(Number(caret) || 0, value.length));
+  const before = value.slice(0, pos);
+  const after = value.slice(pos);
+  const lineStart = before.lastIndexOf('\n') + 1;
+  const prev = parseLine(before.slice(lineStart));
+  if (prev.kind !== 'line' && prev.kind !== 'dot') return null;
+  // Empty `- ` / `* ` → strip prefix so the user can leave the list
+  if (!String(prev.text || '').trim()) {
+    const nextBefore = before.slice(0, lineStart) + prev.indent;
+    return { text: nextBefore + after, caret: nextBefore.length };
+  }
+  const insert = `\n${prev.indent}${prefixFor(prev.kind)}`;
+  return { text: before + insert + after, caret: before.length + insert.length };
+}
+
 /** Caret offset (chars) inside a contentEditable root. */
 export function getCaretOffset(el) {
   const sel = window.getSelection();

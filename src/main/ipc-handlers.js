@@ -1,7 +1,7 @@
 /**
  * Register IPC handlers — renderer never touches SQL/FS directly.
  */
-const { ipcMain } = require('electron');
+const { ipcMain, shell } = require('electron');
 const {
   getAllSettings,
   setSetting,
@@ -23,6 +23,7 @@ const {
   getTask,
   updateTask,
   completeTask,
+  setTaskProgress,
   deleteTask,
   deleteTasks,
 } = require('../services/db/tasks');
@@ -55,6 +56,7 @@ const {
   markPaid,
   getBillAmountStats,
   listBillPayments,
+  listBillPaymentsForDueMonth,
   listBillPaymentFilterOptions,
   deleteBill,
   deleteBills,
@@ -180,6 +182,16 @@ const {
 } = require('./backup');
 const { chooseDataDir, migrateDataDir, resetDataDir } = require('./data-dir-migrate');
 
+/** True only for http(s) — blocks file:, javascript:, etc. */
+function isSafeHttpUrl(raw) {
+  try {
+    const u = new URL(String(raw));
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function registerIpcHandlers() {
   registerNotificationIpc();
   registerTrackerPopoutIpc();
@@ -292,6 +304,17 @@ function registerIpcHandlers() {
     offline: true,
   }));
 
+  ipcMain.handle('app:openExternal', async (_e, url) => {
+    try {
+      if (!isSafeHttpUrl(url)) return { ok: false };
+      await shell.openExternal(String(url));
+      return { ok: true };
+    } catch (err) {
+      logError('app:openExternal', err);
+      return { ok: false };
+    }
+  });
+
   ipcMain.handle('dataDir:choose', async () => {
     try {
       return await chooseDataDir();
@@ -393,6 +416,9 @@ function registerIpcHandlers() {
     return row;
   });
   ipcMain.handle('tasks:complete', (_e, id) => completeTask(id));
+  ipcMain.handle('tasks:setProgress', (_e, id, marker, on) =>
+    setTaskProgress(id, marker, on)
+  );
   ipcMain.handle('tasks:delete', (_e, id) => deleteTask(id));
   ipcMain.handle('tasks:deleteMany', (_e, ids) => deleteTasks(ids || []));
 
@@ -535,6 +561,9 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('bills:amountStats', (_e, name) => getBillAmountStats(name));
   ipcMain.handle('bills:listPayments', (_e, opts) => listBillPayments(opts || {}));
+  ipcMain.handle('bills:listPaymentsForDueMonth', (_e, year, month) =>
+    listBillPaymentsForDueMonth(year, month)
+  );
   ipcMain.handle('bills:paymentFilterOptions', () => listBillPaymentFilterOptions());
   ipcMain.handle('bills:delete', (_e, id) => deleteBill(id));
   ipcMain.handle('bills:deleteMany', (_e, ids) => deleteBills(ids || []));

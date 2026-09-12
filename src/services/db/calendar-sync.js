@@ -502,7 +502,27 @@ function collapseSourceDupes() {
 }
 
 /**
- * Delete/hide a calendar selection.
+ * Untick Add to Calendar / Calendar on the source. Sync then drops its event rows
+ * so a later tick + Save can recreate them.
+ * @param {string} sourceType
+ * @param {number} sourceId
+ */
+function optOutOfCalendar(sourceType, sourceId) {
+  if (sourceType === 'bill') {
+    require('./bills').updateBill(sourceId, { show_on_calendar: 0 });
+  } else if (sourceType === 'habit') {
+    require('./habits').updateHabit(sourceId, { show_on_calendar: 0 });
+  } else if (sourceType === 'task') {
+    require('./tasks').updateTask(sourceId, { show_on_calendar: 0 });
+  } else if (sourceType === 'reminder') {
+    require('./reminders').updateReminder(sourceId, { is_appointment: 0 });
+  } else {
+    deleteEventsForSource(sourceType, sourceId);
+  }
+}
+
+/**
+ * Delete a calendar selection, or opt the linked source off the calendar.
  * @param {number[]} ids
  * @param {{ deleteSources?: boolean }} opts — true = also delete linked bills/habits/reminders
  */
@@ -542,7 +562,21 @@ function removeSelection(ids, { deleteSources = false } = {}) {
         }
       }
     } else {
-      for (const e of linked) hideEvent(e.id);
+      const seen = new Set();
+      for (const e of linked) {
+        const key = `${e.source_type}:${e.source_id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        try {
+          optOutOfCalendar(e.source_type, e.source_id);
+        } catch (err) {
+          if (String(err.message || err).includes('locked')) {
+            skippedLocked.push(e.title);
+            continue;
+          }
+          throw err;
+        }
+      }
     }
     return { ok: true, skippedLocked };
   } catch (err) {

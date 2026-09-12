@@ -77,10 +77,10 @@ let dashboardWindow = null;
 
 const TYPE_LABELS = {
   reminder: 'Reminder',
-  reminder_nudge: 'Nudge',
+  reminder_nudge: 'Reminder',
   task: 'Task',
   bill: 'Bill',
-  bill_nudge: 'Nudge',
+  bill_nudge: 'Bill',
   habit: 'Habit',
   countdown: 'Countdown',
 };
@@ -443,7 +443,7 @@ function showItemNotification(item) {
     let height = details ? 278 : tags.length ? 218 : 198;
     let width = 340;
     if (itemType === 'bill') {
-      height += 40;
+      height += 48;
       width = 400;
     }
     const bounds = cornerBounds(settings.notif_position, width, height);

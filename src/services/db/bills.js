@@ -672,6 +672,35 @@ function listBillPayments(opts = {}) {
 }
 
 /**
+ * Payments whose due_date falls in a calendar month (yyyy-mm).
+ * Edit-list cycle overlay — keys off due_date, not paid_at.
+ * @param {number} year
+ * @param {number} month 1–12
+ */
+function listBillPaymentsForDueMonth(year, month) {
+  try {
+    const y = Number(year);
+    const m = Number(month);
+    if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+      throw new Error('year and month 1–12 required');
+    }
+    const ym = `${y}-${String(m).padStart(2, '0')}`;
+    return getDb()
+      .prepare(
+        `SELECT id, bill_id, bill_name, amount, due_date, paid_at,
+                COALESCE(late, 0) AS late,
+                COALESCE(schedule_changed, 0) AS schedule_changed
+         FROM bill_payments
+         WHERE due_date IS NOT NULL AND substr(due_date, 1, 7) = ?`
+      )
+      .all(ym);
+  } catch (err) {
+    logError('listBillPaymentsForDueMonth', err);
+    throw err;
+  }
+}
+
+/**
  * Distinct years + bill names for history filter dropdowns.
  * Always includes the current calendar year.
  * @returns {{ years: number[], names: string[] }}
@@ -1172,6 +1201,7 @@ module.exports = {
   markPaid,
   getBillAmountStats,
   listBillPayments,
+  listBillPaymentsForDueMonth,
   listBillPaymentFilterOptions,
   deleteBill,
   deleteBills,

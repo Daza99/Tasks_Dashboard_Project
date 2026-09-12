@@ -139,6 +139,35 @@ function formatPaidAt(paidAt) {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+/** yyyy-mm from a stored date. */
+function ymKey(iso) {
+  const s = String(iso || '');
+  return s.length >= 7 ? s.slice(0, 7) : '';
+}
+
+/**
+ * Calendar month for This / Last Month filters.
+ * @param {'this'|'last'|'all'} which
+ * @returns {{ year: number, month: number }|null}
+ */
+function monthWindow(which) {
+  const now = new Date();
+  if (which === 'this') {
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  }
+  if (which === 'last') {
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  }
+  return null;
+}
+
+function monthYm(which) {
+  const w = monthWindow(which);
+  if (!w) return null;
+  return `${w.year}-${String(w.month).padStart(2, '0')}`;
+}
+
 /**
  * Focus view: bills CRUD + mark paid (advances recurrence).
  * History mode lists bill_payments with year/month/name/sort filters.
@@ -210,6 +239,9 @@ export default function BillsView({
   const [filterNames, setFilterNames] = useState([]);
   const [payments, setPayments] = useState([]);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // all | paid | unpaid | late
+  const [monthFilter, setMonthFilter] = useState('this'); // all | last | this
+  const [cyclePayments, setCyclePayments] = useState([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptFor, setPromptFor] = useState('create'); // create | edit
@@ -218,7 +250,24 @@ export default function BillsView({
   const catBeforeNew = useRef(CAT_NONE);
 
   async function load() {
-    setRows(await window.api.listBills());
+    const bills = await window.api.listBills();
+    setRows(bills);
+    await refreshCyclePayments(monthFilter);
+  }
+
+  /** Payments for This / Last Month overlay; empty when All Months. */
+  async function refreshCyclePayments(which) {
+    if (which === 'all') {
+      setCyclePayments([]);
+      return;
+    }
+    const win = monthWindow(which);
+    if (!win) {
+      setCyclePayments([]);
+      return;
+    }
+    const list = await window.api.listBillPaymentsForDueMonth(win.year, win.month);
+    setCyclePayments(list);
   }
 
   async function loadCategories() {
@@ -229,6 +278,12 @@ export default function BillsView({
     load();
     loadCategories();
   }, []);
+
+  // Reload cycle overlay when month filter changes (load() covers pay/create).
+  useEffect(() => {
+    if (mode === 'history') return;
+    refreshCyclePayments(monthFilter);
+  }, [mode, monthFilter]);
 
   // Load filter option lists once when entering history
   useEffect(() => {
@@ -615,15 +670,53 @@ export default function BillsView({
   const isHistory = mode === 'history';
   const createWatch = addDaysKey(due, offsetDays);
   const editWatch = addDaysKey(edit.due_date || todayKey(), Number(edit.date_offset_days) || 0);
-  const filteredBills = useMemo(
-    () =>
-      rows.filter((b) =>
-        matchesEntitySearch(b, search, {
-          textKeys: ['name', 'description', 'category'],
-        })
-      ),
-    [rows, search]
-  );
+  const cycleYm = monthYm(monthFilter);
+  const cyclePaidIds = useMemo(() => {
+    const ids = new Set();
+    for (const p of cyclePayments) {
+      const id = Number(p.bill_id);
+      if (Number.isFinite(id) && id > 0) ids.add(id);
+    }
+    return ids;
+  }, [cyclePayments]);
+
+  const filteredBills = useMemo(() => {
+    const searched = rows.filter((b) =>
+      matchesEntitySearch(b, search, {
+        textKeys: ['name', 'description', 'category'],
+      })
+    );
+    return searched
+      .filter((b) => {
+        const liveYm = ymKey(b.watch_date || b.due_date);
+        const paidCycle =
+          cyclePaidIds.has(b.id) ||
+          (cycleYm && liveYm === cycleYm && b.paid_status === 'paid');
+        if (monthFilter !== 'all') {
+          const inMonth = liveYm === cycleYm || cyclePaidIds.has(b.id);
+          if (!inMonth) return false;
+          if (statusFilter === 'paid') return paidCycle;
+          if (statusFilter === 'unpaid') return !paidCycle;
+          if (statusFilter === 'late') {
+            return b.paid_status === 'overdue' && liveYm === cycleYm;
+          }
+          return true;
+        }
+        if (statusFilter === 'paid') return b.paid_status === 'paid';
+        if (statusFilter === 'unpaid') return b.paid_status !== 'paid';
+        if (statusFilter === 'late') return b.paid_status === 'overdue';
+        return true;
+      })
+      .map((b) => {
+        const liveYm = ymKey(b.watch_date || b.due_date);
+        const displayPaid =
+          monthFilter === 'all'
+            ? b.paid_status === 'paid'
+            : cyclePaidIds.has(b.id) ||
+              (liveYm === cycleYm && b.paid_status === 'paid');
+        return { ...b, displayPaid };
+      });
+  }, [rows, search, statusFilter, monthFilter, cycleYm, cyclePaidIds]);
   const billVisibleIds = useMemo(
     () => (isHistory ? [] : filteredBills.map((b) => b.id)),
     [isHistory, filteredBills]
@@ -1002,8 +1095,8 @@ export default function BillsView({
       )}
 
       {!isHistory && (
-        <div className="module-filter-bar glass-inset">
-          <label className="module-filter-bar__field module-filter-bar__field--grow">
+        <div className="module-filter-bar module-filter-bar--bills glass-inset">
+          <label className="module-filter-bar__field module-filter-bar__field--search-half">
             Search
             <TagSearchInput
               value={search}
@@ -1012,6 +1105,39 @@ export default function BillsView({
               aria-label="Search bills by name, details, or category"
             />
           </label>
+          <div className="kind-toggle kind-toggle--labels" role="group" aria-label="Bill status">
+            {[
+              { id: 'all', label: 'ALL' },
+              { id: 'paid', label: 'PAID' },
+              { id: 'unpaid', label: 'UNPAID' },
+              { id: 'late', label: 'LATE' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={statusFilter === opt.id ? 'active' : ''}
+                onClick={() => setStatusFilter(opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <div className="kind-toggle kind-toggle--labels" role="group" aria-label="Bill month">
+            {[
+              { id: 'all', label: 'All Months' },
+              { id: 'last', label: 'Last Month' },
+              { id: 'this', label: 'This Month' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={monthFilter === opt.id ? 'active' : ''}
+                onClick={() => setMonthFilter(opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1351,43 +1477,52 @@ export default function BillsView({
                       />
                     </label>
                     <div>
-                      <strong>
-                        <span className="priority-badge" data-p={b.priority ?? DEFAULT_PRIORITY}>
-                          P{b.priority ?? DEFAULT_PRIORITY}
-                        </span>{' '}
-                        {b.name}
-                      </strong>
-                      <div className="module-list__meta">
-                        ${Number(b.amount).toFixed(2)}
-                        {amountModeLabel(b.amount_mode) && (
-                          <span className="bill-amount-caption">
-                            {' '}
-                            {amountModeLabel(b.amount_mode)}
+                      <div
+                        className={
+                          b.displayPaid
+                            ? 'bill-list-copy bill-list-copy--paid'
+                            : 'bill-list-copy bill-list-copy--unpaid'
+                        }
+                      >
+                        <strong>
+                          <span className="priority-badge" data-p={b.priority ?? DEFAULT_PRIORITY}>
+                            P{b.priority ?? DEFAULT_PRIORITY}
+                          </span>{' '}
+                          {b.name}{' '}
+                          <span className="bill-paid-mark">
+                            {b.displayPaid ? '(PAID)' : '(unpaid)'}
                           </span>
-                        )}
-                        {' · '}due {b.watch_date || b.due_date}
-                        {Number(b.date_offset_days) ||
-                        (b.billing_day &&
-                          String(b.due_date || '').slice(8) !==
-                            String(b.billing_day).padStart(2, '0'))
-                          ? ` (day ${b.billing_day})`
-                          : ''}
-                        {' · '}
-                        {b.paid_status}
-                        {' · '}
-                        {b.recurrence || 'once'}
-                        {Number(b.remind_days_before) > 0
-                          ? ` · Rem ${addDaysKey(b.watch_date || b.due_date, -Number(b.remind_days_before))}`
-                          : ''}
-                        {b.nudge_datetime ? ` · Nudge ${dateFromIso(b.nudge_datetime)}` : ''}
-                        {b.category ? ` · ${b.category}` : ''}
-                        {b.tags?.length ? ` · ${formatTagsDisplay(b.tags)}` : ''}
+                        </strong>
+                        <div className="module-list__meta">
+                          ${Number(b.amount).toFixed(2)}
+                          {amountModeLabel(b.amount_mode) && (
+                            <span className="bill-amount-caption">
+                              {' '}
+                              {amountModeLabel(b.amount_mode)}
+                            </span>
+                          )}
+                          {' · '}due {b.watch_date || b.due_date}
+                          {Number(b.date_offset_days) ||
+                          (b.billing_day &&
+                            String(b.due_date || '').slice(8) !==
+                              String(b.billing_day).padStart(2, '0'))
+                            ? ` (day ${b.billing_day})`
+                            : ''}
+                          {' · '}
+                          {b.recurrence || 'once'}
+                          {Number(b.remind_days_before) > 0
+                            ? ` · Rem ${addDaysKey(b.watch_date || b.due_date, -Number(b.remind_days_before))}`
+                            : ''}
+                          {b.nudge_datetime ? ` · Nudge ${dateFromIso(b.nudge_datetime)}` : ''}
+                          {b.category ? ` · ${b.category}` : ''}
+                          {b.tags?.length ? ` · ${formatTagsDisplay(b.tags)}` : ''}
+                        </div>
                       </div>
                       <DetailsPreview text={b.description} />
                     </div>
                   </div>
                   <div className="item-row__actions">
-                    {b.paid_status !== 'paid' && payingId === b.id && (
+                    {b.paid_status !== 'paid' && !b.displayPaid && payingId === b.id && (
                       <BillPayConfirm
                         value={payActual}
                         onChange={setPayActual}
@@ -1395,7 +1530,7 @@ export default function BillsView({
                         onCancel={() => setPayingId(null)}
                       />
                     )}
-                    {b.paid_status !== 'paid' && payingId !== b.id && (
+                    {b.paid_status !== 'paid' && !b.displayPaid && payingId !== b.id && (
                       <>
                         <button type="button" onClick={() => paid(b, undefined, 'paid')}>
                           Paid

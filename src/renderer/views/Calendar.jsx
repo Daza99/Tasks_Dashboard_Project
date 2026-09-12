@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   format,
   startOfMonth,
@@ -69,12 +70,16 @@ function chipTypeClass(ev) {
   return CAL_CHIP_TYPES.has(t) ? ` cal-chip--${t}` : '';
 }
 
-/** Keep a fixed context menu inside the viewport. */
+/** Place a fixed menu to the right of the pointer; flip/clamp at viewport edges. */
 function clampMenuPos(clientX, clientY, w = 200, h = 130) {
   const pad = 8;
+  const maxX = window.innerWidth - w - pad;
+  const maxY = window.innerHeight - h - pad;
+  let x = clientX + pad;
+  if (x > maxX) x = clientX - w - pad;
   return {
-    x: Math.max(pad, Math.min(clientX, window.innerWidth - w - pad)),
-    y: Math.max(pad, Math.min(clientY, window.innerHeight - h - pad)),
+    x: Math.max(pad, Math.min(x, maxX)),
+    y: Math.max(pad, Math.min(clientY, maxY)),
   };
 }
 
@@ -112,7 +117,9 @@ export default function CalendarView({
   const [editStart, setEditStart] = useState('');
   const [picked, setPicked] = useState(() => new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [menu, setMenu] = useState(null); // { x, y, date }
+  // Chip RMB Delete confirm — separate from Del-key 3-way dialog
+  const [entityDeleteEv, setEntityDeleteEv] = useState(null);
+  const [menu, setMenu] = useState(null); // { x, y, date } | { x, y, event }
   const menuRef = useRef(null);
 
   const monthStart = startOfMonth(cursor);
@@ -252,10 +259,30 @@ export default function CalendarView({
     setMenu({ ...pos, date: format(day, 'yyyy-MM-dd') });
   }
 
+  /** Chip / day-list row RMB — do not bubble into the day-cell create menu. */
+  function openChipMenu(e, ev) {
+    e.preventDefault();
+    e.stopPropagation();
+    const pos = clampMenuPos(e.clientX, e.clientY, 220, 90);
+    setMenu({ ...pos, event: ev });
+  }
+
   function pickCreate(type) {
-    if (!menu) return;
+    if (!menu?.date) return;
     onCreateRequest?.(type, menu.date);
     setMenu(null);
+  }
+
+  /** Hide this occurrence; linked source stays in its module. */
+  function removeFromCalendar(ev) {
+    setMenu(null);
+    applyDelete(false, [ev.id]);
+  }
+
+  /** Open y/n confirm to cascade-delete the source entity. */
+  function requestEntityDelete(ev) {
+    setMenu(null);
+    setEntityDeleteEv(ev);
   }
 
   /** Jump the grid to a month in the current year; clamp day-of-month. */
@@ -337,6 +364,7 @@ export default function CalendarView({
 
   async function applyDelete(deleteSources, idsArg) {
     setDeleteOpen(false);
+    setEntityDeleteEv(null);
     const ids = idsArg || [...picked];
     if (!ids.length) return;
     try {
@@ -367,6 +395,7 @@ export default function CalendarView({
               picked.has(ev.id) ? ' cal-chip--selected' : ''
             }${isLinked(ev) ? ' cal-chip--linked' : ''}`}
             onClick={(e) => onChipClick(e, ev, day)}
+            onContextMenu={(e) => openChipMenu(e, ev)}
           >
             <CalEntryLabel ev={ev} />
           </button>
@@ -382,7 +411,7 @@ export default function CalendarView({
     <div className="module-view">
       <h1>Calendar</h1>
       <p className="module-view__hint">
-        Month grid · click a linked entry to open it · Ctrl+click to select · RMB a day to add a task, reminder, or bill.
+        Month grid · click a linked entry to open it · Ctrl+click to select · RMB a day to add a task, reminder, or bill · RMB a chip to remove from calendar or delete.
       </p>
 
       <div className="cal-nav">
@@ -513,6 +542,7 @@ export default function CalendarView({
               <div
                 className="module-list__row"
                 onDoubleClick={rowDblClick(() => beginEdit(ev))}
+                onContextMenu={(e) => openChipMenu(e, ev)}
               >
                 <button
                   type="button"
@@ -545,25 +575,49 @@ export default function CalendarView({
         {!dayEvents.length && <p className="stub-empty">No events this day.</p>}
       </ul>
 
-      {menu && (
-        <div
-          ref={menuRef}
-          className="lists-menu glass-panel"
-          style={{ top: menu.y, left: menu.x }}
-          role="menu"
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <button type="button" role="menuitem" onClick={() => pickCreate('task')}>
-            Add a Task
-          </button>
-          <button type="button" role="menuitem" onClick={() => pickCreate('reminder')}>
-            Add a Reminder
-          </button>
-          <button type="button" role="menuitem" onClick={() => pickCreate('bill')}>
-            Add a Bill
-          </button>
-        </div>
-      )}
+      {menu &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="lists-menu glass-panel"
+            style={{ top: menu.y, left: menu.x }}
+            role="menu"
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {menu.event ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => removeFromCalendar(menu.event)}
+                >
+                  Remove from Calendar
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="danger"
+                  onClick={() => requestEntityDelete(menu.event)}
+                >
+                  Delete
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" role="menuitem" onClick={() => pickCreate('task')}>
+                  Add a Task
+                </button>
+                <button type="button" role="menuitem" onClick={() => pickCreate('reminder')}>
+                  Add a Reminder
+                </button>
+                <button type="button" role="menuitem" onClick={() => pickCreate('bill')}>
+                  Add a Bill
+                </button>
+              </>
+            )}
+          </div>,
+          document.body
+        )}
 
       <ConfirmDialog
         open={deleteOpen}
@@ -575,6 +629,19 @@ export default function CalendarView({
         onConfirm={() => applyDelete(true)}
         onSecondary={() => applyDelete(false)}
         onCancel={() => setDeleteOpen(false)}
+      />
+      <ConfirmDialog
+        open={Boolean(entityDeleteEv)}
+        title="Delete this item?"
+        message={
+          isLinked(entityDeleteEv)
+            ? `This permanently deletes the linked ${entityDeleteEv.source_type} from the database and everywhere in the app. It cannot be undone.`
+            : 'This permanently deletes this calendar event from the database. It cannot be undone.'
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => applyDelete(true, entityDeleteEv ? [entityDeleteEv.id] : [])}
+        onCancel={() => setEntityDeleteEv(null)}
       />
     </div>
   );

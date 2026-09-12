@@ -10,6 +10,8 @@ const SYSTEM_TAG_NAMES = new Set([
   'todo_completed',
   'todo_expired',
   'todo_alerted',
+  'todo_started',
+  'todo_half_done',
   'rem_today',
   'rem_tomorrow',
   'rem_dated',

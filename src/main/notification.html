@@ -73,12 +73,30 @@
         border-color: rgba(255, 92, 92, 0.8);
         color: var(--notif-text);
       }
-      .title {
+      .title-row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
         flex: 0 0 auto;
+      }
+      .title {
+        flex: 1 1 auto;
+        min-width: 0;
         font-size: 15px;
         font-weight: 600;
         line-height: 1.35;
         overflow: hidden;
+      }
+      .nudge-mark {
+        flex: 0 0 auto;
+        font-size: 13px;
+        font-weight: 500;
+        opacity: 0.7;
+        color: var(--notif-text);
+        white-space: nowrap;
+      }
+      .nudge-mark[hidden] {
+        display: none !important;
       }
       .created {
         flex: 0 0 auto;
@@ -229,7 +247,10 @@
           </button>
         </div>
       </div>
-      <div class="title" id="title">…</div>
+      <div class="title-row">
+        <div class="title" id="title">…</div>
+        <span class="nudge-mark" id="nudge-mark" hidden>(Nudge)</span>
+      </div>
       <div class="created" id="created"></div>
       <div class="notif-tags" id="tags"></div>
       <div class="details" id="details"></div>
@@ -238,6 +259,7 @@
         <button type="button" class="secondary" id="btn-snooze">Snooze</button>
         <button type="button" class="secondary" id="btn-snooze-plus">Snooze +</button>
         <button type="button" class="secondary" id="btn-delete" hidden>Delete</button>
+        <button type="button" class="secondary" id="btn-not-yet" hidden>Not Yet</button>
         <button type="button" class="secondary" id="btn-paid-late" hidden>Paid Late</button>
         <button type="button" class="secondary" id="btn-paid-date" hidden title="Paid late? Only use this when the biller moved the billing date.">Paid + date</button>
         <button type="button" id="btn-done">Done</button>
@@ -305,6 +327,12 @@
 
       document.querySelector('.label').textContent = label;
       document.getElementById('title').textContent = title;
+      // Separate node so notif:refresh can replace title without dropping the mark
+      const isNudge =
+        itemType === 'reminder_nudge' ||
+        itemType === 'bill_nudge' ||
+        itemType === 'habit';
+      document.getElementById('nudge-mark').hidden = !isNudge;
       // Show #tag chips under title (e.g. #nudge on habit pre-reminders)
       const rawTags = (params.get('tags') || '')
         .split(',')
@@ -343,6 +371,7 @@
 
       if (itemType === 'bill') {
         document.getElementById('btn-done').textContent = 'Paid';
+        document.getElementById('btn-not-yet').hidden = false;
         document.getElementById('btn-paid-late').hidden = false;
       }
 
@@ -398,6 +427,10 @@
 
       document.getElementById('btn-done').onclick = () => {
         window.notifApi.complete(payload);
+      };
+      // Dismiss only — same as X; does not markPaid
+      document.getElementById('btn-not-yet').onclick = () => {
+        window.notifApi.ignore(payload);
       };
       document.getElementById('btn-paid-late').onclick = () => {
         window.notifApi.complete(payload, { late: true });

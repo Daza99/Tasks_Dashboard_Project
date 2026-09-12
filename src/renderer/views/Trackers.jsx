@@ -125,11 +125,28 @@ function localDateKey(d = new Date()) {
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * SQLite CURRENT_TIMESTAMP is UTC with no Z. Naive datetimes → UTC; date-only stays a calendar key.
+ * @param {string|null|undefined} iso
+ * @returns {Date|null}
+ */
+function parseDbDateTime(iso) {
+  if (!iso) return null;
+  const s = String(iso).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const hasTz = /[zZ]$/.test(s) || /[+-]\d{2}:?\d{2}$/.test(s);
+  const isoLike = s.includes('T') ? s : s.replace(' ', 'T');
+  const d = new Date(hasTz ? isoLike : `${isoLike}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /** created_at / logged_at → local yyyy-mm-dd. */
 function isoToDateKey(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? String(iso).slice(0, 10) : localDateKey(d);
+  const s = String(iso).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = parseDbDateTime(s);
+  return d ? localDateKey(d) : s.slice(0, 10);
 }
 
 /** Monday of the local week containing d. */
@@ -177,11 +194,11 @@ function dateFilterWindow(filter, customFrom, customTo, now = new Date()) {
   return null;
 }
 
-/** (TODAY) while created locally today, else display-format date. */
-function createdBadge(iso, nowMs, formatDate) {
+/** Display-format created_at date (always numeric). */
+function createdBadge(iso, formatDate) {
   const k = isoToDateKey(iso);
   if (!k) return '';
-  return k === localDateKey(new Date(nowMs)) ? 'TODAY' : formatDate(k);
+  return formatDate(k);
 }
 
 /**
@@ -1010,7 +1027,7 @@ export default function TrackersView({ editId = null, onEditConsumed }) {
                       <strong>
                         {t.name}
                         <span className="tracker-created">
-                          ({createdBadge(t.created_at, now, formatDate)})
+                          ({createdBadge(t.created_at, formatDate)})
                         </span>
                       </strong>
                       <div className="module-list__meta">{metaLine(t)}</div>

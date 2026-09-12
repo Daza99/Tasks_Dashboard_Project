@@ -87,6 +87,62 @@ function closestBlock(node, root) {
   return null;
 }
 
+const HTTP_URL_RE = /https?:\/\/[^\s]+/gi;
+
+/** Drop trailing sentence punctuation from a URL match. */
+function trimUrlPunct(raw) {
+  return String(raw).replace(/[.,;:!?)\]\}]+$/g, '');
+}
+
+/**
+ * http(s) URL covering character index in a block of text, or null.
+ * @param {string} text
+ * @param {number} index
+ * @returns {string|null}
+ */
+function urlAtIndex(text, index) {
+  const s = String(text || '').replace(/\u00a0/g, ' ');
+  HTTP_URL_RE.lastIndex = 0;
+  let m;
+  while ((m = HTTP_URL_RE.exec(s))) {
+    const start = m.index;
+    const trimmed = trimUrlPunct(m[0]);
+    const end = start + trimmed.length;
+    if (index >= start && index <= end) return trimmed;
+  }
+  return null;
+}
+
+/**
+ * URL under a pointer in a contenteditable root (walks color/hl spans).
+ * @param {HTMLElement|null} root
+ * @param {number} clientX
+ * @param {number} clientY
+ * @returns {string|null}
+ */
+function urlAtPoint(root, clientX, clientY) {
+  if (!root || typeof document.caretRangeFromPoint !== 'function') return null;
+  const range = document.caretRangeFromPoint(clientX, clientY);
+  if (!range || !root.contains(range.startContainer)) return null;
+  const block = closestBlock(range.startContainer, root) || root;
+  const pre = document.createRange();
+  pre.selectNodeContents(block);
+  try {
+    pre.setEnd(range.startContainer, range.startOffset);
+  } catch {
+    return null;
+  }
+  const off = pre.toString().replace(/\u00a0/g, ' ').length;
+  const full = (block.textContent || '').replace(/\u00a0/g, ' ');
+  return urlAtIndex(full, off);
+}
+
+/** Open http(s) via main-process shell.openExternal. */
+function openHttpUrl(url) {
+  if (!url || !window.api?.openExternal) return;
+  void window.api.openExternal(url);
+}
+
 /**
  * Text from the start of the visual line to the caret.
  * Uses the current DIV after native Enter; otherwise text after the last BR.
@@ -135,6 +191,7 @@ export default function NotePad({ note, onSaved, popout = false }) {
   const [swatchOverride, setSwatchOverride] = useState(null);
   const [savingFlash, setSavingFlash] = useState(false);
   const [exportChoice, setExportChoice] = useState('');
+  const [linkHover, setLinkHover] = useState(false);
   const timer = useRef(null);
   const dirty = useRef(false);
   const ceRef = useRef(null);
@@ -188,6 +245,7 @@ export default function NotePad({ note, onSaved, popout = false }) {
     setHlArmed(false);
     setHeadingOpen(false);
     setSwatchOverride(null);
+    setLinkHover(false);
   }, [note.id]);
 
   useLayoutEffect(() => {
@@ -365,6 +423,35 @@ export default function NotePad({ note, onSaved, popout = false }) {
     }
     setHlArmed(true);
     if (selOn) paintSelection(selFullyHighlighted(el));
+  }
+
+  function onPreviewClick(e) {
+    const a = e.target.closest?.('a.md-pad__link');
+    if (!a) return;
+    e.preventDefault();
+    openHttpUrl(a.getAttribute('href'));
+  }
+
+  function onEditorClick(e) {
+    if (preview || hlArmed) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    const url = urlAtPoint(ceRef.current, e.clientX, e.clientY);
+    if (!url) return;
+    e.preventDefault();
+    openHttpUrl(url);
+  }
+
+  function onEditorMouseMove(e) {
+    const url = urlAtPoint(ceRef.current, e.clientX, e.clientY);
+    setLinkHover((prev) => {
+      const next = !!url;
+      return prev === next ? prev : next;
+    });
+  }
+
+  function onEditorMouseLeave() {
+    setLinkHover(false);
   }
 
   function onEditorMouseUp() {
@@ -719,11 +806,12 @@ export default function NotePad({ note, onSaved, popout = false }) {
           className="list-pad__canvas list-pad__preview"
           style={canvasStyle}
           dangerouslySetInnerHTML={{ __html: renderBasicMd(content) || '<p></p>' }}
+          onClick={onPreviewClick}
         />
       ) : (
         <div
           ref={ceRef}
-          className={`list-pad__canvas list-pad__editor${content ? '' : ' list-pad__editor--empty'}`}
+          className={`list-pad__canvas list-pad__editor${content ? '' : ' list-pad__editor--empty'}${linkHover ? ' list-pad__editor--link-hover' : ''}`}
           style={canvasStyle}
           contentEditable
           suppressContentEditableWarning
@@ -735,6 +823,9 @@ export default function NotePad({ note, onSaved, popout = false }) {
           onSelect={onSelCheck}
           onKeyUp={onSelCheck}
           onMouseUp={onEditorMouseUp}
+          onClick={onEditorClick}
+          onMouseMove={onEditorMouseMove}
+          onMouseLeave={onEditorMouseLeave}
         />
       )}
     </div>

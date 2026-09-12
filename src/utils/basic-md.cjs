@@ -17,15 +17,43 @@ function hlMarkRe() {
   return /\{hl:#([0-9a-fA-F]{6})\}(.*?)\{\/hl\}/gs;
 }
 
+/** Split trailing sentence punctuation off a URL match. */
+function splitUrlPunct(raw) {
+  const m = String(raw).match(/^(.*?)([.,;:!?)\]\}]*)$/);
+  return { href: m[1], punct: m[2] };
+}
+
+/**
+ * Wrap leftover bare http(s) URLs. Skip text already inside <a> or <code>.
+ * @param {string} html
+ * @returns {string}
+ */
+function autolinkHttp(html) {
+  return String(html).replace(
+    /(<a\b[^>]*>[\s\S]*?<\/a>)|(<code\b[^>]*>[\s\S]*?<\/code>)|(https?:\/\/[^\s<]+)/gi,
+    (all, a, code, url) => {
+      if (a) return a;
+      if (code) return code;
+      const { href, punct } = splitUrlPunct(url);
+      if (!href) return all;
+      return `<a class="md-pad__link" href="${href}">${href}</a>${punct}`;
+    }
+  );
+}
+
 function inline(s) {
-  return escapeHtml(s)
+  const formatted = escapeHtml(s)
     .replace(hlMarkRe(), '<span style="background-color:#$1">$2</span>')
     .replace(colorMarkRe(), '<span style="color:#$1">$2</span>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<span>$1</span>');
+    .replace(
+      /\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+      '<a class="md-pad__link" href="$2">$1</a>'
+    );
+  return autolinkHttp(formatted);
 }
 
 function renderBasicMd(src) {

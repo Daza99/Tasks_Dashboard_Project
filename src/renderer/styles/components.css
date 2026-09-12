@@ -1109,6 +1109,13 @@
   font-size: 13px;
   margin: 0 0 14px;
 }
+/* Italic parenthetical beside a module h1 (Tasks lede). */
+.module-view__lede {
+  font-style: italic;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 
 .create-form {
   display: flex;
@@ -1233,6 +1240,34 @@
   max-width: 260px;
   min-width: 140px;
 }
+/* Bills: shrink search so status + month toggles fit on the same row */
+.module-filter-bar--bills .module-filter-bar__field--search-half {
+  flex: 1 1 140px;
+  max-width: 180px;
+  min-width: 120px;
+}
+.module-filter-bar--bills .kind-toggle {
+  align-self: flex-end;
+  padding-bottom: 1px;
+}
+.bill-list-copy--unpaid {
+  color: var(--danger);
+}
+.bill-list-copy--paid {
+  color: var(--accent);
+}
+.bill-list-copy--unpaid .module-list__meta,
+.bill-list-copy--unpaid .bill-amount-caption {
+  color: var(--danger);
+}
+.bill-list-copy--paid .module-list__meta,
+.bill-list-copy--paid .bill-amount-caption {
+  color: var(--accent);
+}
+.bill-paid-mark {
+  font-weight: 600;
+  margin-left: 2px;
+}
 .module-filter-bar__field--hashtag {
   min-width: 140px;
   max-width: 200px;
@@ -1260,6 +1295,11 @@
   gap: 4px;
   align-self: flex-start;
   padding-top: 2px;
+}
+/* Sit on the Range select baseline, not the "Range" label */
+.module-filter-bar__checks--sort {
+  align-self: flex-end;
+  padding-top: 0;
 }
 .module-filter-bar__check {
   display: flex;
@@ -1517,6 +1557,29 @@
   background: var(--button-bg);
   border-color: var(--button-text);
   color: var(--button-text);
+}
+/* Progress chips: dull off / accent on — beat selected-card brightening. */
+.item-row__actions button.progress-chip {
+  opacity: 0.45;
+  color: var(--text-muted);
+  border-color: var(--panel-border);
+  filter: saturate(0.5);
+}
+.item-row__actions button.progress-chip.is-on,
+.module-list__item--selected .item-row__actions button.progress-chip.is-on,
+.module-list__item--editing .item-row__actions button.progress-chip.is-on {
+  opacity: 1;
+  filter: none;
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--sidebar-active-bg);
+}
+.module-list__item--selected .item-row__actions button.progress-chip:not(.is-on),
+.module-list__item--editing .item-row__actions button.progress-chip:not(.is-on) {
+  opacity: 0.45;
+  color: var(--text-muted);
+  border-color: var(--panel-border);
+  filter: saturate(0.5);
 }
 /* Save/Cancel: beat muted .item-row__actions override */
 .edit-form .item-row__actions button:not(.danger),
@@ -1942,6 +2005,20 @@
   grid-template-columns: auto 1fr;
   gap: 12px;
   align-items: start;
+}
+/* Stretch details to the bottom of the meta row (just above Save/Cancel). */
+.reminder-meta-row--details-fill {
+  align-items: stretch;
+}
+.reminder-meta-row--details-fill .details-inline {
+  display: flex;
+  flex-direction: column;
+  min-height: 176px;
+  height: 100%;
+}
+.reminder-meta-row--details-fill .details-inline__textarea {
+  flex: 1;
+  min-height: 176px;
 }
 .reminder-meta-row--open {
   grid-template-columns: 1fr;
@@ -2814,6 +2891,11 @@
 }
 .md-pad__link {
   text-decoration: underline;
+  cursor: pointer;
+  color: inherit;
+}
+.list-pad__editor--link-hover {
+  cursor: pointer;
 }
 
 .lists-menu {

@@ -38,6 +38,8 @@ const DEFAULT_SETTINGS = {
   layout_mode: 'compact',
   display_name: '',
   date_format: 'ymd',
+  calendar_hide_habits: 'false',
+  calendar_hide_habits_persist: 'false',
   Debut_mode: '1',
   show_tags_always: 'false',
   backup_auto_daily: 'true',

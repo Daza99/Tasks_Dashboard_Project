@@ -13,7 +13,7 @@ const {
 const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const SCOPE_TAGS = ['rem_today', 'rem_tomorrow', 'rem_dated', 'rem_open'];
-const RECURRENCES = ['daily', 'monthly', 'fortnight', 'quarterly'];
+const RECURRENCES = ['daily', 'monthly', 'fortnight', 'quarterly', 'yearly'];
 const STATE_TAGS = [
   'rem_pending',
   'rem_fired',
@@ -53,12 +53,12 @@ function addMonthsDate(d, months) {
   return x;
 }
 
-/** daily | monthly | fortnight | quarterly | null. Open scope always null. */
+/** daily | monthly | fortnight | quarterly | yearly | null. Open scope always null. */
 function normalizeRecurrence(recurrence, scope) {
   if (scope === 'open') return null;
   if (!recurrence) return null;
   if (!RECURRENCES.includes(recurrence)) {
-    throw new Error('recurrence must be daily, monthly, fortnight, quarterly, or null');
+    throw new Error('recurrence must be daily, monthly, fortnight, quarterly, yearly, or null');
   }
   return recurrence;
 }
@@ -354,6 +354,7 @@ function completeReminder(id) {
       if (isBackupRemind) nextDt = addDays(from, backupRemindDays());
       else if (rec === 'monthly') nextDt = addMonthsDate(from, 1);
       else if (rec === 'quarterly') nextDt = addMonthsDate(from, 3);
+      else if (rec === 'yearly') nextDt = addMonthsDate(from, 12);
       else if (rec === 'fortnight') nextDt = addDays(from, 14);
       else nextDt = addDays(from, 1);
       const next = nextDt.toISOString();

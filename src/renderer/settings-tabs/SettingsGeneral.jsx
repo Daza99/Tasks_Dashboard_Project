@@ -21,6 +21,9 @@ export default function SettingsGeneral() {
   );
   const [showTags, setShowTags] = useState(settings?.show_tags_always === 'true');
   const [dateFormat, setDateFormat] = useState(resolveDateFormat(settings?.date_format));
+  const [hideHabitsPersist, setHideHabitsPersist] = useState(
+    settings?.calendar_hide_habits_persist === 'true'
+  );
   const [debutMode, setDebutMode] = useState(String(settings?.Debut_mode) === '1');
   const [retentionDays, setRetentionDays] = useState(
     settings?.retention_days_expired || '7'
@@ -47,6 +50,7 @@ export default function SettingsGeneral() {
     setRandomNotifColors(settings?.notif_random_bg === 'true');
     setShowTags(settings?.show_tags_always === 'true');
     setDateFormat(resolveDateFormat(settings?.date_format));
+    setHideHabitsPersist(settings?.calendar_hide_habits_persist === 'true');
     setDebutMode(String(settings?.Debut_mode) === '1');
     setRetentionDays(settings?.retention_days_expired || '7');
     setAutoDelExpired(settings?.auto_delete_expired7 === 'true');
@@ -206,6 +210,38 @@ export default function SettingsGeneral() {
             }}
           />{' '}
           dd-mm-yyyy
+        </label>
+      </fieldset>
+
+      <h2 className="settings-subhead">Calendar</h2>
+      <fieldset className="settings-field settings-field--radios">
+        <legend>Hide Habit Entries</legend>
+        <p className="module-view__hint">
+          Whether the calendar Hide Habit Entries tick survives a restart.
+        </p>
+        <label>
+          <input
+            type="checkbox"
+            checked={hideHabitsPersist}
+            onChange={async () => {
+              if (hideHabitsPersist) return;
+              setHideHabitsPersist(true);
+              await updateSetting('calendar_hide_habits_persist', 'true');
+            }}
+          />{' '}
+          Persists across sessions
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={!hideHabitsPersist}
+            onChange={async () => {
+              if (!hideHabitsPersist) return;
+              setHideHabitsPersist(false);
+              await updateSetting('calendar_hide_habits_persist', 'false');
+            }}
+          />{' '}
+          Resets when app is closed
         </label>
       </fieldset>
 

@@ -149,7 +149,6 @@ export default function PromptDialog({
           aria-autocomplete="list"
           aria-expanded={listOpen}
           autoComplete="off"
-          spellCheck={false}
         />
       </div>
       <button

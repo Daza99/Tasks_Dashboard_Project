@@ -548,7 +548,8 @@ function TagAttachedRow({
       item.recurrence === 'daily' ||
       item.recurrence === 'monthly' ||
       item.recurrence === 'fortnight' ||
-      item.recurrence === 'quarterly'
+      item.recurrence === 'quarterly' ||
+      item.recurrence === 'yearly'
         ? item.recurrence
         : null,
       fmtDateTime(item.datetime),

@@ -12,6 +12,7 @@ const { setDashboardWindow } = require('./notification-window');
 const { closeAllTrackerPopouts } = require('./tracker-popout');
 const { closeAllNotePopouts, requestFlushAllNotePopouts } = require('./note-popout');
 const { maybeAutoBackup } = require('./backup');
+const { attachSpellcheckMenu } = require('./spellcheck-menu');
 
 const isDev = !app.isPackaged;
 
@@ -128,6 +129,8 @@ function createWindow() {
       sandbox: false, // better-sqlite3 lives in main; preload needs require
     },
   });
+
+  attachSpellcheckMenu(win);
 
   win.on('close', (e) => {
     if (allowQuit) return;

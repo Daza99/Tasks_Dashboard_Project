@@ -7,6 +7,7 @@ const { getAllSettings, setSetting } = require('./database');
 const { logError } = require('./logger');
 const { getDashboardWindow } = require('./notification-window');
 const { getNote } = require('../services/db/notes');
+const { attachSpellcheckMenu } = require('./spellcheck-menu');
 
 const BOUNDS_KEY = 'note_popout_bounds';
 const isDev = !app.isPackaged;
@@ -114,6 +115,8 @@ function openNotePopout(id) {
         sandbox: false,
       },
     });
+
+    attachSpellcheckMenu(win);
 
     openPopouts.set(numId, win);
     broadcastOpenIds();

@@ -1901,7 +1901,6 @@
   line-height: 1.35;
   white-space: pre-wrap;
   text-decoration: none;
-  display: flex;
   flex-direction: column;
   gap: 4px;
 }
@@ -2075,9 +2074,21 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+/* Day heading left; Hide Habit Entries flush right under Sunday. */
+.cal-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+.cal-day-head .cal-appt-check {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .cal-day-title {
   font-size: 15px;
-  margin: 0 0 10px;
+  margin: 0;
 }
 
 .create-form input[type='number'],

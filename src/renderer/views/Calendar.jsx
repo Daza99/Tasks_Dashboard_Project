@@ -17,6 +17,7 @@ import {
   isValid,
 } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
+import { useDatabase } from '../context/DatabaseContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CalEntryLabel from '../components/CalEntryLabel';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
@@ -62,6 +63,14 @@ function isLinked(ev) {
   return Boolean(ev?.source_type && ev.source_id != null);
 }
 
+function isHabitEvent(ev) {
+  return ev?.source_type === 'habit';
+}
+
+/** Survives Calendar unmount this process; launch hydrates from settings if persist is on. */
+let sessionHideHabits = false;
+let hideHabitsHydrated = false;
+
 const CAL_CHIP_TYPES = new Set(['bill', 'reminder', 'task', 'habit']);
 
 /** Type modifier for month-grid chips; manual events stay untyped. */
@@ -100,6 +109,8 @@ export default function CalendarView({
   onCreateRequest,
 }) {
   const { refresh } = useBrief();
+  const { settings, ready, updateSetting } = useDatabase();
+  const [hideHabits, setHideHabits] = useState(sessionHideHabits);
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
   const [yearOptions, setYearOptions] = useState(() => {
@@ -137,16 +148,25 @@ export default function CalendarView({
     return out;
   }, [monthStart.getTime(), monthEnd.getTime()]);
 
+  const visibleMonthEvents = useMemo(
+    () => (hideHabits ? monthEvents.filter((ev) => !isHabitEvent(ev)) : monthEvents),
+    [monthEvents, hideHabits]
+  );
+  const visibleDayEvents = useMemo(
+    () => (hideHabits ? dayEvents.filter((ev) => !isHabitEvent(ev)) : dayEvents),
+    [dayEvents, hideHabits]
+  );
+
   const eventsByDay = useMemo(() => {
     const map = new Map();
-    for (const ev of monthEvents) {
+    for (const ev of visibleMonthEvents) {
       const key = eventDayKey(ev);
       if (!key) continue;
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(ev);
     }
     return map;
-  }, [monthEvents]);
+  }, [visibleMonthEvents]);
 
   const pickedEvents = useMemo(
     () => monthEvents.filter((ev) => picked.has(ev.id)),
@@ -195,6 +215,34 @@ export default function CalendarView({
     loadDay(selected);
     setStart(`${format(selected, 'yyyy-MM-dd')}T09:00`);
   }, [selected]);
+
+  // Once per process: restore hide only when Settings persist is on.
+  useEffect(() => {
+    if (!ready || hideHabitsHydrated) return;
+    hideHabitsHydrated = true;
+    const persist = settings?.calendar_hide_habits_persist === 'true';
+    sessionHideHabits = persist && settings?.calendar_hide_habits === 'true';
+    setHideHabits(sessionHideHabits);
+  }, [ready, settings]);
+
+  // Hidden habits must not stay in the multi-select set.
+  useEffect(() => {
+    if (!hideHabits) return;
+    const hiddenIds = new Set(
+      [...monthEvents, ...dayEvents].filter(isHabitEvent).map((ev) => ev.id)
+    );
+    if (editingId != null && hiddenIds.has(editingId)) setEditingId(null);
+    setPicked((prev) => {
+      if (!prev.size) return prev;
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (hiddenIds.has(id)) changed = true;
+        else next.add(id);
+      }
+      return changed ? next : prev;
+    });
+  }, [hideHabits, monthEvents, dayEvents, editingId]);
 
   useEffect(() => {
     if (editId == null) return;
@@ -317,6 +365,13 @@ export default function CalendarView({
       return;
     }
     beginEdit(ev);
+  }
+
+  /** View filter only — does not change each habit's Add to Calendar flag. */
+  async function onHideHabitsChange(checked) {
+    sessionHideHabits = checked;
+    setHideHabits(checked);
+    await updateSetting('calendar_hide_habits', checked ? 'true' : 'false');
   }
 
   async function create(e) {
@@ -488,7 +543,17 @@ export default function CalendarView({
         })}
       </div>
 
-      <h2 className="cal-day-title">{format(selected, 'EEEE d MMM')}</h2>
+      <div className="cal-day-head">
+        <h2 className="cal-day-title">{format(selected, 'EEEE d MMM')}</h2>
+        <label className="cal-appt-check">
+          <input
+            type="checkbox"
+            checked={hideHabits}
+            onChange={(e) => onHideHabitsChange(e.target.checked)}
+          />
+          Hide Habit Entries
+        </label>
+      </div>
 
       <form className="create-form glass-inset" onSubmit={create}>
         <input
@@ -510,7 +575,7 @@ export default function CalendarView({
       </form>
 
       <ul className="module-list">
-        {dayEvents.map((ev) => (
+        {visibleDayEvents.map((ev) => (
           <li
             key={ev.id}
             ref={editingId === ev.id ? editRowRef : null}
@@ -572,7 +637,7 @@ export default function CalendarView({
             )}
           </li>
         ))}
-        {!dayEvents.length && <p className="stub-empty">No events this day.</p>}
+        {!visibleDayEvents.length && <p className="stub-empty">No events this day.</p>}
       </ul>
 
       {menu &&

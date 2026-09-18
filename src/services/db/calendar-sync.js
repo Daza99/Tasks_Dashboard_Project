@@ -257,7 +257,15 @@ function billOccurrenceDates(bill, horizon) {
   return out;
 }
 
-/** Hover text: amount (+ mode), category, notes. */
+/** Stored recurrence → calendar hover label. Once/null is omitted. */
+const BILL_RECUR_LABEL = {
+  monthly: 'Monthly',
+  fortnight: 'Fortnight',
+  quarterly: 'Quarterly',
+  yearly: 'Yearly',
+};
+
+/** Hover text: amount (+ mode + frequency), category, notes. */
 function billEventDescription(bill) {
   const lines = [];
   const amt = Number(bill.amount);
@@ -266,6 +274,8 @@ function billEventDescription(bill) {
     let line = `$${amt.toFixed(2)}`;
     if (mode === 'estimate') line += ' Estimate';
     else if (mode === 'average') line += ' Avg';
+    const freq = BILL_RECUR_LABEL[bill.recurrence];
+    if (freq) line += ` (${freq})`;
     lines.push(line);
   }
   const cat = bill.category != null ? String(bill.category).trim() : '';

@@ -60,6 +60,7 @@ const REM_RECUR = [
   { id: 'monthly', label: 'Monthly' },
   { id: 'fortnight', label: 'Fortnight' },
   { id: 'quarterly', label: 'Quarterly', title: '3 Months' },
+  { id: 'yearly', label: 'Yearly' },
 ];
 
 const REM_RANGE_OPTIONS = [
@@ -109,7 +110,7 @@ export default function RemindersView({
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [tagsInput, setTagsInput] = useState('');
   const [appointment, setAppointment] = useState(false);
-  const [recurrence, setRecurrence] = useState(null); // daily | monthly | fortnight | quarterly | null
+  const [recurrence, setRecurrence] = useState(null); // daily | monthly | fortnight | quarterly | yearly | null
   const [nudge, setNudge] = useState(false);
   const [nudgeMode, setNudgeMode] = useState('day_before');
   const [customDate, setCustomDate] = useState(() => todayKey());

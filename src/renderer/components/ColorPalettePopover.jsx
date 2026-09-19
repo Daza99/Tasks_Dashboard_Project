@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cssColorToHex, parseCssColor } from '../../utils/theme-color.js';
+import { HABIT_SWATCH_COUNT, nextEmptySlot } from '../../utils/habit-color.js';
 
 const POP_W = 232;
 const HAS_EYEDROPPER = typeof window !== 'undefined' && typeof window.EyeDropper === 'function';
@@ -81,6 +82,7 @@ function colorToHsv(value) {
 
 /**
  * Theme color popover: SV field, swatch name, RGB/HEX, OK.
+ * Habits pass deferCommit + showCancel + savedColors (commit only on OK).
  * @param {{
  *   open: boolean,
  *   anchorRef: React.RefObject<HTMLElement | null>,
@@ -90,6 +92,11 @@ function colorToHsv(value) {
  *   onCommit: () => void,
  *   onCancel: () => void,
  *   preferLeft?: boolean,
+ *   deferCommit?: boolean,
+ *   showCancel?: boolean,
+ *   savedColors?: (string|null)[] | null,
+ *   onSaveColor?: (hex: string) => void,
+ *   onClearSavedColor?: (index: number) => void,
  * }} props
  */
 export default function ColorPalettePopover({
@@ -101,6 +108,11 @@ export default function ColorPalettePopover({
   onCommit,
   onCancel,
   preferLeft = false,
+  deferCommit = false,
+  showCancel = false,
+  savedColors = null,
+  onSaveColor,
+  onClearSavedColor,
 }) {
   const rootRef = useRef(null);
   const svRef = useRef(null);
@@ -109,8 +121,19 @@ export default function ColorPalettePopover({
   const [hsv, setHsv] = useState(() => colorToHsv(value));
   const [mode, setMode] = useState('rgb');
   const [hexDraft, setHexDraft] = useState('');
+  const [saveOn, setSaveOn] = useState(false);
   const hsvRef = useRef(hsv);
   hsvRef.current = hsv;
+
+  const showPalette = savedColors != null;
+  const slots = useMemo(
+    () =>
+      Array.from({ length: HABIT_SWATCH_COUNT }, (_, i) =>
+        Array.isArray(savedColors) ? savedColors[i] || null : null,
+      ),
+    [savedColors],
+  );
+  const paletteFull = nextEmptySlot(slots) < 0;
 
   const rgb = useMemo(() => hsvToRgb(hsv.h, hsv.s, hsv.v), [hsv]);
   const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
@@ -122,6 +145,7 @@ export default function ColorPalettePopover({
     hsvRef.current = nextHsv;
     setHsv(nextHsv);
     setHexDraft(cssColorToHex(value).slice(1));
+    setSaveOn(false);
     // Snapshot on open only — live parent updates must not reset HSV mid-drag.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -148,16 +172,23 @@ export default function ColorPalettePopover({
       left: Math.max(8, left),
       top: Math.max(8, top),
     });
-  }, [open, anchorRef, preferLeft]);
+  }, [open, anchorRef, preferLeft, showPalette, showCancel, slots]);
+
+  const notify = useCallback(
+    (nextHex) => {
+      if (!deferCommit) onChange(nextHex);
+    },
+    [deferCommit, onChange],
+  );
 
   const emit = useCallback(
     (next) => {
       const rgbNext = hsvToRgb(next.h, next.s, next.v);
       const nextHex = rgbToHex(rgbNext.r, rgbNext.g, rgbNext.b);
       setHexDraft(nextHex.slice(1));
-      onChange(nextHex);
+      notify(nextHex);
     },
-    [onChange],
+    [notify],
   );
 
   function applyPartial(partial) {
@@ -165,6 +196,17 @@ export default function ColorPalettePopover({
     hsvRef.current = next;
     setHsv(next);
     emit(next);
+  }
+
+  function applyHex(nextHex) {
+    const parsed = parseCssColor(nextHex);
+    if (!parsed) return;
+    const next = rgbToHsv(parsed.r, parsed.g, parsed.b);
+    hsvRef.current = next;
+    setHsv(next);
+    const canon = rgbToHex(parsed.r, parsed.g, parsed.b);
+    setHexDraft(canon.slice(1));
+    notify(canon);
   }
 
   function onSvPointer(e) {
@@ -200,33 +242,52 @@ export default function ColorPalettePopover({
     setHsv(next);
     const nextHex = rgbToHex(nextRgb.r, nextRgb.g, nextRgb.b);
     setHexDraft(nextHex.slice(1));
-    onChange(nextHex);
+    notify(nextHex);
   }
 
   function onHexCommit(raw) {
     const t = raw.replace(/^#/, '').trim();
     const parsed = parseCssColor(`#${t}`);
     if (!parsed) return;
-    const next = rgbToHsv(parsed.r, parsed.g, parsed.b);
-    hsvRef.current = next;
-    setHsv(next);
-    const nextHex = rgbToHex(parsed.r, parsed.g, parsed.b);
-    setHexDraft(nextHex.slice(1));
-    onChange(nextHex);
+    applyHex(rgbToHex(parsed.r, parsed.g, parsed.b));
   }
 
   async function onEyedrop() {
     try {
       const result = await new window.EyeDropper().open();
       if (result?.sRGBHex) {
-        const next = colorToHsv(result.sRGBHex);
-        hsvRef.current = next;
-        setHsv(next);
-        emit(next);
+        applyHex(result.sRGBHex);
       }
     } catch {
       /* user cancelled eyedropper */
     }
+  }
+
+  function onCommitClick() {
+    if (deferCommit) onChange(hex);
+    onCommit();
+  }
+
+  function onSaveToggle(e) {
+    const checked = e.target.checked;
+    if (!checked) {
+      setSaveOn(false);
+      return;
+    }
+    if (paletteFull) return;
+    onSaveColor?.(hex);
+    setSaveOn(false);
+  }
+
+  function onSlotClick(slotHex) {
+    if (!slotHex) return;
+    applyHex(slotHex);
+  }
+
+  function onSlotContext(e, index, slotHex) {
+    if (!slotHex) return;
+    e.preventDefault();
+    onClearSavedColor?.(index);
   }
 
   useEffect(() => {
@@ -253,7 +314,7 @@ export default function ColorPalettePopover({
   return createPortal(
     <div
       ref={rootRef}
-      className="color-palette"
+      className={`color-palette${showPalette ? ' color-palette--swatches' : ''}`}
       role="dialog"
       aria-label={label}
       style={{ top: pos.top, left: pos.left }}
@@ -273,7 +334,7 @@ export default function ColorPalettePopover({
 
       <div className="color-palette__name">{label}</div>
 
-      <div className="color-palette__tools">
+      <div className={`color-palette__tools${showPalette ? ' color-palette__tools--save' : ''}`}>
         {HAS_EYEDROPPER ? (
           <button
             type="button"
@@ -292,6 +353,20 @@ export default function ColorPalettePopover({
           <span className="color-palette__eyedrop color-palette__eyedrop--spacer" />
         )}
         <span className="color-palette__preview" style={{ background: hex }} />
+        {showPalette ? (
+          <label
+            className="color-palette__save"
+            title={paletteFull ? 'Palette full — right-click a swatch to clear' : 'Save color to palette'}
+          >
+            <input
+              type="checkbox"
+              checked={saveOn}
+              disabled={paletteFull}
+              onChange={onSaveToggle}
+            />
+            Save
+          </label>
+        ) : null}
         <div
           ref={hueRef}
           className="color-palette__hue"
@@ -304,6 +379,41 @@ export default function ColorPalettePopover({
           />
         </div>
       </div>
+
+      {showPalette ? (
+        <div className="color-palette__swatches" role="list" aria-label="Saved colors">
+          {slots.map((slotHex, i) => (
+            <button
+              key={i}
+              type="button"
+              role="listitem"
+              className={`color-palette__slot${slotHex ? '' : ' color-palette__slot--empty'}`}
+              style={slotHex ? { background: slotHex } : undefined}
+              title={slotHex || undefined}
+              aria-label={slotHex ? slotHex : `Empty swatch ${i + 1}`}
+              disabled={!slotHex}
+              onClick={() => onSlotClick(slotHex)}
+              onContextMenu={(e) => onSlotContext(e, i, slotHex)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {showPalette ? (
+        <label className="color-palette__hex-row">
+          <span>#</span>
+          <input
+            className="color-palette__hex-field"
+            type="text"
+            spellCheck={false}
+            value={hexDraft}
+            aria-label="Hex"
+            onChange={(e) => setHexDraft(e.target.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6))}
+            onBlur={() => onHexCommit(hexDraft)}
+            onKeyDown={(e) => e.key === 'Enter' && onHexCommit(hexDraft)}
+          />
+        </label>
+      ) : null}
 
       <div className="color-palette__values">
         {mode === 'rgb' ? (
@@ -345,9 +455,13 @@ export default function ColorPalettePopover({
             onKeyDown={(e) => e.key === 'Enter' && onHexCommit(hexDraft)}
           />
         )}
-        <button type="button" className="color-palette__ok" onClick={onCommit}>
-          OK
-        </button>
+        {showCancel ? (
+          <span className="color-palette__ok-spacer" />
+        ) : (
+          <button type="button" className="color-palette__ok" onClick={onCommitClick}>
+            OK
+          </button>
+        )}
       </div>
 
       <div className="color-palette__captions">
@@ -371,6 +485,17 @@ export default function ColorPalettePopover({
           </svg>
         </button>
       </div>
+
+      {showCancel ? (
+        <div className="color-palette__actions">
+          <button type="button" className="color-palette__cancel" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="color-palette__ok color-palette__ok--wide" onClick={onCommitClick}>
+            OK
+          </button>
+        </div>
+      ) : null}
     </div>,
     document.body,
   );

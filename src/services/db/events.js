@@ -13,20 +13,58 @@ function enrich(row) {
     ...row,
     hidden: Number(row.hidden) === 1,
     source_id: row.source_id != null ? Number(row.source_id) : null,
+    habit_completed: Number(row.habit_completed) === 1,
+    bill_cycle_paid: Number(row.bill_cycle_paid) === 1,
+    task_started: Number(row.task_started) === 1,
+    task_half_done: Number(row.task_half_done) === 1,
+    task_locked: Number(row.task_locked) === 1,
+    reminder_locked: Number(row.reminder_locked) === 1,
   };
 }
 
 const VISIBLE = 'AND COALESCE(e.hidden, 0) = 0';
 
-/** Event row plus reminder/bill nudge; bill nudge only on the current due occurrence. */
+/** Cycle due_date for a bill chip (occurrence minus offset). */
+const BILL_CYCLE_DUE =
+  `date(e.occurrence_date, CAST(-COALESCE(b.date_offset_days, 0) AS TEXT) || ' days')`;
+
+/** Event row plus reminder/bill nudge; habit_color + per-day check-in; day-list status fields. */
 const EVENT_WITH_NUDGE = `SELECT e.*,
        COALESCE(
          r.nudge_datetime,
          CASE WHEN e.occurrence_date = date(b.due_date, CAST(COALESCE(b.date_offset_days, 0) AS TEXT) || ' days') THEN b.nudge_datetime END
-       ) AS nudge_datetime
+       ) AS nudge_datetime,
+       h.color AS habit_color,
+       hl.completed AS habit_completed,
+       b.paid_status AS bill_paid_status,
+       b.recurrence AS bill_recurrence,
+       b.amount AS bill_amount,
+       b.amount_mode AS bill_amount_mode,
+       b.due_date AS bill_due_date,
+       b.billing_day AS bill_billing_day,
+       EXISTS (
+         SELECT 1 FROM bill_payments bp
+         WHERE bp.bill_id = b.id AND bp.due_date = ${BILL_CYCLE_DUE}
+       ) AS bill_cycle_paid,
+       t.locked AS task_locked,
+       t.completed_at AS task_completed_at,
+       r.locked AS reminder_locked,
+       EXISTS (
+         SELECT 1 FROM item_tags it
+         JOIN tags g ON g.id = it.tag_id
+         WHERE it.item_type = 'task' AND it.item_id = t.id AND g.name = 'todo_started'
+       ) AS task_started,
+       EXISTS (
+         SELECT 1 FROM item_tags it
+         JOIN tags g ON g.id = it.tag_id
+         WHERE it.item_type = 'task' AND it.item_id = t.id AND g.name = 'todo_half_done'
+       ) AS task_half_done
        FROM events e
        LEFT JOIN reminders r ON e.source_type = 'reminder' AND e.source_id = r.id
-       LEFT JOIN bills b ON e.source_type = 'bill' AND e.source_id = b.id`;
+       LEFT JOIN bills b ON e.source_type = 'bill' AND e.source_id = b.id
+       LEFT JOIN habits h ON e.source_type = 'habit' AND e.source_id = h.id
+       LEFT JOIN habit_logs hl ON e.source_type = 'habit' AND e.source_id = hl.habit_id AND e.occurrence_date = hl.date
+       LEFT JOIN tasks t ON e.source_type = 'task' AND e.source_id = t.id`;
 
 function getEvent(id) {
   const row = getDb().prepare(`${EVENT_WITH_NUDGE} WHERE e.id = ?`).get(id);

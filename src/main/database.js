@@ -39,7 +39,9 @@ const DEFAULT_SETTINGS = {
   display_name: '',
   date_format: 'ymd',
   calendar_hide_habits: 'false',
+  calendar_hide_elapsed_habits: 'false',
   calendar_hide_habits_persist: 'false',
+  habit_saved_colors: '[]',
   Debut_mode: '1',
   show_tags_always: 'false',
   backup_auto_daily: 'true',
@@ -205,6 +207,12 @@ function migrateSchema() {
   addHabit('description', 'description TEXT');
   addHabit('priority', 'priority INTEGER DEFAULT 3');
   addHabit('show_on_calendar', 'show_on_calendar INTEGER DEFAULT 0');
+  addHabit('nudge_mode', 'nudge_mode TEXT');
+  addHabit('category', 'category TEXT');
+  db.prepare(
+    `UPDATE habits SET nudge_mode = 'custom'
+     WHERE nudge_time IS NOT NULL AND (nudge_mode IS NULL OR nudge_mode = '')`
+  ).run();
 
   const billCols = db.prepare('PRAGMA table_info(bills)').all().map((c) => c.name);
   const addBill = (col, ddl) => {
@@ -397,6 +405,7 @@ function migrateSchema() {
   migrateTagInspector();
   migrateNotesModule();
   migrateBillCategories();
+  migrateHabitCategories();
   migrateWallpaperColors();
 }
 
@@ -439,6 +448,26 @@ function migrateBillCategories() {
     }
     db.prepare(
       `INSERT INTO settings (key, value) VALUES ('bill_categories_seed_v1', '1')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run();
+  }
+}
+
+/** Habit category catalog (dropdown). Seed flag is a no-op for empty catalogs. */
+function migrateHabitCategories() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS habit_categories (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  const flag = db
+    .prepare("SELECT value FROM settings WHERE key = 'habit_categories_seed_v1'")
+    .get();
+  if (!flag || flag.value !== '1') {
+    db.prepare(
+      `INSERT INTO settings (key, value) VALUES ('habit_categories_seed_v1', '1')
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     ).run();
   }

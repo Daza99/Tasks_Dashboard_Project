@@ -20,8 +20,11 @@ import { useBrief } from '../context/BriefContext';
 import { useDatabase } from '../context/DatabaseContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CalEntryLabel from '../components/CalEntryLabel';
+import CalDayCardActions from '../components/CalDayCardActions';
+import { calendarEntryState } from '../../utils/calendar-entry-state.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { rowDblClick } from '../../utils/row-dblclick.js';
+import { habitFillStyle } from '../../utils/habit-color.js';
 
 const CHIP_CAP = 3;
 
@@ -67,8 +70,16 @@ function isHabitEvent(ev) {
   return ev?.source_type === 'habit';
 }
 
+/** Habit on a local date strictly before today (yyyy-mm-dd). */
+function isElapsedHabit(ev, todayKey) {
+  if (!isHabitEvent(ev)) return false;
+  const key = eventDayKey(ev);
+  return Boolean(key && key < todayKey);
+}
+
 /** Survives Calendar unmount this process; launch hydrates from settings if persist is on. */
 let sessionHideHabits = false;
+let sessionHideElapsed = false;
 let hideHabitsHydrated = false;
 
 const CAL_CHIP_TYPES = new Set(['bill', 'reminder', 'task', 'habit']);
@@ -93,7 +104,7 @@ function clampMenuPos(clientX, clientY, w = 200, h = 130) {
 }
 
 /**
- * Focus view: month grid + day event list/create.
+ * Focus view: month grid + day event list.
  * Linked chips jump to the source item; Ctrl+click multi-selects.
  * @param {{
  *   editId?: number|null,
@@ -111,6 +122,7 @@ export default function CalendarView({
   const { refresh } = useBrief();
   const { settings, ready, updateSetting } = useDatabase();
   const [hideHabits, setHideHabits] = useState(sessionHideHabits);
+  const [hideElapsed, setHideElapsed] = useState(sessionHideElapsed);
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
   const [yearOptions, setYearOptions] = useState(() => {
@@ -119,8 +131,6 @@ export default function CalendarView({
   });
   const [monthEvents, setMonthEvents] = useState([]);
   const [dayEvents, setDayEvents] = useState([]);
-  const [title, setTitle] = useState('');
-  const [start, setStart] = useState('');
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState(null);
   const editRowRef = useScrollEditIntoView(editingId);
@@ -132,6 +142,7 @@ export default function CalendarView({
   const [entityDeleteEv, setEntityDeleteEv] = useState(null);
   const [menu, setMenu] = useState(null); // { x, y, date } | { x, y, event }
   const menuRef = useRef(null);
+  const dayListRef = useRef(null);
 
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
@@ -148,14 +159,17 @@ export default function CalendarView({
     return out;
   }, [monthStart.getTime(), monthEnd.getTime()]);
 
-  const visibleMonthEvents = useMemo(
-    () => (hideHabits ? monthEvents.filter((ev) => !isHabitEvent(ev)) : monthEvents),
-    [monthEvents, hideHabits]
-  );
-  const visibleDayEvents = useMemo(
-    () => (hideHabits ? dayEvents.filter((ev) => !isHabitEvent(ev)) : dayEvents),
-    [dayEvents, hideHabits]
-  );
+  const todayKey = format(new Date(), 'yyyy-MM-dd');
+  const visibleMonthEvents = useMemo(() => {
+    if (hideHabits) return monthEvents.filter((ev) => !isHabitEvent(ev));
+    if (hideElapsed) return monthEvents.filter((ev) => !isElapsedHabit(ev, todayKey));
+    return monthEvents;
+  }, [monthEvents, hideHabits, hideElapsed, todayKey]);
+  const visibleDayEvents = useMemo(() => {
+    if (hideHabits) return dayEvents.filter((ev) => !isHabitEvent(ev));
+    if (hideElapsed) return dayEvents.filter((ev) => !isElapsedHabit(ev, todayKey));
+    return dayEvents;
+  }, [dayEvents, hideHabits, hideElapsed, todayKey]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map();
@@ -213,23 +227,36 @@ export default function CalendarView({
 
   useEffect(() => {
     loadDay(selected);
-    setStart(`${format(selected, 'yyyy-MM-dd')}T09:00`);
   }, [selected]);
 
-  // Once per process: restore hide only when Settings persist is on.
+  // Once per process: restore hide ticks only when Settings persist is on.
   useEffect(() => {
     if (!ready || hideHabitsHydrated) return;
     hideHabitsHydrated = true;
     const persist = settings?.calendar_hide_habits_persist === 'true';
-    sessionHideHabits = persist && settings?.calendar_hide_habits === 'true';
-    setHideHabits(sessionHideHabits);
+    let hideAll = persist && settings?.calendar_hide_habits === 'true';
+    let elapsed = persist && settings?.calendar_hide_elapsed_habits === 'true';
+    if (hideAll && elapsed) {
+      elapsed = false;
+      updateSetting('calendar_hide_elapsed_habits', 'false');
+    }
+    sessionHideHabits = hideAll;
+    sessionHideElapsed = elapsed;
+    setHideHabits(hideAll);
+    setHideElapsed(elapsed);
   }, [ready, settings]);
 
   // Hidden habits must not stay in the multi-select set.
   useEffect(() => {
-    if (!hideHabits) return;
+    if (!hideHabits && !hideElapsed) return;
     const hiddenIds = new Set(
-      [...monthEvents, ...dayEvents].filter(isHabitEvent).map((ev) => ev.id)
+      [...monthEvents, ...dayEvents]
+        .filter((ev) => {
+          if (!isHabitEvent(ev)) return false;
+          if (hideHabits) return true;
+          return isElapsedHabit(ev, todayKey);
+        })
+        .map((ev) => ev.id)
     );
     if (editingId != null && hiddenIds.has(editingId)) setEditingId(null);
     setPicked((prev) => {
@@ -242,7 +269,7 @@ export default function CalendarView({
       }
       return changed ? next : prev;
     });
-  }, [hideHabits, monthEvents, dayEvents, editingId]);
+  }, [hideHabits, hideElapsed, todayKey, monthEvents, dayEvents, editingId]);
 
   useEffect(() => {
     if (editId == null) return;
@@ -345,11 +372,20 @@ export default function CalendarView({
     setSelected((s) => setYear(s, year));
   }
 
-  /** Inline edit — same as the day-list Edit button. */
+  /** Inline calendar title+time — manuals only. Linked cards jump to the module. */
   function beginEdit(ev) {
     setEditingId(ev.id);
     setEditTitle(ev.title);
     setEditStart(toLocalInput(ev.start_datetime));
+  }
+
+  /** Linked → jump to the module; manuals → inline calendar edit. */
+  function openSource(ev) {
+    if (isLinked(ev) && onEditRequest) {
+      onEditRequest(ev.source_type, ev.source_id);
+      return;
+    }
+    beginEdit(ev);
   }
 
   function onChipClick(e, ev, day) {
@@ -360,33 +396,66 @@ export default function CalendarView({
     }
     setPicked(new Set());
     setSelected(day);
-    if (isLinked(ev) && onEditRequest) {
-      onEditRequest(ev.source_type, ev.source_id);
-      return;
-    }
-    beginEdit(ev);
+    openSource(ev);
   }
 
-  /** View filter only — does not change each habit's Add to Calendar flag. */
+  async function reloadAfterAction() {
+    setError('');
+    await reload();
+  }
+
+  /** Hide-all filter — mutex with elapsed; does not change Add to Calendar. */
   async function onHideHabitsChange(checked) {
     sessionHideHabits = checked;
     setHideHabits(checked);
+    if (checked) {
+      sessionHideElapsed = false;
+      setHideElapsed(false);
+      await updateSetting('calendar_hide_elapsed_habits', 'false');
+    }
     await updateSetting('calendar_hide_habits', checked ? 'true' : 'false');
   }
 
-  async function create(e) {
-    e.preventDefault();
-    setError('');
-    try {
-      await window.api.createEvent({
-        title,
-        start_datetime: new Date(start).toISOString(),
-      });
-      setTitle('');
-      await reload();
-    } catch (err) {
-      setError(err?.message || String(err));
+  /** Hide habits before today — mutex with hide-all. */
+  async function onHideElapsedChange(checked) {
+    sessionHideElapsed = checked;
+    setHideElapsed(checked);
+    if (checked) {
+      sessionHideHabits = false;
+      setHideHabits(false);
+      await updateSetting('calendar_hide_habits', 'false');
     }
+    await updateSetting('calendar_hide_elapsed_habits', checked ? 'true' : 'false');
+  }
+
+  /** Nearest overflow-y scroller — Calendar sits in .focus-host, not .center-panel__scroll. */
+  function nearestScrollY(el) {
+    let node = el?.parentElement;
+    while (node && node !== document.documentElement) {
+      const oy = getComputedStyle(node).overflowY;
+      if (oy === 'auto' || oy === 'scroll') return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  /** Pin the day-list top to the inner edge of the focus scroller (not the last card). */
+  function scrollDayListToTop() {
+    const list = dayListRef.current;
+    const scroller = nearestScrollY(list);
+    if (!list || !scroller) return;
+    const pad = parseFloat(getComputedStyle(scroller).paddingTop) || 0;
+    const delta =
+      list.getBoundingClientRect().top -
+      (scroller.getBoundingClientRect().top + pad);
+    scroller.scrollTo({ top: scroller.scrollTop + delta, behavior: 'smooth' });
+  }
+
+  /** +N: select that day and pan to its card list. */
+  function onMoreClick(e, day) {
+    e.stopPropagation();
+    setSelected(day);
+    requestAnimationFrame(() => scrollDayListToTop());
   }
 
   async function saveEdit(e) {
@@ -449,6 +518,7 @@ export default function CalendarView({
             className={`cal-chip${chipTypeClass(ev)}${
               picked.has(ev.id) ? ' cal-chip--selected' : ''
             }${isLinked(ev) ? ' cal-chip--linked' : ''}`}
+            style={ev.source_type === 'habit' ? habitFillStyle(ev.habit_color) : undefined}
             onClick={(e) => onChipClick(e, ev, day)}
             onContextMenu={(e) => openChipMenu(e, ev)}
           >
@@ -456,17 +526,23 @@ export default function CalendarView({
           </button>
         ))}
         {extra > 0 && (
-          <span className="cal-chip-more">+{extra}</span>
+          <button
+            type="button"
+            className="cal-chip-more"
+            onClick={(e) => onMoreClick(e, day)}
+          >
+            +{extra}
+          </button>
         )}
       </>
     );
   }
 
   return (
-    <div className="module-view">
+    <div className="module-view module-view--calendar">
       <h1>Calendar</h1>
       <p className="module-view__hint">
-        Month grid · click a linked entry to open it · Ctrl+click to select · RMB a day to add a task, reminder, or bill · RMB a chip to remove from calendar or delete.
+        Month grid · click a linked entry to open it · Ctrl+click to select · RMB a day to add a task, reminder, bill, or habit · RMB a chip to remove from calendar or delete.
       </p>
 
       <div className="cal-nav">
@@ -513,6 +589,9 @@ export default function CalendarView({
           <button type="button" onClick={() => setPicked(new Set())}>
             Clear
           </button>
+          <button type="button" onClick={() => setPicked(new Set())}>
+            Cancel
+          </button>
         </div>
       )}
 
@@ -545,44 +624,45 @@ export default function CalendarView({
 
       <div className="cal-day-head">
         <h2 className="cal-day-title">{format(selected, 'EEEE d MMM')}</h2>
-        <label className="cal-appt-check">
-          <input
-            type="checkbox"
-            checked={hideHabits}
-            onChange={(e) => onHideHabitsChange(e.target.checked)}
-          />
-          Hide Habit Entries
-        </label>
+        <div className="cal-day-head__filters">
+          <label className="cal-appt-check">
+            <input
+              type="checkbox"
+              checked={hideElapsed}
+              onChange={(e) => onHideElapsedChange(e.target.checked)}
+            />
+            Hide Elapsed Habits
+          </label>
+          <label className="cal-appt-check">
+            <input
+              type="checkbox"
+              checked={hideHabits}
+              onChange={(e) => onHideHabitsChange(e.target.checked)}
+            />
+            Hide All Habits Entries
+          </label>
+        </div>
       </div>
 
-      <form className="create-form glass-inset" onSubmit={create}>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Event title"
-        />
-        <input
-          type="datetime-local"
-          value={start}
-          onChange={(e) => setStart(e.target.value)}
-          required
-        />
-        <button type="submit" className="btn-primary">
-          Add event
-        </button>
-        {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
-      </form>
+      {error && <p className="cal-day-error">{error}</p>}
 
-      <ul className="module-list">
-        {visibleDayEvents.map((ev) => (
-          <li
-            key={ev.id}
-            ref={editingId === ev.id ? editRowRef : null}
-            className={`module-list__item glass-inset module-list__item--col${
-              picked.has(ev.id) ? ' cal-row--selected' : ''
-            }${editingId === ev.id ? ' module-list__item--editing' : ''}`}
-          >
+      <ul className="module-list" ref={dayListRef}>
+        {visibleDayEvents.map((ev) => {
+          const entryState = calendarEntryState(ev);
+          const editing = editingId === ev.id;
+          return (
+            <li
+              key={ev.id}
+              ref={editing ? editRowRef : null}
+              className={`module-list__item glass-inset module-list__item--col cal-day-card${chipTypeClass(ev)}${
+                picked.has(ev.id) ? ' cal-row--selected' : ''
+              }${editing ? ' module-list__item--editing' : ''}`}
+              style={
+                editing || ev.source_type !== 'habit'
+                  ? undefined
+                  : habitFillStyle(ev.habit_color)
+              }
+            >
             {editingId === ev.id ? (
               <form className="edit-form" onSubmit={saveEdit}>
                 <input
@@ -606,7 +686,7 @@ export default function CalendarView({
             ) : (
               <div
                 className="module-list__row"
-                onDoubleClick={rowDblClick(() => beginEdit(ev))}
+                onDoubleClick={rowDblClick(() => openSource(ev))}
                 onContextMenu={(e) => openChipMenu(e, ev)}
               >
                 <button
@@ -614,29 +694,42 @@ export default function CalendarView({
                   className="cal-row-title"
                   onClick={(e) => onChipClick(e, ev, selected)}
                 >
-                  <strong>
+                  <strong className="cal-row-title__line">
                     <CalEntryLabel ev={ev} />
+                    {entryState ? (
+                      <span className="cal-entry-state"> ({entryState})</span>
+                    ) : null}
                   </strong>
                   <div className="module-list__meta">
                     {isLinked(ev) ? ev.source_type : ''}
                   </div>
                 </button>
-                <div className="item-row__actions">
-                  <button type="button" onClick={() => beginEdit(ev)}>
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() => requestDelete([ev.id])}
-                  >
-                    Del
-                  </button>
-                </div>
+                {isLinked(ev) && CAL_CHIP_TYPES.has(ev.source_type) ? (
+                  <CalDayCardActions
+                    ev={ev}
+                    onEdit={() => openSource(ev)}
+                    onReload={reloadAfterAction}
+                    onError={(msg) => setError(msg)}
+                  />
+                ) : (
+                  <div className="item-row__actions">
+                    <button type="button" onClick={() => beginEdit(ev)}>
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => requestDelete([ev.id])}
+                    >
+                      Del
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </li>
-        ))}
+          );
+        })}
         {!visibleDayEvents.length && <p className="stub-empty">No events this day.</p>}
       </ul>
 
@@ -677,6 +770,9 @@ export default function CalendarView({
                 </button>
                 <button type="button" role="menuitem" onClick={() => pickCreate('bill')}>
                   Add a Bill
+                </button>
+                <button type="button" role="menuitem" onClick={() => pickCreate('habit')}>
+                  Add a Habit
                 </button>
               </>
             )}

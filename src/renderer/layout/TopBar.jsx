@@ -26,7 +26,9 @@ export default function TopBar({
   return (
     <header className="top-bar">
       <div className="top-bar__left">
-        <SearchBar activeView={activeView} onEditRequest={onEditRequest} />
+        {!(isFocus && activeView === 'calendar') && (
+          <SearchBar activeView={activeView} onEditRequest={onEditRequest} />
+        )}
       </div>
 
       <h1 className="top-bar__clock" aria-live="polite">

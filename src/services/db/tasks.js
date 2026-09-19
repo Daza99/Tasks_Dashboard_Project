@@ -161,22 +161,45 @@ function updateTask(id, fields) {
 
 const TASK_PROGRESS = ['todo_started', 'todo_half_done'];
 
+/** Restore 24hr vs Open when complete wiped kind tags. */
+function inferTaskKind(row) {
+  if (hasTag('task', row.id, 'todo_open')) return 'todo_open';
+  if (hasTag('task', row.id, 'todo_24')) return 'todo_24';
+  return row?.due_datetime ? 'todo_24' : 'todo_open';
+}
+
+/** Clear started / half-done markers. */
+function clearTaskProgressTags(id) {
+  for (const marker of TASK_PROGRESS) {
+    removeTag('task', id, marker);
+  }
+}
+
 /**
- * Toggle an independent progress marker (started / half done). Not lifecycle.
+ * Set exclusive progress (started / half done) or clear both (not_started).
  * @param {number} id
- * @param {'todo_started'|'todo_half_done'} marker
- * @param {boolean} on
+ * @param {'todo_started'|'todo_half_done'|'not_started'} marker
+ * @param {boolean} [on]
  */
 function setTaskProgress(id, marker, on) {
   try {
     const bare = String(marker || '');
+    const row = getDb().prepare('SELECT id FROM tasks WHERE id = ?').get(id);
+    if (!row) throw new Error('Task not found');
+    if (bare === 'not_started' || (TASK_PROGRESS.includes(bare) && on === false)) {
+      if (bare === 'not_started') clearTaskProgressTags(id);
+      else removeTag('task', id, bare);
+      return getTask(id);
+    }
     if (!TASK_PROGRESS.includes(bare)) {
       throw new Error('Invalid progress marker');
     }
-    const row = getDb().prepare('SELECT id FROM tasks WHERE id = ?').get(id);
-    if (!row) throw new Error('Task not found');
-    if (on) addTag('task', id, bare);
-    else removeTag('task', id, bare);
+    if (on) {
+      for (const other of TASK_PROGRESS) {
+        if (other !== bare) removeTag('task', id, other);
+      }
+      addTag('task', id, bare);
+    }
     return getTask(id);
   } catch (err) {
     logError('setTaskProgress', err);
@@ -192,13 +215,43 @@ function completeTask(id) {
          WHERE id = ?`
       )
       .run(id);
-    replaceTags('task', id, TASK_LIFECYCLE, 'todo_completed');
+    // Keep todo_24 / todo_open so Reset can restore kind.
+    addTag('task', id, 'todo_completed');
+    removeTag('task', id, 'todo_expired');
     removeTag('task', id, 'archived');
     const row = getTask(id);
     require('./calendar-sync').syncTask(row);
     return row;
   } catch (err) {
     logError('completeTask', err);
+    throw err;
+  }
+}
+
+/**
+ * Un-complete, clear progress, restore 24hr/Open. Calendar re-syncs.
+ * @param {number} id
+ */
+function resetTask(id) {
+  try {
+    const cur = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+    if (!cur) throw new Error('Task not found');
+    const kind = inferTaskKind(cur);
+    const db = getDb();
+    const tx = db.transaction(() => {
+      db.prepare(`UPDATE tasks SET completed_at = NULL, container = 'active' WHERE id = ?`).run(id);
+      clearTaskProgressTags(id);
+      removeTag('task', id, 'todo_completed');
+      if (!hasTag('task', id, 'todo_24') && !hasTag('task', id, 'todo_open')) {
+        addTag('task', id, kind);
+      }
+    });
+    tx();
+    const row = getTask(id);
+    require('./calendar-sync').syncTask(row);
+    return row;
+  } catch (err) {
+    logError('resetTask', err);
     throw err;
   }
 }
@@ -388,6 +441,7 @@ module.exports = {
   updateTask,
   setTaskProgress,
   completeTask,
+  resetTask,
   uncompleteTask,
   deleteTask,
   deleteTasks,

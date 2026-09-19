@@ -341,7 +341,7 @@ function searchHabits(parsed, filters) {
   const m = matchSql(parsed, {
     alias: 'h',
     itemType: 'habit',
-    textCols: ['h.name', 'h.description'],
+    textCols: ['h.name', 'h.description', 'h.category'],
     hasTags: true,
   });
   const ym = yearMonthSql('h.created_at', filters);
@@ -353,7 +353,7 @@ function searchHabits(parsed, filters) {
   }
   if (isSet(filters.repeat)) {
     extra.push('h.frequency = ?');
-    extraVals.push(filters.repeat);
+    extraVals.push(filters.repeat === 'fortnight' ? 'fortnightly' : filters.repeat);
   }
   if (isSet(filters.status)) {
     if (filters.status === 'archived') {

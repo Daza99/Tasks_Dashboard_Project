@@ -70,13 +70,11 @@ function habitOccurrenceDates(habit, year, monthIndex) {
     });
   }
   if (freq === 'daily') return days;
-  if (freq === '3day') {
-    return days.filter((k) => {
-      const [y, m, d] = k.split('-').map(Number);
-      return isDueOn(habit, new Date(y, m - 1, d));
-    });
-  }
-  return [];
+  // 3day, fortnightly, and any other interval → isDueOn
+  return days.filter((k) => {
+    const [y, m, d] = k.split('-').map(Number);
+    return isDueOn(habit, new Date(y, m - 1, d));
+  });
 }
 
 function findLinked(sourceType, sourceId, occurrenceDate) {
@@ -388,14 +386,15 @@ function syncHabit(habit, { year, monthIndex } = {}) {
 }
 
 /**
- * Sync a flagged task. No due / completed / flag off → drop events.
+ * Sync a flagged task. No due / flag off → drop events.
+ * Completed tasks stay visible so the day list can show (Done).
  * @param {object} task
  * @param {{ prevDate?: string }} [opts]
  */
 function syncTask(task, { prevDate } = {}) {
   if (!task?.id) return;
   const flagged = Number(task.show_on_calendar) === 1;
-  if (!flagged || task.completed_at || isOpenDatetime(task.due_datetime)) {
+  if (!flagged || isOpenDatetime(task.due_datetime)) {
     deleteEventsForSource('task', task.id);
     return;
   }
@@ -476,7 +475,7 @@ function syncMonth(year, monthIndex) {
     const tasks = db
       .prepare(
         `SELECT * FROM tasks
-         WHERE COALESCE(show_on_calendar, 0) = 1 AND completed_at IS NULL`
+         WHERE COALESCE(show_on_calendar, 0) = 1`
       )
       .all();
     for (const t of tasks) {

@@ -24,6 +24,7 @@ const {
   updateTask,
   completeTask,
   setTaskProgress,
+  resetTask,
   deleteTask,
   deleteTasks,
 } = require('../services/db/tasks');
@@ -47,6 +48,12 @@ const {
   archiveHabit,
   activateHabit,
   toggleCheckin,
+  listHabitCategories,
+  createHabitCategory,
+  countHabitsWithCategory,
+  renameHabitCategory,
+  deleteHabitCategory,
+  mergeHabitCategories,
 } = require('../services/db/habits');
 const {
   createBill,
@@ -419,6 +426,7 @@ function registerIpcHandlers() {
   ipcMain.handle('tasks:setProgress', (_e, id, marker, on) =>
     setTaskProgress(id, marker, on)
   );
+  ipcMain.handle('tasks:reset', (_e, id) => resetTask(id));
   ipcMain.handle('tasks:delete', (_e, id) => deleteTask(id));
   ipcMain.handle('tasks:deleteMany', (_e, ids) => deleteTasks(ids || []));
 
@@ -453,7 +461,7 @@ function registerIpcHandlers() {
   ipcMain.handle('habits:create', (_e, data) => createHabit(data));
   ipcMain.handle('habits:update', (_e, id, fields) => {
     const row = updateHabit(id, fields);
-    if (fields?.nudge_time !== undefined) {
+    if (fields?.nudge_time !== undefined || fields?.nudge_mode !== undefined) {
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession('habit', id);
     }
@@ -465,6 +473,16 @@ function registerIpcHandlers() {
   ipcMain.handle('habits:archive', (_e, id) => archiveHabit(id));
   ipcMain.handle('habits:activate', (_e, id) => activateHabit(id));
   ipcMain.handle('habits:toggleCheckin', (_e, id, date) => toggleCheckin(id, date));
+  ipcMain.handle('habits:categories', () => listHabitCategories());
+  ipcMain.handle('habits:createCategory', (_e, name) => createHabitCategory(name));
+  ipcMain.handle('habits:countCategory', (_e, name) => countHabitsWithCategory(name));
+  ipcMain.handle('habits:renameCategory', (_e, from, to) =>
+    renameHabitCategory(from, to)
+  );
+  ipcMain.handle('habits:deleteCategory', (_e, name) => deleteHabitCategory(name));
+  ipcMain.handle('habits:mergeCategories', (_e, keep, mergeAway) =>
+    mergeHabitCategories(keep, mergeAway)
+  );
 
   // --- Trackers ---
   ipcMain.handle('trackers:list', () => listTrackers());

@@ -859,10 +859,13 @@
 }
 .color-palette__tools {
   display: grid;
-  grid-template-columns: 28px 22px 1fr;
+  grid-template-columns: 28px 32px 1fr;
   align-items: center;
   gap: 8px;
   padding: 8px 10px 6px;
+}
+.color-palette__tools--save {
+  grid-template-columns: 28px 32px auto 1fr;
 }
 .color-palette__eyedrop {
   width: 28px;
@@ -884,8 +887,8 @@
   pointer-events: none;
 }
 .color-palette__preview {
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid #999;
   box-shadow: inset 0 0 0 1px #fff;
@@ -893,6 +896,7 @@
 .color-palette__hue {
   position: relative;
   height: 12px;
+  min-width: 0;
   border-radius: 6px;
   cursor: pointer;
   touch-action: none;
@@ -984,6 +988,140 @@
   background: transparent;
   color: #444;
   cursor: pointer;
+}
+.color-palette__save {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #111;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.color-palette__save input {
+  margin: 0;
+  accent-color: #111;
+}
+.color-palette__save:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+.color-palette__swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  padding: 6px 10px 2px;
+}
+.color-palette__slot {
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #999;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px #fff;
+  cursor: pointer;
+  appearance: none;
+}
+.color-palette__slot--empty {
+  background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+  cursor: default;
+  box-shadow: none;
+}
+.color-palette__hex-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #111;
+}
+.color-palette__hex-field {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid #bbb;
+  border-radius: 2px;
+  background: #fff;
+  color: #111;
+  font-size: 13px;
+}
+.color-palette__ok-spacer {
+  width: 40px;
+  height: 36px;
+}
+.color-palette__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+.color-palette__cancel,
+.color-palette__ok--wide {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border-radius: 2px;
+  background: #fff;
+  color: #111;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.color-palette__cancel {
+  border: 1px solid #bbb;
+}
+.color-palette__ok--wide {
+  border: 2px solid #111;
+  font-weight: 800;
+}
+
+.habit-color-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: max-content;
+  flex-shrink: 0;
+}
+.habit-color-field__label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.habit-color-field__chip {
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  cursor: pointer;
+  appearance: none;
+  overflow: hidden;
+  font-size: 0;
+  line-height: 0;
+  background-color: var(--cal-habit);
+}
+.habit-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  flex-shrink: 0;
+  vertical-align: middle;
 }
 
 .theme-font-select {
@@ -1091,6 +1229,10 @@
   color: var(--danger);
   border-color: rgba(255, 92, 92, 0.35);
 }
+.item-row__actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .item-row--expired {
   border-color: rgba(255, 92, 92, 0.25);
 }
@@ -1108,6 +1250,10 @@
   color: var(--text-secondary);
   font-size: 13px;
   margin: 0 0 14px;
+}
+/* Beat .focus-host p { margin: 0 } — shift 4px toward the Calendar h1 */
+.focus-host .module-view--calendar .module-view__hint {
+  margin: -4px 0 4px;
 }
 /* Italic parenthetical beside a module h1 (Tasks lede). */
 .module-view__lede {
@@ -1233,6 +1379,10 @@
 .module-filter-bar__field--grow {
   flex: 1;
   min-width: 160px;
+}
+/* Sit on Filter/Search field baseline (those have labels above) */
+.module-filter-bar__action {
+  align-self: flex-end;
 }
 /* Notes: leave room for Year + Month selects */
 .module-filter-bar__field--search-half {
@@ -1737,6 +1887,9 @@
   background: var(--sidebar-active-bg);
   text-decoration: line-through;
 }
+.habit-chip--custom.habit-chip--done {
+  text-decoration: line-through;
+}
 
 .money-snapshot {
   display: flex;
@@ -1878,6 +2031,37 @@
 
 .cal-entry-label {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.cal-chip .cal-entry-label {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+.cal-entry-label__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-habit-status-wrap {
+  flex-shrink: 0;
+  display: inline-flex;
+  line-height: 0;
+}
+.cal-habit-status {
+  width: 12px;
+  height: 12px;
+  color: #111;
+  display: block;
+}
+.cal-row-title .cal-habit-status {
+  width: 14px;
+  height: 14px;
 }
 .cal-entry-tip {
   display: none;
@@ -1919,15 +2103,28 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.cal-chip--selected,
-.cal-row--selected {
+.cal-chip--selected {
   background: var(--button-bg);
   box-shadow: inset 0 0 0 1px var(--button-text);
 }
+/* Ring only — keep type/habit fill on day-list cards. */
+.cal-row--selected {
+  box-shadow: inset 0 0 0 1px var(--button-text);
+}
 .cal-chip-more {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
   font-size: 9px;
   color: var(--text-muted);
   padding: 0 4px;
+  cursor: pointer;
+  text-align: left;
+}
+.cal-chip-more:hover {
+  color: var(--text-primary);
 }
 .cal-select-bar {
   display: flex;
@@ -1937,14 +2134,51 @@
   font-size: 12px;
   color: var(--text-secondary);
 }
+/* Unclassed Win32 chrome is white + inherited light text */
+.cal-select-bar button {
+  background: #d4d4d4;
+  color: #333;
+  border: 1px solid #9a9a9a;
+  border-radius: 6px;
+  padding: 3px 10px;
+}
+/* Beat .focus-host p { margin/color } */
+.focus-host p.cal-day-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0 0 8px;
+}
 .cal-row-title {
   flex: 1;
+  min-width: 0;
   background: none;
   border: 0;
   color: inherit;
   text-align: left;
   padding: 0;
   cursor: pointer;
+}
+.cal-row-title .cal-entry-label {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+.cal-row-title__line {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  width: 100%;
+  font-weight: inherit;
+}
+.cal-row-title__line .cal-entry-label {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cal-entry-state {
+  flex-shrink: 0;
+  font-weight: 400;
+  color: var(--text-secondary);
 }
 .cal-appt-check {
   display: flex;
@@ -1954,6 +2188,53 @@
   width: fit-content;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* Day-list cards share grid chip fills (beats .glass-inset). */
+.module-list__item.cal-day-card.cal-chip--bill,
+.module-list__item.cal-day-card.cal-chip--reminder,
+.module-list__item.cal-day-card.cal-chip--task,
+.module-list__item.cal-day-card.cal-chip--habit {
+  color: #f2f5f8;
+}
+.module-list__item.cal-day-card.cal-chip--bill {
+  background: var(--cal-bill);
+}
+.module-list__item.cal-day-card.cal-chip--reminder {
+  background: var(--cal-reminder);
+}
+.module-list__item.cal-day-card.cal-chip--task {
+  background: var(--cal-task);
+}
+.module-list__item.cal-day-card.cal-chip--habit {
+  background: var(--cal-habit);
+}
+.module-list__item.cal-day-card.cal-chip--bill .cal-entry-state,
+.module-list__item.cal-day-card.cal-chip--reminder .cal-entry-state,
+.module-list__item.cal-day-card.cal-chip--task .cal-entry-state,
+.module-list__item.cal-day-card.cal-chip--habit .cal-entry-state,
+.module-list__item.cal-day-card.cal-chip--bill .module-list__meta,
+.module-list__item.cal-day-card.cal-chip--reminder .module-list__meta,
+.module-list__item.cal-day-card.cal-chip--task .module-list__meta,
+.module-list__item.cal-day-card.cal-chip--habit .module-list__meta {
+  color: inherit;
+}
+.module-list__item.cal-day-card.module-list__item--editing {
+  background: var(--button-bg);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--button-text);
+}
+.cal-day-card .module-list__row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.cal-day-card .cal-row-title {
+  flex: 1 1 160px;
+}
+.cal-day-card .item-row__actions {
+  flex: 1 1 220px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .nudge-row {
@@ -2004,6 +2285,14 @@
   grid-template-columns: auto 1fr;
   gap: 12px;
   align-items: start;
+}
+/* Beat base auto/1fr — Custom swatch + Details in the remaining 1fr. */
+.reminder-meta-row.reminder-meta-row--habit-color {
+  grid-template-columns: auto auto 1fr;
+  align-items: stretch;
+}
+.reminder-meta-row--habit-color .reminder-meta-row__left {
+  width: auto;
 }
 /* Stretch details to the bottom of the meta row (just above Save/Cancel). */
 .reminder-meta-row--details-fill {
@@ -2074,13 +2363,21 @@
   font-size: 11px;
   color: var(--text-muted);
 }
-/* Day heading left; Hide Habit Entries flush right under Sunday. */
+/* Day heading left; habit filters flush right under Sunday. */
 .cal-day-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin: 0 0 10px;
+}
+.cal-day-head__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
 }
 .cal-day-head .cal-appt-check {
   flex-shrink: 0;
@@ -2102,6 +2399,13 @@
   border-radius: 8px;
   padding: 8px 10px;
   color: var(--text-primary);
+}
+
+/* Chromium picker glyph is black; invert to light grey in dark mode only. */
+html[data-theme-base='dark'] .create-form input[type='datetime-local']::-webkit-calendar-picker-indicator,
+html[data-theme-base='dark'] .edit-form input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(0.85);
+  opacity: 0.9;
 }
 
 .nav-list__label {

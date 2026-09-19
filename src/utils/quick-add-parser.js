@@ -79,6 +79,9 @@ function parseQuickAdd(input) {
     if (/\bweekdays?\b/i.test(body) || /\bweekly\b/i.test(body)) {
       frequency = 'weekly';
       body = body.replace(/\bweekdays?\b/i, '').replace(/\bweekly\b/i, '').trim();
+    } else if (/\bfortnightly\b/i.test(body) || /\bfortnight\b/i.test(body)) {
+      frequency = 'fortnightly';
+      body = body.replace(/\bfortnightly\b/i, '').replace(/\bfortnight\b/i, '').trim();
     } else if (/\bmonthly\b/i.test(body) || /\bcustom\b/i.test(body)) {
       frequency = 'monthly';
       body = body.replace(/\bmonthly\b/i, '').replace(/\bcustom\b/i, '').trim();

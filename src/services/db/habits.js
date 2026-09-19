@@ -14,8 +14,11 @@ const {
 } = require('./tags');
 const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
 const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
+const { normalizeHex } = require('../../utils/habit-color.cjs');
 
-const FREQUENCIES = ['daily', '3day', 'weekly', 'monthly'];
+const FREQUENCIES = ['daily', '3day', 'weekly', 'fortnightly', 'monthly'];
+const FREQ_ERROR =
+  'frequency must be daily, 3day, weekly, fortnightly, or monthly';
 /** System-managed habit tags — UI / exports. */
 const HABIT_SYSTEM_TAGS = new Set(['nudge', 'archived']);
 
@@ -57,11 +60,12 @@ function createdLocalDate(habit, d = new Date()) {
 function isDueOn(habit, d = new Date()) {
   const freq = habit.frequency || 'daily';
   if (freq === 'daily') return true;
-  // every 3 calendar days from created_at’s local date
-  if (freq === '3day') {
+  // every 3 / 14 calendar days from created_at’s local date
+  if (freq === '3day' || freq === 'fortnightly') {
     const start = createdLocalDate(habit, d);
+    const step = freq === 'fortnightly' ? 14 : 3;
     const diff = Math.floor((localDayMs(d) - localDayMs(start)) / 86400000);
-    return diff >= 0 && diff % 3 === 0;
+    return diff >= 0 && diff % step === 0;
   }
   // weekly ≈ former weekdays (Mon–Fri)
   if (freq === 'weekly' || freq === 'weekdays') {
@@ -79,6 +83,24 @@ function isDueOn(habit, d = new Date()) {
   return true;
 }
 
+/** HH:mm or null. */
+function normalizeNudgeTime(value) {
+  return value && /^\d{2}:\d{2}$/.test(value) ? value : null;
+}
+
+/** Recurring ping: custom = due day; day_before = calendar day before due. */
+function normalizeNudgeMode(mode, nudgeTime) {
+  if (!nudgeTime) return null;
+  return mode === 'day_before' ? 'day_before' : 'custom';
+}
+
+/** Trimmed category or null (Uncategorized). */
+function normalizeCategory(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+}
+
 /** Previous due local date strictly before `d`, or null before created_at. */
 function prevDueDate(habit, d) {
   const start = createdLocalDate(habit, d);
@@ -87,6 +109,18 @@ function prevDueDate(habit, d) {
     c = addDays(c, -1);
   }
   return localDayMs(c) >= localDayMs(start) ? c : null;
+}
+
+/** Next due local Date on or after `d` (inclusive if due that day). */
+function nextDueDate(habit, d = new Date()) {
+  const start = createdLocalDate(habit, d);
+  let c = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (localDayMs(c) < localDayMs(start)) c = new Date(start);
+  for (let i = 0; i < 400; i += 1) {
+    if (isDueOn(habit, c)) return c;
+    c = addDays(c, 1);
+  }
+  return c;
 }
 
 function enrich(row, { date = dateKey() } = {}) {
@@ -102,18 +136,26 @@ function enrich(row, { date = dateKey() } = {}) {
     completed_today: Boolean(log?.completed),
     streak: getStreak(row.id),
     show_on_calendar: Number(row.show_on_calendar) !== 0 ? 1 : 0,
+    next_due_date: dateKey(nextDueDate(row)),
+    nudge_mode: row.nudge_time
+      ? row.nudge_mode === 'day_before'
+        ? 'day_before'
+        : 'custom'
+      : null,
   };
 }
 
 /**
  * Create habit.
- * @param {{ name: string, frequency?: string, color?: string|null, nudge_time?: string|null, tags?: string[]|string, description?: string|null, priority?: number, show_on_calendar?: boolean|number }} data
+ * @param {{ name: string, frequency?: string, color?: string|null, nudge_time?: string|null, nudge_mode?: string|null, category?: string|null, tags?: string[]|string, description?: string|null, priority?: number, show_on_calendar?: boolean|number }} data
  */
 function createHabit({
   name,
   frequency = 'daily',
   color = null,
   nudge_time = null,
+  nudge_mode = null,
+  category = null,
   tags = undefined,
   description = null,
   priority = DEFAULT_PRIORITY,
@@ -122,19 +164,23 @@ function createHabit({
   try {
     const habitName = uniqueTitleFor('habit', name);
     if (!FREQUENCIES.includes(frequency)) {
-      throw new Error('frequency must be daily, 3day, weekly, or monthly');
+      throw new Error(FREQ_ERROR);
     }
-    const nudge =
-      nudge_time && /^\d{2}:\d{2}$/.test(nudge_time) ? nudge_time : null;
+    const nudge = normalizeNudgeTime(nudge_time);
+    const mode = normalizeNudgeMode(nudge_mode, nudge);
+    const cat = normalizeCategory(category);
+    if (cat) createHabitCategory(cat);
     const details = description != null ? String(description).trim() || null : null;
     const prio = clampPriority(priority);
     const onCal = show_on_calendar ? 1 : 0;
+    const colorHex = normalizeHex(color); // invalid/empty → theme orange fallback
     const info = getDb()
       .prepare(
-        `INSERT INTO habits (name, frequency, color, nudge_time, description, priority, show_on_calendar)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO habits (name, frequency, color, nudge_time, nudge_mode, category,
+           description, priority, show_on_calendar)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(habitName, frequency, color, nudge, details, prio, onCal);
+      .run(habitName, frequency, colorHex, nudge, mode, cat, details, prio, onCal);
     const id = Number(info.lastInsertRowid);
     syncNudgeTag(id, nudge);
     if (tags !== undefined) syncUserTags(id, tags);
@@ -198,15 +244,26 @@ function updateHabit(id, fields) {
     const frequency =
       fields.frequency !== undefined ? fields.frequency : cur.frequency;
     if (!FREQUENCIES.includes(frequency)) {
-      throw new Error('frequency must be daily, 3day, weekly, or monthly');
+      throw new Error(FREQ_ERROR);
     }
-    const color = fields.color !== undefined ? fields.color : cur.color;
+    const color =
+      fields.color !== undefined ? normalizeHex(fields.color) : cur.color;
     let nudge = cur.nudge_time;
     if (fields.nudge_time !== undefined) {
-      nudge =
-        fields.nudge_time && /^\d{2}:\d{2}$/.test(fields.nudge_time)
-          ? fields.nudge_time
-          : null;
+      nudge = normalizeNudgeTime(fields.nudge_time);
+    }
+    let mode = cur.nudge_mode;
+    if (fields.nudge_mode !== undefined || fields.nudge_time !== undefined) {
+      const rawMode =
+        fields.nudge_mode !== undefined ? fields.nudge_mode : cur.nudge_mode;
+      mode = normalizeNudgeMode(rawMode, nudge);
+    } else {
+      mode = normalizeNudgeMode(cur.nudge_mode, nudge);
+    }
+    let category = cur.category;
+    if (fields.category !== undefined) {
+      category = normalizeCategory(fields.category);
+      if (category) createHabitCategory(category);
     }
     const description =
       fields.description !== undefined
@@ -227,12 +284,23 @@ function updateHabit(id, fields) {
     getDb()
       .prepare(
         `UPDATE habits SET name = ?, frequency = ?, color = ?, nudge_time = ?,
-         description = ?, priority = ?, show_on_calendar = ?
+         nudge_mode = ?, category = ?, description = ?, priority = ?, show_on_calendar = ?
          WHERE id = ?`
       )
-      .run(name, frequency, color, nudge, description, priority, show_on_calendar, id);
-    // Reschedule nudge if time changed
-    if (fields.nudge_time !== undefined) {
+      .run(
+        name,
+        frequency,
+        color,
+        nudge,
+        mode,
+        category,
+        description,
+        priority,
+        show_on_calendar,
+        id
+      );
+    // Reschedule nudge if time or mode changed
+    if (fields.nudge_time !== undefined || fields.nudge_mode !== undefined) {
       getDb()
         .prepare(
           'UPDATE habits SET last_nudge_date = NULL, snooze_until = NULL WHERE id = ?'
@@ -404,8 +472,8 @@ function getStreak(habitId) {
       .all(habitId);
     if (!logs.length) return 0;
     const done = new Set(logs.map((l) => l.date));
-    // 3-day: consecutive due occurrences, not every calendar day
-    if (habit.frequency === '3day') {
+    // 3-day / fortnightly: consecutive due occurrences, not every calendar day
+    if (habit.frequency === '3day' || habit.frequency === 'fortnightly') {
       const startMs = localDayMs(createdLocalDate(habit));
       const today = new Date();
       let due = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -446,6 +514,10 @@ function listDueNudges() {
   try {
     const now = new Date();
     const today = dateKey(now);
+    const tomorrow = addDays(
+      new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+      1
+    );
     const hh = String(now.getHours()).padStart(2, '0');
     const mm = String(now.getMinutes()).padStart(2, '0');
     const nowHm = `${hh}:${mm}`;
@@ -459,8 +531,11 @@ function listDueNudges() {
       .all(today);
     return rows
       .filter((h) => !hasTag('habit', h.id, 'archived'))
-      .filter((h) => isDueOn(h, now) && h.nudge_time <= nowHm)
+      .filter((h) => h.nudge_time <= nowHm)
       .filter((h) => {
+        const mode = h.nudge_mode === 'day_before' ? 'day_before' : 'custom';
+        if (mode === 'day_before') return isDueOn(h, tomorrow);
+        if (!isDueOn(h, now)) return false;
         const log = getDb()
           .prepare(
             'SELECT completed FROM habit_logs WHERE habit_id = ? AND date = ?'
@@ -514,6 +589,158 @@ function snoozeHabit(id, minutes = 10) {
   }
 }
 
+/** Category names for dropdowns, A–Z. */
+function listHabitCategories() {
+  try {
+    return getDb()
+      .prepare('SELECT name FROM habit_categories ORDER BY name COLLATE NOCASE ASC')
+      .all()
+      .map((r) => r.name);
+  } catch (err) {
+    logError('listHabitCategories', err);
+    throw err;
+  }
+}
+
+/**
+ * Insert a category name if missing.
+ * @param {string} name
+ * @returns {string} trimmed name
+ */
+function createHabitCategory(name) {
+  try {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) throw new Error('Category name required');
+    getDb()
+      .prepare('INSERT OR IGNORE INTO habit_categories (name) VALUES (?)')
+      .run(trimmed);
+    return trimmed;
+  } catch (err) {
+    logError('createHabitCategory', err);
+    throw err;
+  }
+}
+
+/** Exact-name row from the catalog, or null. */
+function getHabitCategoryExact(db, name) {
+  return db.prepare('SELECT name FROM habit_categories WHERE name = ?').get(name) || null;
+}
+
+/**
+ * How many habits use this exact category string.
+ * @param {string} name
+ * @returns {number}
+ */
+function countHabitsWithCategory(name) {
+  try {
+    const src = String(name || '').trim();
+    if (!src) return 0;
+    const row = getDb()
+      .prepare('SELECT COUNT(*) AS n FROM habits WHERE category = ?')
+      .get(src);
+    return Number(row?.n) || 0;
+  } catch (err) {
+    logError('countHabitsWithCategory', err);
+    throw err;
+  }
+}
+
+/**
+ * Rename a catalog row and retag matching habits. NOCASE collision → use Merge.
+ * @param {string} from
+ * @param {string} to
+ * @returns {{ from: string, to: string, renamed: number }}
+ */
+function renameHabitCategory(from, to) {
+  try {
+    const src = String(from || '').trim();
+    const dest = String(to || '').trim();
+    if (!src || !dest) throw new Error('Category name required');
+    const db = getDb();
+    if (!getHabitCategoryExact(db, src)) throw new Error('Category not found');
+    if (dest === src) return { from: src, to: dest, renamed: 0 };
+
+    const clash = db
+      .prepare(
+        'SELECT name FROM habit_categories WHERE name = ? COLLATE NOCASE AND name != ?'
+      )
+      .get(dest, src);
+    if (clash) {
+      throw new Error(`A category named "${clash.name}" already exists. Use Merge.`);
+    }
+
+    const run = db.transaction(() => {
+      const habits = db
+        .prepare('UPDATE habits SET category = ? WHERE category = ?')
+        .run(dest, src);
+      db.prepare('UPDATE habit_categories SET name = ? WHERE name = ?').run(dest, src);
+      return habits.changes;
+    });
+    return { from: src, to: dest, renamed: run() };
+  } catch (err) {
+    logError('renameHabitCategory', err);
+    throw err;
+  }
+}
+
+/**
+ * Drop a catalog row; habits using it become Uncategorized.
+ * @param {string} name
+ * @returns {{ name: string, uncategorized: number }}
+ */
+function deleteHabitCategory(name) {
+  try {
+    const src = String(name || '').trim();
+    if (!src) throw new Error('Category name required');
+    const db = getDb();
+    if (!getHabitCategoryExact(db, src)) throw new Error('Category not found');
+
+    const run = db.transaction(() => {
+      const habits = db
+        .prepare('UPDATE habits SET category = NULL WHERE category = ?')
+        .run(src);
+      db.prepare('DELETE FROM habit_categories WHERE name = ?').run(src);
+      return habits.changes;
+    });
+    return { name: src, uncategorized: run() };
+  } catch (err) {
+    logError('deleteHabitCategory', err);
+    throw err;
+  }
+}
+
+/**
+ * Move habits from mergeAway onto keep, then delete mergeAway from the catalog.
+ * @param {string} keep
+ * @param {string} mergeAway
+ * @returns {{ keep: string, mergeAway: string, moved: number }}
+ */
+function mergeHabitCategories(keep, mergeAway) {
+  try {
+    const keepName = String(keep || '').trim();
+    const awayName = String(mergeAway || '').trim();
+    if (!keepName || !awayName) throw new Error('Keep and Merge away are required');
+    if (keepName === awayName) throw new Error('Keep and Merge away must differ');
+    const db = getDb();
+    if (!getHabitCategoryExact(db, keepName)) throw new Error('Keep category not found');
+    if (!getHabitCategoryExact(db, awayName)) {
+      throw new Error('Merge away category not found');
+    }
+
+    const run = db.transaction(() => {
+      const habits = db
+        .prepare('UPDATE habits SET category = ? WHERE category = ?')
+        .run(keepName, awayName);
+      db.prepare('DELETE FROM habit_categories WHERE name = ?').run(awayName);
+      return habits.changes;
+    });
+    return { keep: keepName, mergeAway: awayName, moved: run() };
+  } catch (err) {
+    logError('mergeHabitCategories', err);
+    throw err;
+  }
+}
+
 module.exports = {
   createHabit,
   getHabit,
@@ -533,7 +760,14 @@ module.exports = {
   snoozeHabit,
   dateKey,
   isDueOn,
+  nextDueDate,
   normalizeTagNames,
+  listHabitCategories,
+  createHabitCategory,
+  countHabitsWithCategory,
+  renameHabitCategory,
+  deleteHabitCategory,
+  mergeHabitCategories,
   FREQUENCIES,
   HABIT_SYSTEM_TAGS,
 };

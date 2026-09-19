@@ -39,12 +39,14 @@ CREATE TABLE IF NOT EXISTS habits (
     frequency TEXT NOT NULL,
     color TEXT,
     nudge_time TEXT,
+    nudge_mode TEXT,
     snooze_until DATETIME,
     last_nudge_date DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     description TEXT,
     priority INTEGER DEFAULT 3,
-    show_on_calendar INTEGER DEFAULT 0
+    show_on_calendar INTEGER DEFAULT 0,
+    category TEXT
 );
 
 CREATE TABLE IF NOT EXISTS habit_logs (
@@ -133,6 +135,12 @@ CREATE TABLE IF NOT EXISTS note_categories (
 );
 
 CREATE TABLE IF NOT EXISTS bill_categories (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS habit_categories (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP

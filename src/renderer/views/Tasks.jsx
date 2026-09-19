@@ -40,9 +40,10 @@ const TASK_RANGE_OPTIONS = [
 
 const TASK_STATE_OPTIONS = [
   { id: 'all', label: 'All' },
-  { id: 'done', label: 'Done' },
-  { id: 'half_done', label: 'Half done' },
+  { id: 'not_started', label: 'Not started' },
   { id: 'started', label: 'Started' },
+  { id: 'half_done', label: 'Half done' },
+  { id: 'done', label: 'Done' },
 ];
 
 function fmt(iso) {
@@ -208,10 +209,17 @@ export default function TasksView({
     await refresh();
   }
 
-  /** Immediate toggle; independent of Edit/Save and of the other chip. */
-  async function toggleProgress(id, marker, currentlyOn) {
-    await window.api.setTaskProgress(id, marker, !currentlyOn);
+  /** Exclusive progress chip (not_started | started | half_done). */
+  async function setProgress(id, marker) {
+    await window.api.setTaskProgress(id, marker, true);
     await load();
+    await refresh();
+  }
+
+  async function reset(id) {
+    await window.api.resetTask(id);
+    await load();
+    await refresh();
   }
 
   async function remove(id) {
@@ -239,6 +247,13 @@ export default function TasksView({
         if (!t.tags?.includes('todo_half_done')) return false;
       } else if (stateFilter === 'started') {
         if (!t.tags?.includes('todo_started')) return false;
+      } else if (stateFilter === 'not_started') {
+        if (
+          t.tags?.includes('todo_started') ||
+          t.tags?.includes('todo_half_done')
+        ) {
+          return false;
+        }
       }
       if (range === 'all') return true;
       return matchesCreatedRange(t.created_at, dateFilter.dateFrom, dateFilter.dateTo);
@@ -347,7 +362,7 @@ export default function TasksView({
           <DetailsInline
             value={details}
             onChange={setDetails}
-            placeholder="Optional task details"
+            placeholder="Optional task details. Dont forget to set a DUE DATE for this task."
             ariaLabel="Optional task details"
             wordLimit={1000}
             continueBullets
@@ -543,40 +558,66 @@ export default function TasksView({
                   <button
                     type="button"
                     className={`progress-chip${
-                      t.tags?.includes('todo_half_done') ? ' is-on' : ''
+                      !t.completed_at &&
+                      !t.tags?.includes('todo_started') &&
+                      !t.tags?.includes('todo_half_done')
+                        ? ' is-on'
+                        : ''
                     }`}
-                    aria-pressed={t.tags?.includes('todo_half_done') ? 'true' : 'false'}
-                    onClick={() =>
-                      toggleProgress(
-                        t.id,
-                        'todo_half_done',
-                        t.tags?.includes('todo_half_done')
-                      )
+                    aria-pressed={
+                      !t.completed_at &&
+                      !t.tags?.includes('todo_started') &&
+                      !t.tags?.includes('todo_half_done')
+                        ? 'true'
+                        : 'false'
                     }
+                    onClick={() => setProgress(t.id, 'not_started')}
+                    disabled={Boolean(t.completed_at)}
                   >
-                    Half done
+                    Not Started
                   </button>
                   <button
                     type="button"
                     className={`progress-chip${
-                      t.tags?.includes('todo_started') ? ' is-on' : ''
+                      !t.completed_at && t.tags?.includes('todo_started')
+                        ? ' is-on'
+                        : ''
                     }`}
-                    aria-pressed={t.tags?.includes('todo_started') ? 'true' : 'false'}
-                    onClick={() =>
-                      toggleProgress(
-                        t.id,
-                        'todo_started',
-                        t.tags?.includes('todo_started')
-                      )
+                    aria-pressed={
+                      !t.completed_at && t.tags?.includes('todo_started')
+                        ? 'true'
+                        : 'false'
                     }
+                    onClick={() => setProgress(t.id, 'todo_started')}
+                    disabled={Boolean(t.completed_at)}
                   >
                     Started
+                  </button>
+                  <button
+                    type="button"
+                    className={`progress-chip${
+                      !t.completed_at && t.tags?.includes('todo_half_done')
+                        ? ' is-on'
+                        : ''
+                    }`}
+                    aria-pressed={
+                      !t.completed_at && t.tags?.includes('todo_half_done')
+                        ? 'true'
+                        : 'false'
+                    }
+                    onClick={() => setProgress(t.id, 'todo_half_done')}
+                    disabled={Boolean(t.completed_at)}
+                  >
+                    Half done
                   </button>
                   {!t.completed_at && (
                     <button type="button" onClick={() => complete(t.id)}>
                       Done
                     </button>
                   )}
+                  <button type="button" onClick={() => reset(t.id)}>
+                    Reset
+                  </button>
                   <button type="button" onClick={() => beginEdit(t)}>
                     Edit
                   </button>

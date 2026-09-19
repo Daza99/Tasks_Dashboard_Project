@@ -5,6 +5,7 @@ import { useLayout } from '../context/LayoutContext';
 import BillPayConfirm from '../components/BillPayConfirm';
 import { useDateFormat } from '../hooks/useDateFormat';
 import { rowDblClick } from '../../utils/row-dblclick.js';
+import { HabitColorDot } from '../components/HabitColorField';
 
 function fmtWhen(iso) {
   if (!iso || iso.startsWith('9999')) return 'Open';
@@ -171,14 +172,24 @@ export default function TodayView({ onEditRequest, onNavigate }) {
                 onDoubleClick={rowDblClick(() => onEditRequest?.('habit', h.id))}
               >
                 <div className="today-view__main">
-                  <span className="today-view__name">{h.name}</span>
+                  <span className="today-view__name">
+                    <HabitColorDot color={h.color} />
+                    {h.name}
+                  </span>
                   {h.streak > 0 && (
                     <span className="today-view__when">{h.streak} streak</span>
                   )}
                 </div>
                 <div className="today-view__actions">
+                  <button
+                    type="button"
+                    disabled={h.completed_today}
+                    onClick={() => toggleHabit(h.id)}
+                  >
+                    {h.completed_today ? 'Completed' : 'Not Completed'}
+                  </button>
                   <button type="button" onClick={() => toggleHabit(h.id)}>
-                    {h.completed_today ? 'Undo' : 'Check'}
+                    Undo
                   </button>
                   <button
                     type="button"

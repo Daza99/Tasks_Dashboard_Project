@@ -215,9 +215,9 @@ export default function SettingsGeneral() {
 
       <h2 className="settings-subhead">Calendar</h2>
       <fieldset className="settings-field settings-field--radios">
-        <legend>Hide Habit Entries</legend>
+        <legend>Calendar habit filters</legend>
         <p className="module-view__hint">
-          Whether the calendar Hide Habit Entries tick survives a restart.
+          Whether Hide Elapsed Habits / Hide All Habits Entries survive a restart.
         </p>
         <label>
           <input

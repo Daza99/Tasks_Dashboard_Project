@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('api', {
   completeTask: (id) => ipcRenderer.invoke('tasks:complete', id),
   setTaskProgress: (id, marker, on) =>
     ipcRenderer.invoke('tasks:setProgress', id, marker, on),
+  resetTask: (id) => ipcRenderer.invoke('tasks:reset', id),
   deleteTask: (id) => ipcRenderer.invoke('tasks:delete', id),
   deleteTasks: (ids) => ipcRenderer.invoke('tasks:deleteMany', ids),
 
@@ -73,6 +74,14 @@ contextBridge.exposeInMainWorld('api', {
   archiveHabit: (id) => ipcRenderer.invoke('habits:archive', id),
   activateHabit: (id) => ipcRenderer.invoke('habits:activate', id),
   toggleCheckin: (id, date) => ipcRenderer.invoke('habits:toggleCheckin', id, date),
+  listHabitCategories: () => ipcRenderer.invoke('habits:categories'),
+  createHabitCategory: (name) => ipcRenderer.invoke('habits:createCategory', name),
+  countHabitsWithCategory: (name) => ipcRenderer.invoke('habits:countCategory', name),
+  renameHabitCategory: (from, to) =>
+    ipcRenderer.invoke('habits:renameCategory', from, to),
+  deleteHabitCategory: (name) => ipcRenderer.invoke('habits:deleteCategory', name),
+  mergeHabitCategories: (keep, mergeAway) =>
+    ipcRenderer.invoke('habits:mergeCategories', keep, mergeAway),
 
   listTrackers: () => ipcRenderer.invoke('trackers:list'),
   getTracker: (id) => ipcRenderer.invoke('trackers:get', id),

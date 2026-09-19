@@ -17,6 +17,13 @@ function applyThemeVars(vars, wallpaperColor) {
   }
 }
 
+/** Tag <html> so CSS can invert native date-picker glyphs in dark mode. */
+function applyThemeBaseAttr(theme, settings) {
+  const light =
+    settings?.theme_base === 'light' || theme?.name === 'Light Glass';
+  document.documentElement.dataset.themeBase = light ? 'light' : 'dark';
+}
+
 /**
  * Brightness mix for built-in glass only. Confirmed custom presets skip the slider.
  * @param {object|null} t
@@ -42,6 +49,7 @@ export function ThemeProvider({ children }) {
       if (cancelled) return;
       setTheme(t);
       applyThemeVars(varsForDisplay(t, settings), settings?.wallpaper_color || '#3e5679');
+      applyThemeBaseAttr(t, settings);
     })();
     return () => {
       cancelled = true;
@@ -68,8 +76,10 @@ export function ThemeProvider({ children }) {
   async function setThemeBase(base) {
     const t = await window.api.setThemeBase(base);
     await updateSetting('theme_base', base);
+    const nextSettings = { ...settings, theme_base: base };
     setTheme(t);
-    applyThemeVars(varsForDisplay(t, { ...settings, theme_base: base }), settings?.wallpaper_color);
+    applyThemeVars(varsForDisplay(t, nextSettings), settings?.wallpaper_color);
+    applyThemeBaseAttr(t, nextSettings);
     return t;
   }
 
@@ -79,6 +89,7 @@ export function ThemeProvider({ children }) {
     await updateSetting('active_theme_id', String(t.id));
     setTheme(t);
     applyThemeVars(t.vars, settings?.wallpaper_color);
+    applyThemeBaseAttr(t, settings);
     return t;
   }
 
@@ -89,6 +100,7 @@ export function ThemeProvider({ children }) {
     setSettings(s);
     setTheme(t);
     applyThemeVars(varsForDisplay(t, s), s?.wallpaper_color);
+    applyThemeBaseAttr(t, s);
     return t;
   }
 

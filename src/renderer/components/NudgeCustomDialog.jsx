@@ -19,12 +19,14 @@ function datesThrough(endDate) {
 
 /**
  * Custom nudge: date dropdown (today → due date) + time.
+ * `timeOnly` hides the date (habits: recurring clock time on due days).
  * @param {{
  *   open: boolean,
  *   dueDate: string,
  *   time: string,
  *   initialDate?: string,
  *   prompt?: string,
+ *   timeOnly?: boolean,
  *   onSave: (date: string, time: string) => void,
  *   onCancel: () => void,
  * }} props
@@ -35,6 +37,7 @@ export default function NudgeCustomDialog({
   time,
   initialDate,
   prompt,
+  timeOnly = false,
   onSave,
   onCancel,
 }) {
@@ -64,19 +67,24 @@ export default function NudgeCustomDialog({
       >
         <h2 id="nudge-custom-title">Custom nudge</h2>
         <p>
-          {prompt || `When to ping before the reminder (date method: ${methodHint}).`}
+          {prompt ||
+            (timeOnly
+              ? 'Time of day for the check-in ping.'
+              : `When to ping before the reminder (date method: ${methodHint}).`)}
         </p>
         <div className="nudge-custom-fields">
-          <label className="edit-label">
-            Date
-            <select value={date} onChange={(e) => setDate(e.target.value)}>
-              {options.map((d) => (
-                <option key={d} value={d}>
-                  {formatDate(d)}
-                </option>
-              ))}
-            </select>
-          </label>
+          {timeOnly ? null : (
+            <label className="edit-label">
+              Date
+              <select value={date} onChange={(e) => setDate(e.target.value)}>
+                {options.map((d) => (
+                  <option key={d} value={d}>
+                    {formatDate(d)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="edit-label">
             Time
             <input
@@ -93,8 +101,10 @@ export default function NudgeCustomDialog({
           <button
             type="button"
             className="btn-primary"
-            disabled={!date || !clock}
-            onClick={() => onSave(date, clock)}
+            disabled={timeOnly ? !clock : !date || !clock}
+            onClick={() =>
+              onSave(date || options[0] || format(new Date(), 'yyyy-MM-dd'), clock)
+            }
           >
             Save
           </button>

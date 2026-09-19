@@ -153,9 +153,10 @@
   min-width: 0;
 }
 
-.today-view__when {
-  color: var(--text-muted);
-  font-size: 13px;
+.today-view__name .habit-color-dot {
+  margin-right: 6px;
+  position: relative;
+  top: -1px;
 }
 
 .today-view__actions {
@@ -174,4 +175,13 @@
 
 .today-view__actions button:hover {
   color: var(--text-primary);
+}
+
+.today-view__actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.today-view__actions button:disabled:hover {
+  color: var(--text-muted);
 }

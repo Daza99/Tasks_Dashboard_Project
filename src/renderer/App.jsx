@@ -127,6 +127,8 @@ function AppInner() {
       <HabitsView
         editId={editRequest?.type === 'habit' ? editRequest.id : null}
         onEditConsumed={clearEditRequest}
+        seedDate={createSeed?.type === 'habit' ? createSeed.date : null}
+        onSeedConsumed={clearCreateSeed}
       />
     );
   } else if (activeView === 'trackers') {

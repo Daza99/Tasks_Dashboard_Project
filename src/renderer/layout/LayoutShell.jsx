@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import TopBar from './TopBar';
 import LeftNav from './LeftNav';
 import CenterBrief from './CenterBrief';
@@ -47,6 +47,12 @@ export default function LayoutShell({
   const { isCompact, isFocus, enterFocus, enterCompact } = useLayout();
   const { settings, backupBusy } = useDatabase();
   const hotkeys = useMemo(() => parseHotkeys(settings?.hotkeys), [settings?.hotkeys]);
+  const focusHostRef = useRef(null);
+
+  // Module swap reuses this scroller; Calendar scroll would land mid Habits create.
+  useLayoutEffect(() => {
+    if (focusHostRef.current) focusHostRef.current.scrollTop = 0;
+  }, [activeView]);
 
   function handleEditRequest(type, id) {
     onEditRequest?.(type, id);
@@ -95,6 +101,7 @@ export default function LayoutShell({
           <CenterBrief onEditRequest={handleEditRequest} onNavigate={onNavigate} />
         ) : (
           <div
+            ref={focusHostRef}
             className={`center-panel glass-panel focus-host${
               activeView === 'today' ? ' focus-host--today' : ''
             }`}

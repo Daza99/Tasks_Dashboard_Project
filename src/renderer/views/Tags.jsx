@@ -566,7 +566,11 @@ function TagAttachedRow({
       </>
     );
     meta = [
-      item.frequency === '3day' ? '3 Day' : item.frequency,
+      item.frequency === '3day'
+        ? '3 Day'
+        : item.frequency === 'fortnightly'
+          ? 'Fortnightly'
+          : item.frequency,
       item.nudge_time ? `nudge ${item.nudge_time}` : null,
       `streak ${item.streak || 0}`,
       item.completed_today ? 'done today' : null,
@@ -641,9 +645,21 @@ function TagAttachedRow({
             </button>
           ) : null}
           {type === 'habit' ? (
-            <button type="button" onClick={() => onToggleHabit(tagName, item.id)}>
-              {item.completed_today ? 'Undo' : 'Check in'}
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={item.completed_today}
+                onClick={() => onToggleHabit(tagName, item.id)}
+              >
+                {item.completed_today ? 'Completed' : 'Not Completed'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onToggleHabit(tagName, item.id)}
+              >
+                Undo
+              </button>
+            </>
           ) : null}
           <button type="button" onClick={() => onEditRequest?.(type, item.id)}>
             Edit

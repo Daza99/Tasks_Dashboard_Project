@@ -71,6 +71,7 @@ const SYSTEM_TAGS = [
 const DEFAULT_CAL_MARKERS = {
   '--cal-bill': '#e53935',
   '--cal-reminder': '#1e3a8a',
+  '--cal-reminder-done': '#7CFFB2',
   '--cal-task': '#7c3aed',
   '--cal-habit': '#ea580c',
 };

@@ -63,7 +63,7 @@ function normalizeRecurrence(recurrence, scope) {
   return recurrence;
 }
 
-/** Local YYYY-MM-DD from ISO (for calendar occurrence moves). */
+/** Local YYYY-MM-DD from ISO (calendar month sync). */
 function dateKeyFromIso(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
@@ -186,7 +186,7 @@ function createReminder({
     addTag('reminder', id, resolved.scopeTag);
     addTag('reminder', id, 'rem_pending');
     const row = getReminder(id);
-    require('./calendar-sync').syncReminder(row);
+    require('./calendar-sync').syncReminderForDates(row, [dateKeyFromIso(row.datetime)]);
     return row;
   } catch (err) {
     logError('createReminder', err);
@@ -316,7 +316,15 @@ function updateReminder(id, fields) {
     });
     tx();
     const row = getReminder(id);
-    require('./calendar-sync').syncReminder(row, { prevDate });
+    const newDate = row?.datetime && !String(row.datetime).startsWith('9999')
+      ? dateKeyFromIso(row.datetime)
+      : null;
+    const recChanged =
+      nextFields.recurrence !== undefined && nextFields.recurrence !== cur?.recurrence;
+    const dateChanged = Boolean(newDate && prevDate && newDate !== prevDate);
+    require('./calendar-sync').syncReminderForDates(row, [newDate, prevDate], {
+      keepPast: !dateChanged && !recChanged,
+    });
     return row;
   } catch (err) {
     logError('updateReminder', err);
@@ -377,7 +385,10 @@ function completeReminder(id) {
       replaceTags('reminder', id, SCOPE_TAGS, 'rem_dated');
       removeTag('reminder', id, 'archived');
       const row = getReminder(id);
-      require('./calendar-sync').syncReminder(row, { prevDate });
+      require('./calendar-sync').syncReminderForDates(row, [
+        dateKeyFromIso(row.datetime),
+        prevDate,
+      ], { keepPast: true });
       return row;
     }
     getDb()
@@ -389,7 +400,9 @@ function completeReminder(id) {
       .run(id);
     replaceTags('reminder', id, STATE_TAGS, 'rem_completed');
     removeTag('reminder', id, 'archived');
-    return getReminder(id);
+    const done = getReminder(id);
+    require('./calendar-sync').syncReminderForDates(done, [dateKeyFromIso(done.datetime)]);
+    return done;
   } catch (err) {
     logError('completeReminder', err);
     throw err;

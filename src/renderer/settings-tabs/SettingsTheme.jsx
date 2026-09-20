@@ -18,6 +18,7 @@ const NEW_ID = 'new';
 const DEFAULT_CAL_MARKERS = {
   '--cal-bill': '#e53935',
   '--cal-reminder': '#1e3a8a',
+  '--cal-reminder-done': '#7CFFB2',
   '--cal-task': '#7c3aed',
   '--cal-habit': '#ea580c',
 };
@@ -246,7 +247,7 @@ export default function SettingsTheme() {
     }
   }
 
-  /** Restore the four calendar marker fills in draft only; Confirm still required. */
+  /** Restore the five calendar marker fills in draft only; Confirm still required. */
   function onResetMarkers() {
     patchDraft({ ...DEFAULT_CAL_MARKERS });
   }
@@ -412,6 +413,13 @@ export default function SettingsTheme() {
                     label="Reminders"
                     value={draft['--cal-reminder']}
                     onChange={(h) => patchDraft({ '--cal-reminder': h })}
+                    dirty={dirty}
+                    setDirty={setDirty}
+                  />
+                  <ColorSwatch
+                    label="Done Reminders"
+                    value={draft['--cal-reminder-done']}
+                    onChange={(h) => patchDraft({ '--cal-reminder-done': h })}
                     dirty={dirty}
                     setDirty={setDirty}
                   />

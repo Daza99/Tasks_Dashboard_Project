@@ -21,7 +21,7 @@ import { useDatabase } from '../context/DatabaseContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CalEntryLabel from '../components/CalEntryLabel';
 import CalDayCardActions from '../components/CalDayCardActions';
-import { calendarEntryState } from '../../utils/calendar-entry-state.js';
+import { calendarEntryState, isReminderDone } from '../../utils/calendar-entry-state.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { habitFillStyle } from '../../utils/habit-color.js';
@@ -87,7 +87,9 @@ const CAL_CHIP_TYPES = new Set(['bill', 'reminder', 'task', 'habit']);
 /** Type modifier for month-grid chips; manual events stay untyped. */
 function chipTypeClass(ev) {
   const t = ev?.source_type;
-  return CAL_CHIP_TYPES.has(t) ? ` cal-chip--${t}` : '';
+  if (!CAL_CHIP_TYPES.has(t)) return '';
+  const done = t === 'reminder' && isReminderDone(ev) ? ' cal-chip--done' : '';
+  return ` cal-chip--${t}${done}`;
 }
 
 /** Place a fixed menu to the right of the pointer; flip/clamp at viewport edges. */
@@ -109,7 +111,7 @@ function clampMenuPos(clientX, clientY, w = 200, h = 130) {
  * @param {{
  *   editId?: number|null,
  *   onEditConsumed?: () => void,
- *   onEditRequest?: (type: string, id: number) => void,
+   *   onEditRequest?: (type: string, id: number, opts?: { completed?: boolean, occurrenceDate?: string }) => void,
  *   onCreateRequest?: (type: string, date: string) => void,
  * }} props
  */
@@ -379,10 +381,16 @@ export default function CalendarView({
     setEditStart(toLocalInput(ev.start_datetime));
   }
 
-  /** Linked → jump to the module; manuals → inline calendar edit. */
+  /** Linked → jump to the module; completed reminders → Completed. */
   function openSource(ev) {
     if (isLinked(ev) && onEditRequest) {
-      onEditRequest(ev.source_type, ev.source_id);
+      if (ev.source_type === 'reminder' && ev.reminder_completed_at) {
+        onEditRequest('reminder', ev.source_id, { completed: true });
+        return;
+      }
+      onEditRequest(ev.source_type, ev.source_id, {
+        occurrenceDate: ev.occurrence_date,
+      });
       return;
     }
     beginEdit(ev);
@@ -649,6 +657,8 @@ export default function CalendarView({
       <ul className="module-list" ref={dayListRef}>
         {visibleDayEvents.map((ev) => {
           const entryState = calendarEntryState(ev);
+          const remDone = ev.source_type === 'reminder' && isReminderDone(ev);
+          const doneLabel = remDone ? (entryState === 'expired' ? 'done' : 'Done') : null;
           const editing = editingId === ev.id;
           return (
             <li
@@ -698,6 +708,9 @@ export default function CalendarView({
                     <CalEntryLabel ev={ev} />
                     {entryState ? (
                       <span className="cal-entry-state"> ({entryState})</span>
+                    ) : null}
+                    {doneLabel ? (
+                      <span className="cal-entry-state"> ({doneLabel})</span>
                     ) : null}
                   </strong>
                   <div className="module-list__meta">

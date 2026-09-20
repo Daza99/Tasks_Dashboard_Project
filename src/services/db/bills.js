@@ -440,9 +440,7 @@ function updateBill(id, fields) {
     if (fields.tags !== undefined) syncUserTags('bill', id, fields.tags);
     syncOnceTag(id, recurrence);
     const row = getBill(id);
-    require('./calendar-sync').syncBill(row, {
-      prevDueDate: dueChanged ? cur.due_date : undefined,
-    });
+    require('./calendar-sync').syncBill(row);
     return row;
   } catch (err) {
     logError('updateBill', err);

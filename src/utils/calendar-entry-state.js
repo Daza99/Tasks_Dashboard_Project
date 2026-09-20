@@ -38,6 +38,31 @@ function billState(ev, today) {
   return 'Unpaid';
 }
 
+/** Local yyyy-mm-dd from reminder.datetime ISO. */
+function reminderDueKey(ev) {
+  if (!ev?.reminder_datetime) return null;
+  try {
+    const d = parseISO(ev.reminder_datetime);
+    return isValid(d) ? format(d, 'yyyy-MM-dd') : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One-shot completed_at, or repeating occurrence already advanced past.
+ * @param {object} ev
+ * @returns {boolean}
+ */
+export function isReminderDone(ev) {
+  if (!ev || ev.source_type !== 'reminder') return false;
+  if (ev.reminder_completed_at) return true;
+  if (!ev.reminder_recurrence) return false;
+  const occ = reminderDayKey(ev);
+  const due = reminderDueKey(ev);
+  return Boolean(occ && due && occ < due);
+}
+
 /** N days away / today / expired vs local today. */
 function reminderState(ev, today) {
   const key = reminderDayKey(ev);

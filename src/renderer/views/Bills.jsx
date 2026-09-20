@@ -25,6 +25,7 @@ import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { useSelectedCard } from '../hooks/useSelectedCard';
 import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { useDateFormat } from '../hooks/useDateFormat';
+import { formatDateKey } from '../../utils/date-format.js';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { matchesEntitySearch } from '../../utils/entity-search.js';
 
@@ -132,13 +133,6 @@ function amountModeLabel(mode) {
   return null;
 }
 
-/** Short paid_at for list meta (SQLite ISO / datetime). */
-function formatPaidAt(paidAt) {
-  if (!paidAt) return '';
-  const s = String(paidAt);
-  return s.length >= 10 ? s.slice(0, 10) : s;
-}
-
 /** yyyy-mm from a stored date. */
 function ymKey(iso) {
   const s = String(iso || '');
@@ -173,6 +167,7 @@ function monthYm(which) {
  * History mode lists bill_payments with year/month/name/sort filters.
  * @param {{
  *   editId?: number|null,
+ *   editOccurrenceDate?: string|null,
  *   onEditConsumed?: () => void,
  *   seedDate?: string|null,
  *   onSeedConsumed?: () => void,
@@ -180,12 +175,13 @@ function monthYm(which) {
  */
 export default function BillsView({
   editId = null,
+  editOccurrenceDate = null,
   onEditConsumed,
   seedDate = null,
   onSeedConsumed,
 }) {
   const { refresh } = useBrief();
-  const { methodHint } = useDateFormat();
+  const { methodHint, dateFormat } = useDateFormat();
   const [mode, setMode] = useState('edit'); // edit | history
   const [rows, setRows] = useState([]);
   const [name, setName] = useState('');
@@ -324,11 +320,17 @@ export default function BillsView({
     if (editId == null) return;
     setMode('edit');
     setSearch('');
+    // Off-month calendar/search jumps: This Month would hide the card.
+    const thisYm = monthYm('this');
+    const occYm = ymKey(editOccurrenceDate);
+    if (occYm && occYm !== thisYm) setMonthFilter('all');
     const b = rows.find((x) => x.id === editId);
     if (!b) return;
+    const liveYm = ymKey(b.watch_date || b.due_date);
+    if (liveYm && liveYm !== thisYm) setMonthFilter('all');
     beginEdit(b);
     onEditConsumed?.();
-  }, [editId, rows]);
+  }, [editId, rows, editOccurrenceDate]);
 
   useEffect(() => {
     if (!seedDate) return;
@@ -931,7 +933,9 @@ export default function BillsView({
             </label>
             <input type="date" value={due} onChange={(e) => setDue(e.target.value)} required />
             {createWatch !== due && (
-              <span className="bill-watch-hint">Shows as {createWatch}</span>
+              <span className="bill-watch-hint">
+                Shows as {formatDateKey(createWatch, dateFormat)}
+              </span>
             )}
             <label className="bill-check">
               <input
@@ -1202,8 +1206,8 @@ export default function BillsView({
                     <strong>{p.bill_name}</strong>
                     <div className="module-list__meta">
                       ${Number(p.amount).toFixed(2)}
-                      {p.due_date ? ` · due ${p.due_date}` : ''}
-                      {' · '}paid {formatPaidAt(p.paid_at)}
+                      {p.due_date ? ` · due ${formatDateKey(p.due_date, dateFormat)}` : ''}
+                      {' · '}paid {formatDateKey(p.paid_at, dateFormat)}
                       {Number(p.late) ? ' · Late' : ''}
                       {Number(p.schedule_changed) ? ' · Date changed' : ''}
                     </div>
@@ -1286,7 +1290,9 @@ export default function BillsView({
                       required
                     />
                     {editWatch !== (edit.due_date || '') && (
-                      <span className="bill-watch-hint">Shows as {editWatch}</span>
+                      <span className="bill-watch-hint">
+                        Shows as {formatDateKey(editWatch, dateFormat)}
+                      </span>
                     )}
                     {['monthly', 'quarterly', 'yearly'].includes(edit.recurrence) &&
                       b.billing_day && (
@@ -1501,7 +1507,8 @@ export default function BillsView({
                               {amountModeLabel(b.amount_mode)}
                             </span>
                           )}
-                          {' · '}due {b.watch_date || b.due_date}
+                          {' · '}due{' '}
+                          {formatDateKey(b.watch_date || b.due_date, dateFormat)}
                           {Number(b.date_offset_days) ||
                           (b.billing_day &&
                             String(b.due_date || '').slice(8) !==
@@ -1511,9 +1518,20 @@ export default function BillsView({
                           {' · '}
                           {b.recurrence || 'once'}
                           {Number(b.remind_days_before) > 0
-                            ? ` · Rem ${addDaysKey(b.watch_date || b.due_date, -Number(b.remind_days_before))}`
+                            ? ` · Rem ${formatDateKey(
+                                addDaysKey(
+                                  b.watch_date || b.due_date,
+                                  -Number(b.remind_days_before)
+                                ),
+                                dateFormat
+                              )}`
                             : ''}
-                          {b.nudge_datetime ? ` · Nudge ${dateFromIso(b.nudge_datetime)}` : ''}
+                          {b.nudge_datetime
+                            ? ` · Nudge ${formatDateKey(
+                                dateFromIso(b.nudge_datetime),
+                                dateFormat
+                              )}`
+                            : ''}
                           {b.category ? ` · ${b.category}` : ''}
                           {b.tags?.length ? ` · ${formatTagsDisplay(b.tags)}` : ''}
                         </div>

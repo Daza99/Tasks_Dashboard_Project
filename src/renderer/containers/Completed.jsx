@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useBrief } from '../context/BriefContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LockButton from '../components/LockButton';
 import { formatTagsDisplay, userTagsOnly } from '../../utils/tag-helpers.js';
 import ContainerActions, { asRef, dayStamp, itemKey } from './ContainerActions';
 import { useDateFormat } from '../hooks/useDateFormat';
+import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 
 /**
  * Completed container — un-complete, archive, or delete. Filter by date/type/tag.
+ * @param {{ focusId?: number|null, onFocusConsumed?: () => void }} props
  */
-export default function Completed() {
+export default function Completed({ focusId = null, onFocusConsumed }) {
   const { refresh } = useBrief();
   const { dateFormat, methodHint } = useDateFormat();
   const [rows, setRows] = useState([]);
@@ -20,6 +22,10 @@ export default function Completed() {
   const [tag, setTag] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [flashId, setFlashId] = useState(null);
+  const [focusNonce, setFocusNonce] = useState(0);
+  const pendingFocus = useRef(null);
+  const flashRowRef = useScrollEditIntoView(flashId);
 
   async function load() {
     const list = await window.api.listCompleted({
@@ -30,11 +36,28 @@ export default function Completed() {
     });
     setRows(list);
     setSelected(new Set());
+    const want = pendingFocus.current;
+    if (want == null) return;
+    if (type !== 'reminder' || tag || dateFrom || dateTo) return;
+    const row = list.find((r) => r.item_type === 'reminder' && Number(r.id) === Number(want));
+    if (row) setFlashId(row.id);
+    pendingFocus.current = null;
+    onFocusConsumed?.();
   }
 
   useEffect(() => {
+    if (focusId == null) return;
+    pendingFocus.current = focusId;
+    setType('reminder');
+    setTag('');
+    setDateFrom('');
+    setDateTo('');
+    setFocusNonce((n) => n + 1);
+  }, [focusId]);
+
+  useEffect(() => {
     load();
-  }, [type, tag, dateFrom, dateTo]);
+  }, [type, tag, dateFrom, dateTo, focusNonce]);
 
   function toggle(key) {
     setSelected((prev) => {
@@ -121,7 +144,13 @@ export default function Completed() {
         {rows.map((r) => {
           const key = itemKey(r);
           return (
-            <li key={key} className="module-list__item glass-inset module-list__item--col">
+            <li
+              key={key}
+              ref={flashId === r.id ? flashRowRef : null}
+              className={`module-list__item glass-inset module-list__item--col${
+                flashId === r.id ? ' module-list__item--flash' : ''
+              }`}
+            >
               <div className="module-list__row">
                 <label className="bill-check">
                   <input

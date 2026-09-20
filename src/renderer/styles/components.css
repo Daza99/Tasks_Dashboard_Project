@@ -462,6 +462,71 @@
   background: var(--sidebar-active-bg);
 }
 
+/* In-app Settings Guide — beat .focus-host p { margin: 0 } */
+.user-guide {
+  max-width: 720px;
+  padding-bottom: 48px;
+}
+
+.user-guide__toc {
+  margin: 0 0 28px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.user-guide__toc-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.user-guide__toc-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.user-guide__toc-list li {
+  margin: 4px 0;
+}
+
+.user-guide__toc-link {
+  color: #4ea8ff;
+  text-decoration: underline;
+}
+
+.user-guide__toc-link:hover,
+.user-guide__toc-link:focus-visible {
+  color: #7ec2ff;
+}
+
+.user-guide__section {
+  margin: 0 0 24px;
+}
+
+.user-guide__heading {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  scroll-margin-top: 12px;
+}
+
+.focus-host .user-guide p,
+.user-guide__bullets {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.user-guide__bullets {
+  padding-left: 20px;
+}
+
+.user-guide__bullets li {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;
@@ -1690,6 +1755,21 @@
 .module-list__item--editing {
   scroll-margin-top: 8px;
 }
+/* Calendar jump → Completed: red outline pulses twice */
+@keyframes module-list-flash {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  25%,
+  75% {
+    box-shadow: inset 0 0 0 2px #e11d48;
+  }
+}
+.module-list__item--flash {
+  scroll-margin-top: 8px;
+  animation: module-list-flash 0.55s ease-in-out 2;
+}
 /* Beat .glass-inset so selected/editing cards use button backlight */
 .module-list__item.module-list__item--selected,
 .module-list__item.module-list__item--editing {
@@ -2013,6 +2093,11 @@
   background: var(--cal-reminder);
   color: #f2f5f8;
 }
+/* Done titles: themeable mint + italic for scanability on navy fill */
+.cal-chip--reminder.cal-chip--done .cal-entry-label__title {
+  color: var(--cal-reminder-done);
+  font-style: italic;
+}
 .cal-chip--task {
   background: var(--cal-task);
   color: #f2f5f8;
@@ -2202,6 +2287,10 @@
 }
 .module-list__item.cal-day-card.cal-chip--reminder {
   background: var(--cal-reminder);
+}
+.module-list__item.cal-day-card.cal-chip--reminder.cal-chip--done .cal-entry-label__title {
+  color: var(--cal-reminder-done);
+  font-style: italic;
 }
 .module-list__item.cal-day-card.cal-chip--task {
   background: var(--cal-task);

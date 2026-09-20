@@ -285,11 +285,10 @@ function billEventDescription(bill) {
 
 /**
  * Persist bill chips from current due through today+12 months.
- * Pass prevDueDate on due-date edit (not pay) so the old current day is not kept as paid.
+ * Past chips stay only when a bill_payments row exists for that cycle.
  * @param {object} bill
- * @param {{ prevDueDate?: string }} [opts]
  */
-function syncBill(bill, { prevDueDate } = {}) {
+function syncBill(bill) {
   if (!bill?.id) return;
   if (Number(bill.show_on_calendar) === 0) {
     deleteEventsForSource('bill', bill.id);
@@ -302,17 +301,13 @@ function syncBill(bill, { prevDueDate } = {}) {
   const series = billOccurrenceDates(bill, billHorizonDate());
   const seriesSet = new Set(series);
   const offset = Number(bill.date_offset_days) || 0;
-  const curWatch = watchDateFrom(bill.due_date, offset);
-  const prevWatch =
-    prevDueDate && prevDueDate !== bill.due_date
-      ? watchDateFrom(prevDueDate, offset)
-      : null;
-  const cutoff =
-    prevWatch && prevWatch !== curWatch
-      ? prevWatch < curWatch
-        ? prevWatch
-        : curWatch
-      : curWatch;
+  const paidWatchDates = new Set(
+    getDb()
+      .prepare('SELECT due_date FROM bill_payments WHERE bill_id = ?')
+      .all(bill.id)
+      .map((p) => watchDateFrom(p.due_date, offset))
+      .filter(Boolean)
+  );
 
   for (const occ of series) {
     upsertLinkedEvent({
@@ -338,7 +333,7 @@ function syncBill(bill, { prevDueDate } = {}) {
   for (const row of rows) {
     if (Number(row.hidden) === 1) continue;
     const occ = row.occurrence_date;
-    if (seriesSet.has(occ) || (occ && occ < cutoff)) continue;
+    if (seriesSet.has(occ) || paidWatchDates.has(occ)) continue;
     getDb().prepare('DELETE FROM events WHERE id = ?').run(row.id);
   }
 }
@@ -425,32 +420,146 @@ function syncTask(task, { prevDate } = {}) {
   });
 }
 
+const REM_RECURRENCES = ['daily', 'monthly', 'fortnight', 'quarterly', 'yearly'];
+
+/** yyyy-mm-dd plus N calendar days. */
+function addDaysKey(dayKey, n) {
+  const [y, m, d] = String(dayKey).split('-').map(Number);
+  return dateKey(new Date(y, m - 1, d + n));
+}
+
+/** yyyy-mm-dd plus N months, clamp DOM (31 Jan → 28/29 Feb). */
+function addMonthsKey(dayKey, months) {
+  const [y, m, d] = String(dayKey).split('-').map(Number);
+  const x = new Date(y, m - 1 + months, 1);
+  const last = new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate();
+  x.setDate(Math.min(d, last));
+  return dateKey(x);
+}
+
+/** Apply reminder wall-clock time onto an occurrence day. */
+function startOnOccurrence(iso, occKey) {
+  const dueKey = localDateKey(iso);
+  if (dueKey === occKey) return iso;
+  const src = new Date(iso);
+  if (Number.isNaN(src.getTime())) return dateAtNine(occKey);
+  const [y, m, d] = String(occKey).split('-').map(Number);
+  return new Date(
+    y,
+    m - 1,
+    d,
+    src.getHours(),
+    src.getMinutes(),
+    src.getSeconds(),
+    src.getMilliseconds()
+  ).toISOString();
+}
+
 /**
- * Sync an appointment reminder. Open / unticked → drop events.
+ * Reminder chips in the viewed month. Recurrence expands from current datetime
+ * forward; past (already-completed) days are kept by syncReminder keepPast.
  * @param {object} rem
- * @param {{ prevDate?: string }} [opts]
+ * @param {number} year
+ * @param {number} monthIndex
+ * @returns {string[]}
  */
-function syncReminder(rem, { prevDate } = {}) {
+function reminderOccurrenceDates(rem, year, monthIndex) {
+  const due = localDateKey(rem.datetime);
+  if (!due) return [];
+  const rec = rem.recurrence;
+  const days = daysInMonth(year, monthIndex);
+  const monthPrefix = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+  if (!rec || !REM_RECURRENCES.includes(rec)) {
+    return due.startsWith(monthPrefix) ? [due] : [];
+  }
+  if (rec === 'daily') return days.filter((d) => d >= due);
+  if (rec === 'fortnight') {
+    const monthEnd = days[days.length - 1];
+    const out = [];
+    let d = due;
+    for (let i = 0; i < 48; i += 1) {
+      if (d > monthEnd) break;
+      if (d.startsWith(monthPrefix)) out.push(d);
+      const next = addDaysKey(d, 14);
+      if (!next || next <= d) break;
+      d = next;
+    }
+    return out;
+  }
+  const stepMonths = rec === 'yearly' ? 12 : rec === 'quarterly' ? 3 : 1;
+  const dueDate = new Date(due + 'T12:00:00');
+  const monthsDiff =
+    (year - dueDate.getFullYear()) * 12 + (monthIndex - dueDate.getMonth());
+  if (monthsDiff < 0 || monthsDiff % stepMonths !== 0) return [];
+  const occ = addMonthsKey(due, monthsDiff);
+  return occ.startsWith(monthPrefix) && occ >= due ? [occ] : [];
+}
+
+/**
+ * Sync appointment reminder chips for a month. Open / unticked → drop events.
+ * Completed one-shots stay. Repeating: keepPast leaves occ < current due.
+ * @param {object} rem
+ * @param {{ year?: number, monthIndex?: number, keepPast?: boolean }} [opts]
+ */
+function syncReminder(rem, { year, monthIndex, keepPast = false } = {}) {
   if (!rem?.id) return;
   const flagged = Number(rem.is_appointment) === 1;
   if (!flagged || isOpenDatetime(rem.datetime)) {
     deleteEventsForSource('reminder', rem.id);
     return;
   }
-  const occ = localDateKey(rem.datetime);
-  if (!occ) return;
-  if (prevDate && prevDate !== occ) {
-    moveLinkedEvent('reminder', rem.id, prevDate, occ, rem.title, rem.datetime, rem.description);
-    return;
+  const due = localDateKey(rem.datetime);
+  if (!due) return;
+  const y = year ?? Number(due.slice(0, 4));
+  const m = monthIndex ?? Number(due.slice(5, 7)) - 1;
+  if (!y || m < 0 || m > 11) return;
+  const series = reminderOccurrenceDates(rem, y, m);
+  const seriesSet = new Set(series);
+  const monthPrefix = `${y}-${String(m + 1).padStart(2, '0')}`;
+  for (const occ of series) {
+    upsertLinkedEvent({
+      source_type: 'reminder',
+      source_id: rem.id,
+      occurrence_date: occ,
+      title: rem.title,
+      start_datetime: startOnOccurrence(rem.datetime, occ),
+      description: rem.description,
+    });
   }
-  upsertLinkedEvent({
-    source_type: 'reminder',
-    source_id: rem.id,
-    occurrence_date: occ,
-    title: rem.title,
-    start_datetime: rem.datetime,
-    description: rem.description,
-  });
+  if (rem.title) retitleSourceEvents('reminder', rem.id, rem.title);
+  const rows = getDb()
+    .prepare(
+      `SELECT id, occurrence_date, hidden FROM events WHERE source_type = 'reminder' AND source_id = ?`
+    )
+    .all(rem.id);
+  for (const row of rows) {
+    if (Number(row.hidden) === 1) continue;
+    const occ = row.occurrence_date;
+    if (!occ || !String(occ).startsWith(monthPrefix)) continue;
+    if (seriesSet.has(occ)) continue;
+    if (keepPast && due && occ < due) continue;
+    getDb().prepare('DELETE FROM events WHERE id = ?').run(row.id);
+  }
+}
+
+/**
+ * Sync each distinct month covering the given yyyy-mm-dd keys.
+ * @param {object} rem
+ * @param {(string|null|undefined)[]} dayKeys
+ * @param {{ keepPast?: boolean }} [opts]
+ */
+function syncReminderForDates(rem, dayKeys, { keepPast = false } = {}) {
+  const seen = new Set();
+  for (const key of dayKeys) {
+    if (!key) continue;
+    const y = Number(String(key).slice(0, 4));
+    const mo = Number(String(key).slice(5, 7)) - 1;
+    if (!y || mo < 0 || mo > 11) continue;
+    const stamp = `${y}-${mo}`;
+    if (seen.has(stamp)) continue;
+    seen.add(stamp);
+    syncReminder(rem, { year: y, monthIndex: mo, keepPast });
+  }
 }
 
 /**
@@ -470,7 +579,7 @@ function syncMonth(year, monthIndex) {
     }
     const rems = db.prepare(`SELECT * FROM reminders WHERE COALESCE(is_appointment, 0) = 1`).all();
     for (const r of rems) {
-      syncReminder(r);
+      syncReminder(r, { year, monthIndex, keepPast: true });
     }
     const tasks = db
       .prepare(
@@ -602,6 +711,7 @@ module.exports = {
   syncBill,
   syncHabit,
   syncReminder,
+  syncReminderForDates,
   syncTask,
   syncMonth,
   syncOnAppStart,

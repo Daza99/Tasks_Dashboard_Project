@@ -49,6 +49,9 @@ const EVENT_WITH_NUDGE = `SELECT e.*,
        t.locked AS task_locked,
        t.completed_at AS task_completed_at,
        r.locked AS reminder_locked,
+       r.completed_at AS reminder_completed_at,
+       r.datetime AS reminder_datetime,
+       r.recurrence AS reminder_recurrence,
        EXISTS (
          SELECT 1 FROM item_tags it
          JOIN tags g ON g.id = it.tag_id

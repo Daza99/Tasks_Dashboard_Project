@@ -37,13 +37,18 @@ function AppInner() {
   const { ready, error } = useDatabase();
   const { enterFocus } = useLayout();
   const [activeView, setActiveView] = useState('today');
-  const [editRequest, setEditRequest] = useState(null); // { type, id }
+  const [editRequest, setEditRequest] = useState(null); // { type, id, completed?, occurrenceDate? }
   const [createSeed, setCreateSeed] = useState(null); // { type, date } yyyy-MM-dd
 
   /** Brief Edit / notif VIEW → Focus on module with item open for edit. */
-  const requestEdit = useCallback((type, id) => {
+  const requestEdit = useCallback((type, id, opts) => {
     setCreateSeed(null);
-    setEditRequest({ type, id });
+    const completed = Boolean(opts?.completed);
+    setEditRequest({ type, id, completed, occurrenceDate: opts?.occurrenceDate || null });
+    if (type === 'reminder' && completed) {
+      setActiveView('completed');
+      return;
+    }
     setActiveView(EDIT_VIEW[type] || type);
   }, []);
 
@@ -142,6 +147,9 @@ function AppInner() {
     focusContent = (
       <BillsView
         editId={editRequest?.type === 'bill' ? editRequest.id : null}
+        editOccurrenceDate={
+          editRequest?.type === 'bill' ? editRequest.occurrenceDate : null
+        }
         onEditConsumed={clearEditRequest}
         seedDate={createSeed?.type === 'bill' ? createSeed.date : null}
         onSeedConsumed={clearCreateSeed}
@@ -177,7 +185,14 @@ function AppInner() {
   } else if (activeView === 'expired') {
     focusContent = <Expired7Plus />;
   } else if (activeView === 'completed') {
-    focusContent = <CompletedView />;
+    focusContent = (
+      <CompletedView
+        focusId={
+          editRequest?.type === 'reminder' && editRequest.completed ? editRequest.id : null
+        }
+        onFocusConsumed={clearEditRequest}
+      />
+    );
   } else if (activeView === 'archive') {
     focusContent = <ArchiveView />;
   } else if (activeView) {

@@ -4,6 +4,7 @@ import SettingsTheme from '../settings-tabs/SettingsTheme';
 import SettingsWallpaper from '../settings-tabs/SettingsWallpaper';
 import SettingsHotkeys from '../settings-tabs/SettingsHotkeys';
 import SettingsData from '../settings-tabs/SettingsData';
+import SettingsGuide from '../settings-tabs/SettingsGuide';
 
 const TABS = [
   { id: 'general', label: 'General' },
@@ -11,14 +12,17 @@ const TABS = [
   { id: 'hotkeys', label: 'Hotkeys' },
   { id: 'theme', label: 'Theme' },
   { id: 'wallpaper', label: 'Wallpaper' },
+  { id: 'guide', label: 'Guide' },
 ];
 
-/** Settings host with General / Data / Hotkeys / Theme / Wallpaper tabs. */
+const WIDE_TABS = new Set(['theme', 'guide']);
+
+/** Settings host with General / Data / Hotkeys / Theme / Wallpaper / Guide tabs. */
 export default function SettingsView() {
   const [tab, setTab] = useState('general');
 
   return (
-    <div className={`settings${tab === 'theme' ? ' settings--wide' : ''}`}>
+    <div className={`settings${WIDE_TABS.has(tab) ? ' settings--wide' : ''}`}>
       <h1>Settings</h1>
       <p style={{ marginBottom: 16 }}>Preferences persist in local SQLite.</p>
       <div className="settings__tabs" role="tablist">
@@ -40,6 +44,7 @@ export default function SettingsView() {
       {tab === 'hotkeys' && <SettingsHotkeys />}
       {tab === 'theme' && <SettingsTheme />}
       {tab === 'wallpaper' && <SettingsWallpaper />}
+      {tab === 'guide' && <SettingsGuide />}
     </div>
   );
 }

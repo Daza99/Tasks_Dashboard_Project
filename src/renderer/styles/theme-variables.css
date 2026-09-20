@@ -24,6 +24,7 @@
   /* Calendar month-chip fills by source_type */
   --cal-bill: #e53935;
   --cal-reminder: #1e3a8a;
+  --cal-reminder-done: #7CFFB2;
   --cal-task: #7c3aed;
   --cal-habit: #ea580c;
   /* Module tab brand colors (always-on outlines — equal weight) */

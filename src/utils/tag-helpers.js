@@ -123,3 +123,40 @@ export function getHashTokenAt(text, caret) {
     raw: m[0],
   };
 }
+
+/**
+ * Fold a tag so case, camelCase, and -/_/space twins share one key.
+ * `MyTag`, `my-tag`, `my_tag`, and `my tag` all become `mytag`.
+ * @param {string} raw
+ * @returns {string}
+ */
+export function duplicateTagKey(raw) {
+  const s = String(raw || '').replace(/^#+/, '').trim();
+  const split = s
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+  return split.toLowerCase().replace(/[-_\s]+/g, '');
+}
+
+/**
+ * Ids of tags that share a folded name with at least one other row.
+ * A tag alone is not a conflict.
+ * @param {{ id: number, name: string }[]} catalog
+ * @returns {Set<number>}
+ */
+export function findDuplicateTagIds(catalog) {
+  const groups = new Map();
+  for (const tag of catalog || []) {
+    const key = duplicateTagKey(tag?.name);
+    if (!key) continue;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(tag.id);
+    else groups.set(key, [tag.id]);
+  }
+  const ids = new Set();
+  for (const bucket of groups.values()) {
+    if (bucket.length < 2) continue;
+    for (const id of bucket) ids.add(id);
+  }
+  return ids;
+}

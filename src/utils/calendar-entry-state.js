@@ -29,10 +29,20 @@ function reminderDayKey(ev) {
   }
 }
 
+/**
+ * Paid bill occurrence: cycle marked paid, or one-off paid_status.
+ * @param {object} ev
+ * @returns {boolean}
+ */
+export function isBillPaid(ev) {
+  if (!ev || ev.source_type !== 'bill') return false;
+  if (ev.bill_cycle_paid) return true;
+  return !ev.bill_recurrence && ev.bill_paid_status === 'paid';
+}
+
 /** Paid / Unpaid / Late for a bill occurrence. */
 function billState(ev, today) {
-  const oncePaid = !ev.bill_recurrence && ev.bill_paid_status === 'paid';
-  if (ev.bill_cycle_paid || oncePaid) return 'Paid';
+  if (isBillPaid(ev)) return 'Paid';
   const occ = ev.occurrence_date ? String(ev.occurrence_date).slice(0, 10) : '';
   if (occ && occ < todayKey(today)) return 'Late';
   return 'Unpaid';

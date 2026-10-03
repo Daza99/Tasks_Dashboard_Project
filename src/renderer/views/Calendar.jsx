@@ -21,7 +21,7 @@ import { useDatabase } from '../context/DatabaseContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CalEntryLabel from '../components/CalEntryLabel';
 import CalDayCardActions from '../components/CalDayCardActions';
-import { calendarEntryState, isReminderDone } from '../../utils/calendar-entry-state.js';
+import { calendarEntryState, isBillPaid, isReminderDone } from '../../utils/calendar-entry-state.js';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { habitFillStyle } from '../../utils/habit-color.js';
@@ -80,7 +80,23 @@ function isElapsedHabit(ev, todayKey) {
 /** Survives Calendar unmount this process; launch hydrates from settings if persist is on. */
 let sessionHideHabits = false;
 let sessionHideElapsed = false;
+let sessionHidePaidBills = false;
+let sessionHideCompletedReminders = false;
 let hideHabitsHydrated = false;
+
+/**
+ * View-only hide: habits, paid bills, completed reminders. Does not touch DB.
+ * @param {object} ev
+ * @param {{ hideHabits: boolean, hideElapsed: boolean, hidePaidBills: boolean, hideCompletedReminders: boolean, todayKey: string }} flags
+ * @returns {boolean}
+ */
+function isHiddenByCalendarFilter(ev, flags) {
+  if (flags.hideHabits && isHabitEvent(ev)) return true;
+  if (flags.hideElapsed && isElapsedHabit(ev, flags.todayKey)) return true;
+  if (flags.hidePaidBills && isBillPaid(ev)) return true;
+  if (flags.hideCompletedReminders && isReminderDone(ev)) return true;
+  return false;
+}
 
 const CAL_CHIP_TYPES = new Set(['bill', 'reminder', 'task', 'habit']);
 
@@ -125,6 +141,10 @@ export default function CalendarView({
   const { settings, ready, updateSetting } = useDatabase();
   const [hideHabits, setHideHabits] = useState(sessionHideHabits);
   const [hideElapsed, setHideElapsed] = useState(sessionHideElapsed);
+  const [hidePaidBills, setHidePaidBills] = useState(sessionHidePaidBills);
+  const [hideCompletedReminders, setHideCompletedReminders] = useState(
+    sessionHideCompletedReminders
+  );
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
   const [yearOptions, setYearOptions] = useState(() => {
@@ -162,16 +182,21 @@ export default function CalendarView({
   }, [monthStart.getTime(), monthEnd.getTime()]);
 
   const todayKey = format(new Date(), 'yyyy-MM-dd');
-  const visibleMonthEvents = useMemo(() => {
-    if (hideHabits) return monthEvents.filter((ev) => !isHabitEvent(ev));
-    if (hideElapsed) return monthEvents.filter((ev) => !isElapsedHabit(ev, todayKey));
-    return monthEvents;
-  }, [monthEvents, hideHabits, hideElapsed, todayKey]);
-  const visibleDayEvents = useMemo(() => {
-    if (hideHabits) return dayEvents.filter((ev) => !isHabitEvent(ev));
-    if (hideElapsed) return dayEvents.filter((ev) => !isElapsedHabit(ev, todayKey));
-    return dayEvents;
-  }, [dayEvents, hideHabits, hideElapsed, todayKey]);
+  const hideFlags = {
+    hideHabits,
+    hideElapsed,
+    hidePaidBills,
+    hideCompletedReminders,
+    todayKey,
+  };
+  const visibleMonthEvents = useMemo(
+    () => monthEvents.filter((ev) => !isHiddenByCalendarFilter(ev, hideFlags)),
+    [monthEvents, hideHabits, hideElapsed, hidePaidBills, hideCompletedReminders, todayKey]
+  );
+  const visibleDayEvents = useMemo(
+    () => dayEvents.filter((ev) => !isHiddenByCalendarFilter(ev, hideFlags)),
+    [dayEvents, hideHabits, hideElapsed, hidePaidBills, hideCompletedReminders, todayKey]
+  );
 
   const eventsByDay = useMemo(() => {
     const map = new Map();
@@ -238,26 +263,35 @@ export default function CalendarView({
     const persist = settings?.calendar_hide_habits_persist === 'true';
     let hideAll = persist && settings?.calendar_hide_habits === 'true';
     let elapsed = persist && settings?.calendar_hide_elapsed_habits === 'true';
+    const paid = persist && settings?.calendar_hide_paid_bills === 'true';
+    const doneRem = persist && settings?.calendar_hide_completed_reminders === 'true';
     if (hideAll && elapsed) {
       elapsed = false;
       updateSetting('calendar_hide_elapsed_habits', 'false');
     }
     sessionHideHabits = hideAll;
     sessionHideElapsed = elapsed;
+    sessionHidePaidBills = paid;
+    sessionHideCompletedReminders = doneRem;
     setHideHabits(hideAll);
     setHideElapsed(elapsed);
+    setHidePaidBills(paid);
+    setHideCompletedReminders(doneRem);
   }, [ready, settings]);
 
-  // Hidden habits must not stay in the multi-select set.
+  // Hidden chips must not stay selected or mid-edit.
   useEffect(() => {
-    if (!hideHabits && !hideElapsed) return;
+    if (!hideHabits && !hideElapsed && !hidePaidBills && !hideCompletedReminders) return;
+    const flags = {
+      hideHabits,
+      hideElapsed,
+      hidePaidBills,
+      hideCompletedReminders,
+      todayKey,
+    };
     const hiddenIds = new Set(
       [...monthEvents, ...dayEvents]
-        .filter((ev) => {
-          if (!isHabitEvent(ev)) return false;
-          if (hideHabits) return true;
-          return isElapsedHabit(ev, todayKey);
-        })
+        .filter((ev) => isHiddenByCalendarFilter(ev, flags))
         .map((ev) => ev.id)
     );
     if (editingId != null && hiddenIds.has(editingId)) setEditingId(null);
@@ -271,7 +305,16 @@ export default function CalendarView({
       }
       return changed ? next : prev;
     });
-  }, [hideHabits, hideElapsed, todayKey, monthEvents, dayEvents, editingId]);
+  }, [
+    hideHabits,
+    hideElapsed,
+    hidePaidBills,
+    hideCompletedReminders,
+    todayKey,
+    monthEvents,
+    dayEvents,
+    editingId,
+  ]);
 
   useEffect(() => {
     if (editId == null) return;
@@ -434,6 +477,20 @@ export default function CalendarView({
       await updateSetting('calendar_hide_habits', 'false');
     }
     await updateSetting('calendar_hide_elapsed_habits', checked ? 'true' : 'false');
+  }
+
+  /** Hide paid bill chips. View only — does not mark unpaid or change the bill. */
+  async function onHidePaidBillsChange(checked) {
+    sessionHidePaidBills = checked;
+    setHidePaidBills(checked);
+    await updateSetting('calendar_hide_paid_bills', checked ? 'true' : 'false');
+  }
+
+  /** Hide completed reminder chips. View only — does not reopen the reminder. */
+  async function onHideCompletedRemindersChange(checked) {
+    sessionHideCompletedReminders = checked;
+    setHideCompletedReminders(checked);
+    await updateSetting('calendar_hide_completed_reminders', checked ? 'true' : 'false');
   }
 
   /** Nearest overflow-y scroller — Calendar sits in .focus-host, not .center-panel__scroll. */
@@ -648,6 +705,22 @@ export default function CalendarView({
               onChange={(e) => onHideHabitsChange(e.target.checked)}
             />
             Hide All Habits Entries
+          </label>
+          <label className="cal-appt-check">
+            <input
+              type="checkbox"
+              checked={hidePaidBills}
+              onChange={(e) => onHidePaidBillsChange(e.target.checked)}
+            />
+            Hide Paid Bills
+          </label>
+          <label className="cal-appt-check">
+            <input
+              type="checkbox"
+              checked={hideCompletedReminders}
+              onChange={(e) => onHideCompletedRemindersChange(e.target.checked)}
+            />
+            Hide Completed Reminders
           </label>
         </div>
       </div>

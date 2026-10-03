@@ -47,6 +47,13 @@ function toLocalInput(iso) {
   }
 }
 
+/** Stored Actual HH:mm, else the note datetime clock (old rows have no actual_time). */
+function actualClock(row) {
+  if (row?.actual_time && /^\d{2}:\d{2}$/.test(row.actual_time)) return row.actual_time;
+  const local = toLocalInput(row?.datetime);
+  return local.length >= 16 ? local.slice(11, 16) : '09:00';
+}
+
 function scopeFromTags(tags = []) {
   if (tags.includes('rem_tomorrow')) return 'tomorrow';
   if (tags.includes('rem_dated')) return 'dated';
@@ -57,6 +64,7 @@ function scopeFromTags(tags = []) {
 /** Same ids as bills quarterly tooltip: title = 3 Months. */
 const REM_RECUR = [
   { id: 'daily', label: 'Daily' },
+  { id: 'weekly', label: 'Weekly' },
   { id: 'monthly', label: 'Monthly' },
   { id: 'fortnight', label: 'Fortnight' },
   { id: 'quarterly', label: 'Quarterly', title: '3 Months' },
@@ -106,11 +114,12 @@ export default function RemindersView({
   const [rows, setRows] = useState([]);
   const [title, setTitle] = useState('');
   const [scope, setScope] = useState('today');
-  const [time, setTime] = useState('09:00');
+  const [time, setTime] = useState('09:00'); // Note-time: when the popup fires
+  const [actualTime, setActualTime] = useState('09:00'); // Actual: calendar chip clock
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [tagsInput, setTagsInput] = useState('');
   const [appointment, setAppointment] = useState(false);
-  const [recurrence, setRecurrence] = useState(null); // daily | monthly | fortnight | quarterly | yearly | null
+  const [recurrence, setRecurrence] = useState(null); // daily | weekly | monthly | fortnight | quarterly | yearly | null
   const [nudge, setNudge] = useState(false);
   const [nudgeMode, setNudgeMode] = useState('day_before');
   const [customDate, setCustomDate] = useState(() => todayKey());
@@ -123,6 +132,7 @@ export default function RemindersView({
   const [editTitle, setEditTitle] = useState('');
   const [editScope, setEditScope] = useState('today');
   const [editDue, setEditDue] = useState('');
+  const [editActualTime, setEditActualTime] = useState('09:00');
   const [editTags, setEditTags] = useState('');
   const [editAppointment, setEditAppointment] = useState(false);
   const [editRecurrence, setEditRecurrence] = useState(null);
@@ -219,6 +229,7 @@ export default function RemindersView({
         title,
         scope,
         datetime: buildDatetime(),
+        actual_time: scope === 'open' ? null : actualTime,
         tags: normalizeUserTagNames(tagsInput),
         is_appointment: scope !== 'open' && appointment,
         recurrence: scope !== 'open' ? recurrence : null,
@@ -251,6 +262,7 @@ export default function RemindersView({
     setEditTitle(r.title);
     setEditScope(scopeFromTags(r.tags));
     setEditDue(toLocalInput(r.datetime));
+    setEditActualTime(actualClock(r));
     setEditTags(userTagsDisplay(r.tags));
     setEditAppointment(Number(r.is_appointment) === 1);
     setEditRecurrence(knownRecurrence(r.recurrence));
@@ -285,6 +297,7 @@ export default function RemindersView({
       await window.api.updateReminder(editingId, {
         title: editTitle,
         datetime,
+        actual_time: editScope === 'open' ? null : editActualTime,
         scope: editScope,
         tags: normalizeUserTagNames(editTags),
         is_appointment: editScope !== 'open' && editAppointment,
@@ -399,11 +412,22 @@ export default function RemindersView({
         >
           {scope !== 'open' && (
             <div className="reminder-meta-row__left">
-              <div className="settings-row">
+              <div className="settings-row reminder-times">
                 {scope === 'dated' && (
                   <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
                 )}
-                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                <label className="reminder-time">
+                  Note-time
+                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                </label>
+                <label className="reminder-time">
+                  Actual
+                  <input
+                    type="time"
+                    value={actualTime}
+                    onChange={(e) => setActualTime(e.target.value)}
+                  />
+                </label>
               </div>
               <label className="cal-appt-check">
                 <input
@@ -550,15 +574,25 @@ export default function RemindersView({
                 >
                   {editScope !== 'open' && (
                     <div className="reminder-meta-row__left">
-                      <label className="edit-label">
-                        When
-                        <input
-                          type="datetime-local"
-                          value={editDue}
-                          onChange={(e) => setEditDue(e.target.value)}
-                          required
-                        />
-                      </label>
+                      <div className="settings-row reminder-times">
+                        <label className="edit-label reminder-time">
+                          Note-time
+                          <input
+                            type="datetime-local"
+                            value={editDue}
+                            onChange={(e) => setEditDue(e.target.value)}
+                            required
+                          />
+                        </label>
+                        <label className="edit-label reminder-time">
+                          Actual
+                          <input
+                            type="time"
+                            value={editActualTime}
+                            onChange={(e) => setEditActualTime(e.target.value)}
+                          />
+                        </label>
+                      </div>
                       <label className="cal-appt-check">
                         <input
                           type="checkbox"

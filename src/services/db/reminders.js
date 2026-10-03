@@ -13,7 +13,7 @@ const {
 const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 
 const SCOPE_TAGS = ['rem_today', 'rem_tomorrow', 'rem_dated', 'rem_open'];
-const RECURRENCES = ['daily', 'monthly', 'fortnight', 'quarterly', 'yearly'];
+const RECURRENCES = ['daily', 'weekly', 'monthly', 'fortnight', 'quarterly', 'yearly'];
 const STATE_TAGS = [
   'rem_pending',
   'rem_fired',
@@ -53,14 +53,28 @@ function addMonthsDate(d, months) {
   return x;
 }
 
-/** daily | monthly | fortnight | quarterly | yearly | null. Open scope always null. */
+/** daily | weekly | monthly | fortnight | quarterly | yearly | null. Open scope always null. */
 function normalizeRecurrence(recurrence, scope) {
   if (scope === 'open') return null;
   if (!recurrence) return null;
   if (!RECURRENCES.includes(recurrence)) {
-    throw new Error('recurrence must be daily, monthly, fortnight, quarterly, yearly, or null');
+    throw new Error(
+      'recurrence must be daily, weekly, monthly, fortnight, quarterly, yearly, or null'
+    );
   }
   return recurrence;
+}
+
+/** Calendar-chip clock `HH:mm`, or null so the chip copies datetime. Open scope is always null. */
+function normalizeActualTime(actualTime, scope) {
+  if (scope === 'open') return null;
+  if (actualTime == null || String(actualTime).trim() === '') return null;
+  const m = /^(\d{2}):(\d{2})$/.exec(String(actualTime).trim());
+  if (!m) throw new Error('actual_time must be HH:mm');
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh > 23 || mm > 59) throw new Error('actual_time must be HH:mm');
+  return `${m[1]}:${m[2]}`;
 }
 
 /** Local YYYY-MM-DD from ISO (calendar month sync). */
@@ -150,6 +164,7 @@ function createReminder({
   recurrence = null,
   is_appointment = 0,
   description = null,
+  actual_time = null,
   nudge = false,
   nudge_mode = null,
   nudge_datetime = null,
@@ -160,6 +175,7 @@ function createReminder({
     const appointment = scope === 'open' ? 0 : is_appointment ? 1 : 0;
     const rec = normalizeRecurrence(recurrence, scope);
     const details = description != null ? String(description).trim() || null : null;
+    const actual = normalizeActualTime(actual_time, scope);
     const nudgeFields = resolveNudgeFields(scope, resolved.datetime, {
       nudge,
       nudge_mode,
@@ -169,8 +185,8 @@ function createReminder({
     const info = db
       .prepare(
         `INSERT INTO reminders (title, datetime, recurrence, is_appointment, description,
-           nudge_datetime, nudge_mode, nudge_alerted)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+           actual_time, nudge_datetime, nudge_mode, nudge_alerted)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         remTitle,
@@ -178,6 +194,7 @@ function createReminder({
         rec,
         appointment,
         details,
+        actual,
         nudgeFields.nudge_datetime,
         nudgeFields.nudge_mode,
         nudgeFields.nudge_alerted
@@ -230,6 +247,7 @@ function updateReminder(id, fields) {
       'snooze_until',
       'is_appointment',
       'description',
+      'actual_time',
       'nudge_datetime',
       'nudge_mode',
       'nudge_alerted',
@@ -243,6 +261,9 @@ function updateReminder(id, fields) {
     if (nextFields.scope === 'open') {
       nextFields.is_appointment = 0;
       nextFields.recurrence = null;
+      nextFields.actual_time = null;
+    } else if (nextFields.actual_time !== undefined) {
+      nextFields.actual_time = normalizeActualTime(nextFields.actual_time, nextFields.scope || null);
     }
     if (nextFields.recurrence !== undefined) {
       nextFields.recurrence = normalizeRecurrence(
@@ -363,6 +384,7 @@ function completeReminder(id) {
       else if (rec === 'monthly') nextDt = addMonthsDate(from, 1);
       else if (rec === 'quarterly') nextDt = addMonthsDate(from, 3);
       else if (rec === 'yearly') nextDt = addMonthsDate(from, 12);
+      else if (rec === 'weekly') nextDt = addDays(from, 7);
       else if (rec === 'fortnight') nextDt = addDays(from, 14);
       else nextDt = addDays(from, 1);
       const next = nextDt.toISOString();

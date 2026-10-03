@@ -70,8 +70,18 @@ const ITEM_TO_EDIT_TYPE = {
   countdown: 'tracker',
 };
 
-/** Map key → { win, resolved, itemType, id, details, createdAt } */
+/** Map key → { win, resolved, itemType, id, details, createdAt, z, pausedForHold } */
 const openWindows = new Map();
+/** Snooze+ / Paid+date owner. Other popups stay hidden until this clears. */
+let priorityHoldKey = null;
+/** Due alerts that arrived during a hold. Scheduler already marked them alerted. */
+const deferredShows = [];
+/** After a hold, keep this key above popups that were waiting. */
+let stackAnchorKey = null;
+let anchoredPending = 0;
+/** Bumped when a hold starts so a late ready-to-show cannot retop a new dialog. */
+let anchorGen = 0;
+let zSeq = 0;
 let handlersRegistered = false;
 let dashboardWindow = null;
 
@@ -347,6 +357,19 @@ function registerNotificationIpc() {
     return { details: null, createdAt: null };
   });
 
+  ipcMain.handle('notif:priorityHold', (_e, payload, active) => {
+    try {
+      const { id, itemType } = parsePayload(payload);
+      if (active) return beginPriorityHold(itemType, id);
+      // Cancel / Escape — window stays open and remains the top card
+      endPriorityHold(winKey(itemType, id), true);
+      return true;
+    } catch (err) {
+      logError('notif:priorityHold', err);
+      throw err;
+    }
+  });
+
   ipcMain.handle('notif:view', (_e, payload) => {
     try {
       const { id, itemType } = parsePayload(payload);
@@ -386,6 +409,166 @@ function closeNotif(itemType, id) {
   const entry = openWindows.get(key);
   if (entry?.win && !entry.win.isDestroyed()) entry.win.close();
   openWindows.delete(key);
+  // Submit / X / taskbar close. closed may have released already.
+  endPriorityHold(key, false);
+}
+
+/** Normalized popup key for a showItemNotification argument. */
+function itemKey(item) {
+  const itemType = VALID_TYPES.has(item?.itemType) ? item.itemType : 'reminder';
+  return winKey(itemType, item?.id);
+}
+
+/** Queue a popup instead of opening it. Caller already alerted the row. */
+function deferNotification(item) {
+  const key = itemKey(item);
+  if (openWindows.has(key)) return;
+  if (deferredShows.some((queued) => itemKey(queued) === key)) return;
+  deferredShows.push(item);
+}
+
+/** Put the resumed card back above any popup that showed late. */
+function raiseStackAnchor() {
+  if (!stackAnchorKey) return;
+  const anchor = openWindows.get(stackAnchorKey);
+  if (!anchor?.win || anchor.win.isDestroyed()) {
+    stackAnchorKey = null;
+    anchoredPending = 0;
+    return;
+  }
+  try {
+    anchor.win.setAlwaysOnTop(true);
+    anchor.win.moveTop();
+  } catch (err) {
+    logError('raiseStackAnchor', err);
+  }
+}
+
+/**
+ * One deferred popup has shown. Drop the anchor once the batch is up.
+ * @param {number} gen anchor generation captured when the window was created
+ */
+function noteAnchoredShow(gen) {
+  if (gen !== anchorGen) return;
+  if (anchoredPending > 0) anchoredPending -= 1;
+  raiseStackAnchor();
+  if (anchoredPending <= 0) stackAnchorKey = null;
+}
+
+/**
+ * Pause every other visible popup and pin this one above the stack.
+ * @param {string} itemType
+ * @param {number} id
+ * @returns {boolean}
+ */
+function beginPriorityHold(itemType, id) {
+  const key = winKey(itemType, id);
+  const entry = openWindows.get(key);
+  if (!entry?.win || entry.win.isDestroyed()) return false;
+  if (priorityHoldKey && priorityHoldKey !== key) return false;
+  anchorGen += 1;
+  stackAnchorKey = null;
+  anchoredPending = 0;
+  priorityHoldKey = key;
+  for (const [otherKey, other] of openWindows) {
+    if (otherKey === key || other.pausedForHold) continue;
+    if (!other.win || other.win.isDestroyed()) continue;
+    if (other.win.isMinimized() || !other.win.isVisible()) continue;
+    other.pausedForHold = true;
+    try {
+      other.win.hide();
+    } catch (err) {
+      logError('beginPriorityHold hide', err);
+    }
+  }
+  try {
+    entry.z = ++zSeq;
+    // Above sibling always-on-top popups (those use the default floating level)
+    entry.win.setAlwaysOnTop(true, 'pop-up-menu');
+    entry.win.moveTop();
+    entry.win.focus();
+  } catch (err) {
+    logError('beginPriorityHold', err);
+  }
+  return true;
+}
+
+/**
+ * Resume the stack. Cancel keeps this card on top; close raises the previous next.
+ * Alerts queued during the hold show behind that card.
+ * @param {string} key
+ * @param {boolean} heldStillOpen
+ */
+function endPriorityHold(key, heldStillOpen) {
+  if (priorityHoldKey !== key) return;
+  priorityHoldKey = null;
+
+  const paused = [];
+  for (const other of openWindows.values()) {
+    if (!other.pausedForHold) continue;
+    other.pausedForHold = false;
+    if (!other.win || other.win.isDestroyed()) continue;
+    paused.push(other);
+  }
+  paused.sort((a, b) => (a.z || 0) - (b.z || 0));
+
+  const pending = deferredShows.splice(0);
+  const topPaused = paused.length ? paused[paused.length - 1] : null;
+  const anchorKey =
+    heldStillOpen && openWindows.has(key)
+      ? key
+      : topPaused
+        ? winKey(topPaused.itemType, topPaused.id)
+        : null;
+  anchorGen += 1;
+  const gen = anchorGen;
+  stackAnchorKey = anchorKey;
+  anchoredPending = 0;
+
+  for (const item of pending) showItemNotification(item);
+
+  const held = heldStillOpen ? openWindows.get(key) : null;
+  const heldWin = held?.win && !held.win.isDestroyed() ? held.win : null;
+  // Stay above the pile while hidden cards are shown, or they paint over the dialog
+  if (heldWin) {
+    try {
+      heldWin.setAlwaysOnTop(true, 'pop-up-menu');
+      heldWin.moveTop();
+    } catch (err) {
+      logError('endPriorityHold keep', err);
+    }
+  }
+
+  for (const other of paused) {
+    try {
+      other.win.setAlwaysOnTop(true);
+      other.win.showInactive();
+    } catch (err) {
+      logError('endPriorityHold restore', err);
+    }
+  }
+
+  if (heldWin) {
+    try {
+      // Back to the normal always-on-top level, still above the restored pile
+      heldWin.setAlwaysOnTop(true);
+      heldWin.moveTop();
+      heldWin.focus();
+    } catch (err) {
+      logError('endPriorityHold retop', err);
+    }
+  } else if (topPaused?.win && !topPaused.win.isDestroyed()) {
+    try {
+      topPaused.win.show();
+      topPaused.win.moveTop();
+    } catch (err) {
+      logError('endPriorityHold next', err);
+    }
+  }
+
+  if (gen !== anchorGen) return;
+  if (anchoredPending <= 0) stackAnchorKey = null;
+  else raiseStackAnchor();
 }
 
 function cornerBounds(position, width, height) {
@@ -417,8 +600,15 @@ function showItemNotification(item) {
 
   try {
     registerNotificationIpc();
+    // Hold owns the screen until Snooze+ / Paid+date is resolved
+    if (priorityHoldKey) {
+      if (!openWindows.has(key)) deferNotification(item);
+      return;
+    }
     if (openWindows.has(key)) return;
 
+    const underAnchor = Boolean(stackAnchorKey && stackAnchorKey !== key);
+    const gen = anchorGen;
     const settings = getAllSettings();
     const randomize = settings.notif_random_bg === 'true';
     const theme = pickNotifTheme(randomize);
@@ -479,6 +669,8 @@ function showItemNotification(item) {
       createdAt,
       nextDueDate,
       recurring,
+      z: ++zSeq,
+      pausedForHold: false,
     });
 
     const query = {
@@ -497,10 +689,42 @@ function showItemNotification(item) {
     const flash = () => {
       if (!win.isDestroyed()) win.flashFrame(true);
     };
+    // underAnchor windows must release the anchor even if they never show
+    let anchorSettled = !underAnchor;
+    if (underAnchor) anchoredPending += 1;
 
     win.once('ready-to-show', () => {
-      win.show();
+      const entry = openWindows.get(key);
+      if (entry) entry.z = ++zSeq;
+      // A new hold started while this window was still loading — stay in the pile
+      if (priorityHoldKey && priorityHoldKey !== key) {
+        if (entry) entry.pausedForHold = true;
+        anchorSettled = true;
+        try {
+          win.hide();
+        } catch (err) {
+          logError('ready-to-show hold hide', err);
+        }
+        return;
+      }
+      if (underAnchor && gen === anchorGen) {
+        try {
+          win.showInactive();
+        } catch (err) {
+          logError('ready-to-show inactive', err);
+        }
+        anchorSettled = true;
+        noteAnchoredShow(gen);
+      } else {
+        win.show();
+        if (stackAnchorKey && stackAnchorKey !== key) raiseStackAnchor();
+      }
       flash();
+    });
+
+    win.on('focus', () => {
+      const entry = openWindows.get(key);
+      if (entry) entry.z = ++zSeq;
     });
 
     win.on('restore', flash);
@@ -526,7 +750,12 @@ function showItemNotification(item) {
     });
 
     win.on('closed', () => {
+      if (!anchorSettled && underAnchor) {
+        anchorSettled = true;
+        noteAnchoredShow(gen);
+      }
       openWindows.delete(key);
+      endPriorityHold(key, false);
     });
   } catch (err) {
     logError('showItemNotification', err);

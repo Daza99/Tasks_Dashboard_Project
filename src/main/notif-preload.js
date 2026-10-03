@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('notifApi', {
   minimize: (payload) => ipcRenderer.invoke('notif:minimize', payload),
   getMeta: () => ipcRenderer.invoke('notif:getMeta'),
   view: (payload) => ipcRenderer.invoke('notif:view', payload),
+  /** Pause the other popups while Snooze+ or Paid+date is open. */
+  priorityHold: (payload, active) =>
+    ipcRenderer.invoke('notif:priorityHold', payload, active),
   /** Live title/details/created after dashboard edit. */
   onRefresh: (cb) => {
     const listener = (_e, payload) => cb(payload);

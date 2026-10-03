@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS reminders (
     locked INTEGER DEFAULT 0,
     container TEXT NOT NULL DEFAULT 'active',
     is_appointment INTEGER DEFAULT 0,
-    description TEXT
+    description TEXT,
+    actual_time TEXT
 );
 
 CREATE TABLE IF NOT EXISTS habits (

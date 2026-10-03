@@ -420,7 +420,7 @@ function syncTask(task, { prevDate } = {}) {
   });
 }
 
-const REM_RECURRENCES = ['daily', 'monthly', 'fortnight', 'quarterly', 'yearly'];
+const REM_RECURRENCES = ['daily', 'weekly', 'monthly', 'fortnight', 'quarterly', 'yearly'];
 
 /** yyyy-mm-dd plus N calendar days. */
 function addDaysKey(dayKey, n) {
@@ -435,6 +435,55 @@ function addMonthsKey(dayKey, months) {
   const last = new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate();
   x.setDate(Math.min(d, last));
   return dateKey(x);
+}
+
+/**
+ * Same weekday every `step` days inside the viewed month.
+ * Jumps from an older due so a far month is not missed.
+ * @param {string} due yyyy-mm-dd
+ * @param {string[]} days
+ * @param {string} monthPrefix yyyy-mm
+ * @param {number} step
+ */
+function stepDayOccurrences(due, days, monthPrefix, step) {
+  const monthStart = days[0];
+  const monthEnd = days[days.length - 1];
+  if (!monthStart || due > monthEnd) return [];
+  let d = due;
+  if (d < monthStart) {
+    const start = new Date(`${due}T12:00:00`);
+    const first = new Date(`${monthStart}T12:00:00`);
+    const diff = Math.round((first.getTime() - start.getTime()) / 86400000);
+    const steps = Math.floor(diff / step);
+    d = addDaysKey(due, steps * step);
+    if (d < monthStart) d = addDaysKey(d, step);
+  }
+  const out = [];
+  while (d && d <= monthEnd) {
+    if (d.startsWith(monthPrefix) && d >= due) out.push(d);
+    const next = addDaysKey(d, step);
+    if (!next || next <= d) break;
+    d = next;
+  }
+  return out;
+}
+
+/**
+ * Chip start on an occurrence day.
+ * `actual_time` (HH:mm) wins; otherwise the note datetime clock.
+ * @param {object} rem
+ * @param {string} occKey yyyy-mm-dd
+ */
+function chipStart(rem, occKey) {
+  const hhmm = rem?.actual_time;
+  if (hhmm && /^\d{2}:\d{2}$/.test(String(hhmm))) {
+    const [hh, mm] = String(hhmm).split(':').map(Number);
+    if (hh <= 23 && mm <= 59) {
+      const [y, m, d] = String(occKey).split('-').map(Number);
+      return new Date(y, m - 1, d, hh, mm, 0, 0).toISOString();
+    }
+  }
+  return startOnOccurrence(rem.datetime, occKey);
 }
 
 /** Apply reminder wall-clock time onto an occurrence day. */
@@ -473,6 +522,7 @@ function reminderOccurrenceDates(rem, year, monthIndex) {
     return due.startsWith(monthPrefix) ? [due] : [];
   }
   if (rec === 'daily') return days.filter((d) => d >= due);
+  if (rec === 'weekly') return stepDayOccurrences(due, days, monthPrefix, 7);
   if (rec === 'fortnight') {
     const monthEnd = days[days.length - 1];
     const out = [];
@@ -522,7 +572,7 @@ function syncReminder(rem, { year, monthIndex, keepPast = false } = {}) {
       source_id: rem.id,
       occurrence_date: occ,
       title: rem.title,
-      start_datetime: startOnOccurrence(rem.datetime, occ),
+      start_datetime: chipStart(rem, occ),
       description: rem.description,
     });
   }

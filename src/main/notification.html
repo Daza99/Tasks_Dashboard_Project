@@ -406,23 +406,36 @@
         return Math.round(hours * 60);
       }
 
-      function openSnoozePlus() {
+      /** Pin this popup above the stack. active=false resumes on cancel only. */
+      async function holdPriority(active) {
+        try {
+          await window.notifApi.priorityHold(payload, !!active);
+        } catch (_) {
+          /* main process logs */
+        }
+      }
+
+      async function openSnoozePlus() {
+        await holdPriority(true);
         overlay.hidden = false;
         hoursInput.value = '1';
         requestAnimationFrame(() => hoursInput.focus());
       }
 
-      function closeSnoozePlus() {
+      async function closeSnoozePlus() {
         overlay.hidden = true;
+        await holdPriority(false);
       }
 
-      function openPayDate() {
+      async function openPayDate() {
+        await holdPriority(true);
         payOverlay.hidden = false;
         requestAnimationFrame(() => payDateInput.focus());
       }
 
-      function closePayDate() {
+      async function closePayDate() {
         payOverlay.hidden = true;
+        await holdPriority(false);
       }
 
       document.getElementById('btn-done').onclick = () => {

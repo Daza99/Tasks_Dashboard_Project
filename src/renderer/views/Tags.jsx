@@ -5,6 +5,8 @@ import TagSearchInput from '../components/TagSearchInput';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TagInspector from '../inspection/TagInspector';
 import {
+  duplicateTagKey,
+  findDuplicateTagIds,
   formatTagDisplay,
   formatTagsDisplay,
   normalizeTagName,
@@ -109,6 +111,8 @@ export default function TagsView({ onEditRequest }) {
   const [sort, setSort] = useState('all');
   const [showItems, setShowItems] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [dupCheckOn, setDupCheckOn] = useState(false);
+  const [dupStatus, setDupStatus] = useState('');
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -131,10 +135,29 @@ export default function TagsView({ onEditRequest }) {
     loadCatalog();
   }, []);
 
-  const filtered = useMemo(
-    () => filterAndSort(catalog, search, sort),
-    [catalog, search, sort]
-  );
+  const dupIds = useMemo(() => {
+    if (!dupCheckOn) return new Set();
+    return findDuplicateTagIds(catalog);
+  }, [dupCheckOn, catalog]);
+
+  const filtered = useMemo(() => {
+    const base = filterAndSort(catalog, search, sort);
+    if (!dupIds.size) return base;
+    const conflicts = catalog
+      .filter((t) => dupIds.has(t.id))
+      .sort((a, b) => {
+        const byKey = duplicateTagKey(a.name).localeCompare(duplicateTagKey(b.name));
+        if (byKey) return byKey;
+        return String(a.name).localeCompare(String(b.name));
+      });
+    const rest = base.filter((t) => !dupIds.has(t.id));
+    return [...conflicts, ...rest];
+  }, [catalog, search, sort, dupIds]);
+
+  useEffect(() => {
+    if (!dupCheckOn) return;
+    setDupStatus(dupIds.size === 0 ? 'No duplicate tags.' : '');
+  }, [dupCheckOn, dupIds]);
 
   const itemTally = useMemo(
     () => filtered.reduce((n, t) => n + (t.usage || 0), 0),
@@ -248,6 +271,25 @@ export default function TagsView({ onEditRequest }) {
     await afterChange(tagName);
   }
 
+  /** Scan every user tag; pin conflicts and open Edit when any share a folded name. */
+  function runDupCheck() {
+    const ids = findDuplicateTagIds(catalog);
+    if (ids.size === 0) {
+      setDupCheckOn(false);
+      setDupStatus('No duplicate tags.');
+      return;
+    }
+    setDupStatus('');
+    setDupCheckOn(true);
+    setEditMode(true);
+  }
+
+  function tagNameClass(id) {
+    return dupIds.has(id)
+      ? 'tags-catalog__name tags-catalog__name--dup'
+      : 'tags-catalog__name';
+  }
+
   function beginRename(tag) {
     setRenamingId(tag.id);
     setRenameDraft(formatTagDisplay(tag.name));
@@ -318,6 +360,13 @@ export default function TagsView({ onEditRequest }) {
             ))}
           </select>
         </label>
+        <button
+          type="button"
+          className="btn-light module-filter-bar__action"
+          onClick={runDupCheck}
+        >
+          Check
+        </button>
         <label className="module-filter-bar__field module-filter-bar__field--grow">
           Search
           <TagSearchInput
@@ -342,13 +391,19 @@ export default function TagsView({ onEditRequest }) {
               checked={editMode}
               onChange={(e) => {
                 setEditMode(e.target.checked);
-                if (!e.target.checked) setRenamingId(null);
+                if (!e.target.checked) {
+                  setRenamingId(null);
+                  setDupCheckOn(false);
+                  setDupStatus('');
+                }
               }}
             />
             Edit
           </label>
         </div>
       </div>
+
+      {dupStatus ? <p className="tags-tally">{dupStatus}</p> : null}
 
       {error ? (
         <p className="stub-empty" style={{ color: 'var(--danger)' }}>
@@ -404,7 +459,7 @@ export default function TagsView({ onEditRequest }) {
                     ) : (
                       <div className="module-list__row">
                         <div className="tags-catalog__head">
-                          <span className="tags-catalog__name">
+                          <span className={tagNameClass(tag.id)}>
                             {formatTagDisplay(tag.name)}
                           </span>
                           <span className="tags-catalog__count">
@@ -428,7 +483,7 @@ export default function TagsView({ onEditRequest }) {
                   </div>
                 ) : (
                   <div className="tags-catalog__head">
-                    <span className="tags-catalog__name">
+                    <span className={tagNameClass(tag.id)}>
                       {formatTagDisplay(tag.name)}
                     </span>
                     <span className="tags-catalog__count">({tag.usage})</span>
@@ -546,6 +601,7 @@ function TagAttachedRow({
       locked ? 'locked' : null,
       userTags.length ? formatTagsDisplay(userTags) : null,
       item.recurrence === 'daily' ||
+      item.recurrence === 'weekly' ||
       item.recurrence === 'monthly' ||
       item.recurrence === 'fortnight' ||
       item.recurrence === 'quarterly' ||

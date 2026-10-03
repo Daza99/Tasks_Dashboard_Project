@@ -41,6 +41,8 @@ const DEFAULT_SETTINGS = {
   calendar_hide_habits: 'false',
   calendar_hide_elapsed_habits: 'false',
   calendar_hide_habits_persist: 'false',
+  calendar_hide_paid_bills: 'false',
+  calendar_hide_completed_reminders: 'false',
   habit_saved_colors: '[]',
   Debut_mode: '1',
   show_tags_always: 'false',
@@ -100,6 +102,11 @@ const DEFAULT_DARK_THEME = {
   '--action-text': 'rgba(242, 245, 248, 0.55)',
   '--clock-color': '#39ff6a',
   '--font-clock': '"Cascadia Mono", "Consolas", "Courier New", monospace',
+  /* Neon outline chips — readable on the dark sidebar. */
+  '--tab-tasks': '#39ff6a',
+  '--tab-tasks-dim': 'rgba(57, 255, 106, 0.14)',
+  '--tab-reminders': '#6ec8ff',
+  '--tab-reminders-dim': 'rgba(110, 200, 255, 0.14)',
   ...DEFAULT_CAL_MARKERS,
 };
 
@@ -127,6 +134,11 @@ const DEFAULT_LIGHT_THEME = {
   '--action-text': 'rgba(18, 24, 31, 0.6)',
   '--clock-color': '#056b32',
   '--font-clock': '"Cascadia Mono", "Consolas", "Courier New", monospace',
+  /* Log green + Test habit blue. Dark neon washes out on the light sidebar. */
+  '--tab-tasks': '#056b32',
+  '--tab-tasks-dim': 'rgba(46, 196, 102, 0.30)',
+  '--tab-reminders': '#f2f5f8',
+  '--tab-reminders-dim': '#597fd3',
   ...DEFAULT_CAL_MARKERS,
 };
 
@@ -287,6 +299,9 @@ function migrateSchema() {
   }
   if (!remCols.includes('nudge_alerted')) {
     db.exec('ALTER TABLE reminders ADD COLUMN nudge_alerted INTEGER DEFAULT 0');
+  }
+  if (!remCols.includes('actual_time')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN actual_time TEXT');
   }
 
   // One-shot: clamp legacy task 4–5 down to P3 Low

@@ -114,6 +114,56 @@ function urlAtIndex(text, index) {
 }
 
 /**
+ * True when the pointer sits on one glyph, not the line-height box around it.
+ * caretRangeFromPoint snaps to the nearest caret using the full line box, so a
+ * click on the line above a URL can land inside the URL offset.
+ * @param {Text} node
+ * @param {number} index character index in `node`
+ * @param {number} clientX
+ * @param {number} clientY
+ * @returns {boolean}
+ */
+function glyphContainsPoint(node, index, clientX, clientY) {
+  const text = node.textContent || '';
+  if (index < 0 || index >= text.length) return false;
+  const probe = document.createRange();
+  try {
+    probe.setStart(node, index);
+    probe.setEnd(node, index + 1);
+  } catch {
+    return false;
+  }
+  const rect = probe.getBoundingClientRect();
+  if (!rect.height) return false;
+  const el = node.parentElement;
+  const fontSize = el ? parseFloat(getComputedStyle(el).fontSize) : NaN;
+  // Line box is taller than the em square; keep only the font-size band.
+  const band = Number.isFinite(fontSize) && fontSize > 0 ? fontSize : rect.height;
+  const midY = (rect.top + rect.bottom) / 2;
+  if (Math.abs(clientY - midY) > band / 2) return false;
+  if (clientX < rect.left - 1 || clientX > rect.right + 1) return false;
+  return true;
+}
+
+/**
+ * Caret from caretRangeFromPoint is a boundary. The click can sit on the
+ * character before that boundary or the one after it.
+ * @param {Range} range
+ * @param {number} clientX
+ * @param {number} clientY
+ * @returns {boolean}
+ */
+function pointerOnCaretGlyph(range, clientX, clientY) {
+  const node = range.startContainer;
+  if (!node || node.nodeType !== 3) return false;
+  const off = range.startOffset;
+  return (
+    glyphContainsPoint(node, off, clientX, clientY) ||
+    glyphContainsPoint(node, off - 1, clientX, clientY)
+  );
+}
+
+/**
  * URL under a pointer in a contenteditable root (walks color/hl spans).
  * @param {HTMLElement|null} root
  * @param {number} clientX
@@ -124,6 +174,7 @@ function urlAtPoint(root, clientX, clientY) {
   if (!root || typeof document.caretRangeFromPoint !== 'function') return null;
   const range = document.caretRangeFromPoint(clientX, clientY);
   if (!range || !root.contains(range.startContainer)) return null;
+  if (!pointerOnCaretGlyph(range, clientX, clientY)) return null;
   const block = closestBlock(range.startContainer, root) || root;
   const pre = document.createRange();
   pre.selectNodeContents(block);

@@ -42,7 +42,7 @@ export const USER_GUIDE_SECTIONS = [
     id: 'guide-reminders',
     title: 'Reminders',
     bullets: [
-      'Repeating reminders store one due datetime; completing Daily/Monthly advances that date (notifications stay one-at-a-time). Calendar expands the series like habits for the month you’re viewing (Daily = every day from the first due, Monthly = that day-of-month, Fortnight = +14d, Quarterly/Yearly = month step; month lengths clamp, e.g. 31 Jan → 28/29 Feb).',
+      'Repeating reminders store one due datetime; completing Daily/Monthly advances that date (notifications stay one-at-a-time). Calendar expands the series like habits for the month you’re viewing (Daily = every day from the first due, Weekly = +7d, Monthly = that day-of-month, Fortnight = +14d, Quarterly/Yearly = month step; month lengths clamp, e.g. 31 Jan → 28/29 Feb).',
       'Open scope has no due, no popup, no recurrence.',
       'Today/Tomorrow with no time: Today → ~now+1h; Tomorrow → 09:00. Changing due resets snooze/dismiss so it can fire again.',
       'Add to Calendar = appointment flag; chips are generated for the viewed month, not extra DB rows. Completing a repeat keeps past chips as done/expired.',
@@ -66,7 +66,7 @@ export const USER_GUIDE_SECTIONS = [
       'Chips are a view of Tasks/Reminders/Habits/Bills + manual events, synced for the month on screen.',
       'Click a linked chip → that module (completed reminder → Completed). Only manual events edit inline.',
       'Remove from Calendar unticks Add to Calendar on the source — whole series drops, not one day. Delete linked item deletes the source (locked items skipped).',
-      'Hide All Habits vs Hide Elapsed Habits are mutually exclusive view filters. Persist vs reset is Settings → General.',
+      'Hide All Habits vs Hide Elapsed Habits are mutually exclusive view filters. Hide Paid Bills and Hide Completed Reminders are independent view filters (unpaid bills and open reminders stay). Persist vs reset for all four is Settings → General.',
       'Grid shows 3 chips + “+N”. Ctrl+click multi-select. Habit check-in from the day list uses that day, not necessarily today. Bills/habits show no clock time.',
     ],
   },
@@ -117,6 +117,7 @@ export const USER_GUIDE_SECTIONS = [
       'System tags (todo_*, rem_*, locked, archived, …) are hidden from tag fields unless Show tags always / Debut mode.',
       'Tag Inspector runs on launch and ~every 30s: expire 24hr tasks, ignore grace reminders, sweep 7+ Days, mark bills overdue, repair orphan tags.',
       'Orphan repair drops tags whose parent is gone. Bill pay tags accumulate on purpose.',
+      'Check pins case and separator duplicates (MyTag, my-tag, my_tag, my tag) in red at the top and turns on Edit. Rename or delete is manual.',
     ],
   },
   {

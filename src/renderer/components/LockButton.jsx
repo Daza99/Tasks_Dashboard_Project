@@ -19,7 +19,7 @@ export default function LockButton({ itemType, id, locked, onChanged }) {
       aria-pressed={Boolean(locked)}
       onClick={toggle}
     >
-      {locked ? '🔒' : '🔓'}
+      <span className="lock-btn__glyph">{locked ? '🔒' : '🔓'}</span>
     </button>
   );
 }

@@ -146,6 +146,15 @@
 .nav-tab--notes.nav-tab--selected {
   background: var(--tab-notes-dim);
 }
+/* Light sidebar: neon outline ink washes out. Fill from the theme tokens. */
+html[data-theme-base='light'] .nav-tab--tasks,
+html[data-theme-base='light'] .nav-tab--tasks.nav-tab--selected {
+  background: var(--tab-tasks-dim);
+}
+html[data-theme-base='light'] .nav-tab--reminders,
+html[data-theme-base='light'] .nav-tab--reminders.nav-tab--selected {
+  background: var(--tab-reminders-dim);
+}
 
 .nav-item:hover {
   background: rgba(255, 255, 255, 0.05);
@@ -1564,6 +1573,9 @@
   font-weight: 600;
   color: var(--text-primary);
 }
+.tags-catalog__name--dup {
+  color: #e53935;
+}
 .tags-catalog__count {
   font-size: 12px;
   color: var(--text-muted);
@@ -2325,6 +2337,69 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+/* Green --button-bg over #e53935 reads brown. Lock a warm white in both themes. */
+.module-list__item.cal-day-card.cal-chip--bill .item-row__actions button {
+  background: #fff6f5;
+  color: #111;
+  border-color: rgba(0, 0, 0, 0.28);
+}
+/* Red bill fill (#e53935) swallows --danger (#ff5c5c). */
+.module-list__item.cal-day-card.cal-chip--bill .item-row__actions button.danger {
+  color: #111;
+  border-color: rgba(0, 0, 0, 0.45);
+}
+/* Navy reminder fill: lift Del above the default #ff5c5c. */
+.module-list__item.cal-day-card.cal-chip--reminder .item-row__actions button.danger {
+  color: #ffb4b4;
+}
+/* Light Glass green --button-bg over navy reads as a dull teal. Pale blue chip instead. */
+html[data-theme-base='light'] .module-list__item.cal-day-card.cal-chip--reminder .item-row__actions button {
+  background: #e7eefc;
+  color: #1e3a8a;
+  border-color: rgba(30, 58, 138, 0.35);
+}
+html[data-theme-base='light'] .module-list__item.cal-day-card.cal-chip--reminder .item-row__actions button.danger {
+  color: #b91c1c;
+}
+/* Unlocked .lock-btn is 0.7 opacity, so the chip and emoji sink into the navy card. */
+.module-list__item.cal-day-card.cal-chip--reminder .lock-btn {
+  opacity: 1;
+  line-height: 1;
+}
+/* Beat the pale-blue action fill. Grey holds the emoji; brightness was washing it white. */
+html[data-theme-base='light'] .module-list__item.cal-day-card.cal-chip--reminder .item-row__actions button.lock-btn {
+  background: #c8ced6;
+  border-color: rgba(0, 0, 0, 0.28);
+  filter: none;
+}
+/* 12px color emoji draws as a yellow blob. 16px plus a 0.6px halo shows the shackle. */
+.module-list__item.cal-day-card.cal-chip--reminder .lock-btn__glyph {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  filter:
+    drop-shadow(0.6px 0 0 #3a3f46)
+    drop-shadow(-0.6px 0 0 #3a3f46)
+    drop-shadow(0 0.6px 0 #3a3f46)
+    drop-shadow(0 -0.6px 0 #3a3f46);
+}
+/* Brightness first so the outline stays dark grey. */
+html[data-theme-base='dark'] .module-list__item.cal-day-card.cal-chip--reminder .lock-btn__glyph {
+  filter:
+    brightness(2.2)
+    drop-shadow(0.6px 0 0 #3a3f46)
+    drop-shadow(-0.6px 0 0 #3a3f46)
+    drop-shadow(0 0.6px 0 #3a3f46)
+    drop-shadow(0 -0.6px 0 #3a3f46);
+}
+/* Half of the 0.6px rim. Diagonals stacked into a cast shadow. */
+html[data-theme-base='light'] .module-list__item.cal-day-card.cal-chip--reminder .lock-btn__glyph {
+  filter:
+    drop-shadow(0.3px 0 0 #3a3f46)
+    drop-shadow(-0.3px 0 0 #3a3f46)
+    drop-shadow(0 0.3px 0 #3a3f46)
+    drop-shadow(0 -0.3px 0 #3a3f46);
+}
 
 .nudge-row {
   display: flex;
@@ -2415,6 +2490,32 @@
 .reminder-meta-row--third .reminder-meta-row__left input {
   width: 100%;
   box-sizing: border-box;
+}
+
+/* Note-time + Actual sit left of Details; cap widths so Details keeps the rest. */
+.reminder-times {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.reminder-time {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: auto;
+}
+.reminder-times input[type='time'] {
+  width: 8.5rem;
+  flex-shrink: 0;
+}
+.edit-form .reminder-times input[type='datetime-local'] {
+  width: 12.75rem;
+  flex-shrink: 0;
+}
+.create-form .reminder-times input[type='date'] {
+  width: 9.5rem;
+  flex-shrink: 0;
 }
 
 .details-inline {

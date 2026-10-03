@@ -53,6 +53,16 @@ function noteYearOptions(now = new Date()) {
   return years;
 }
 
+/**
+ * Month sent to listNotes. All (and anything outside 1–12) omits the filter.
+ * @param {number|string|null|undefined} month
+ * @returns {number|undefined}
+ */
+function noteMonthParam(month) {
+  const n = Number(month);
+  return Number.isFinite(n) && n >= 1 && n <= 12 ? n : undefined;
+}
+
 /** Local calendar year/month of a SQLite UTC `created_at`. */
 function createdYearMonth(iso, now = new Date()) {
   if (!iso) return { year: now.getFullYear(), month: now.getMonth() + 1 };
@@ -73,7 +83,7 @@ export default function NotesView({ editId = null, onEditConsumed }) {
   const [categories, setCategories] = useState([]);
   const [filterCat, setFilterCat] = useState('all');
   const [filterYear, setFilterYear] = useState(() => new Date().getFullYear());
-  const [filterMonth, setFilterMonth] = useState(() => new Date().getMonth() + 1);
+  const [filterMonth, setFilterMonth] = useState('all');
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -112,16 +122,16 @@ export default function NotesView({ editId = null, onEditConsumed }) {
 
   /**
    * Reload the folder list for category + year + month.
-   * @param {{ year?: number, month?: number, category?: string }} [overrides]
+   * @param {{ year?: number, month?: number|string, category?: string }} [overrides]
    */
   async function loadNotes(overrides = {}) {
     const year = overrides.year ?? filterYear;
-    const month = overrides.month ?? filterMonth;
+    const month = overrides.month !== undefined ? overrides.month : filterMonth;
     const cat = overrides.category !== undefined ? overrides.category : filterCat;
     const rows = await window.api.listNotes({
       category: cat === 'all' ? undefined : cat,
       year,
-      month,
+      month: noteMonthParam(month),
     });
     setNotes(rows);
     const keepId = selectedIdRef.current;
@@ -361,7 +371,8 @@ export default function NotesView({ editId = null, onEditConsumed }) {
       <h1>Notes</h1>
       <p className="module-view__hint">
         Combined markdown and bullet notepad. Filter by category, year, and
-        month. Search matches title, details, and #tags inside that month.
+        month. Search matches title, details, and #tags inside that filter
+        (All = every month of the selected year).
       </p>
       {error ? <p className="stub-empty">{error}</p> : null}
 
@@ -396,9 +407,13 @@ export default function NotesView({ editId = null, onEditConsumed }) {
           Month
           <select
             value={filterMonth}
-            onChange={(e) => setFilterMonth(Number(e.target.value))}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFilterMonth(v === 'all' ? 'all' : Number(v));
+            }}
             aria-label="Filter month"
           >
+            <option value="all">All</option>
             {MONTHS.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}

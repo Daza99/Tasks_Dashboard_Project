@@ -1,4 +1,4 @@
-# Personal Dashboard
+# Daybrief
 
 Offline-first desktop dashboard (Electron + React + SQLite). Portable USB folder build.
 
@@ -72,7 +72,7 @@ First run creates `data/` beside the exe: `dashboard.db`, Chromium userData (`da
 npm run dist:desktop
 ```
 
-Output: `release/desktop/Personal Dashboard Setup 1.0.11.exe` (per-user NSIS, no admin). Data default: `%APPDATA%\personal-dashboard\data`. Chromium cache stays in AppData. Settings → Data can move the data folder (copy + relaunch; old folder is left in place). Menubar: **V1.011 (Desktop)**.
+Output: `release/desktop/Daybrief Setup 1.0.11.exe` (per-user NSIS, no admin). Data default: `%APPDATA%\personal-dashboard\data`. Chromium cache stays in AppData. Settings → Data can move the data folder (copy + relaunch; old folder is left in place). Menubar: **V1.011 (Desktop)**.
 
 To preview the data-folder picker in dev (PowerShell): `$env:DASHBOARD_FLAVOR='desktop'; npm run dev`.
 

@@ -1,6 +1,6 @@
 # Per-user NSIS installer — data default in AppData (not beside the exe)
 appId: com.lumo.personal-dashboard
-productName: Personal Dashboard
+productName: Daybrief
 directories:
   output: release/desktop
 files:
@@ -9,6 +9,7 @@ files:
   - src/services/**/*
   - src/utils/**/*
   - package.json
+  - build/icon.ico
 extraResources:
   - from: src/services/db/schema.sql
     to: schema.sql
@@ -17,7 +18,9 @@ asarUnpack:
   - "**/*.node"
 extraMetadata:
   flavor: desktop
+afterPack: build/set-exe-icon.js
 win:
+  icon: build/icon.ico
   target:
     - nsis
   signAndEditExecutable: false
@@ -25,5 +28,5 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  shortcutName: Personal Dashboard
-  uninstallDisplayName: Personal Dashboard
+  shortcutName: Daybrief
+  uninstallDisplayName: Daybrief

@@ -29,7 +29,7 @@
   },
   "build": {
     "appId": "com.lumo.personal-dashboard",
-    "productName": "Personal Dashboard",
+    "productName": "Daybrief",
     "directories": {
       "output": "release"
     },
@@ -38,7 +38,8 @@
       "src/main/**/*",
       "src/services/**/*",
       "src/utils/**/*",
-      "package.json"
+      "package.json",
+      "build/icon.ico"
     ],
     "extraResources": [
       {
@@ -50,7 +51,9 @@
       "node_modules/better-sqlite3/**",
       "**/*.node"
     ],
+    "afterPack": "build/set-exe-icon.js",
     "win": {
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false
     }
   }

@@ -1,6 +1,6 @@
 # Portable unpacked folder — copy whole dir to USB (blueprint §16)
 appId: com.lumo.personal-dashboard
-productName: Personal Dashboard
+productName: Daybrief
 directories:
   output: release/portable
 files:
@@ -9,6 +9,7 @@ files:
   - src/services/**/*
   - src/utils/**/*
   - package.json
+  - build/icon.ico
 extraResources:
   - from: src/services/db/schema.sql
     to: schema.sql
@@ -17,7 +18,9 @@ asarUnpack:
   - "**/*.node"
 extraMetadata:
   flavor: portable
+afterPack: build/set-exe-icon.js
 win:
+  icon: build/icon.ico
   target:
     - dir
   signAndEditExecutable: false

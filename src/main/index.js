@@ -19,6 +19,11 @@ const isDev = !app.isPackaged;
 // Packaged portable: Chromium cache/session live in data/chromium beside the exe
 applyPortableUserData();
 
+// Taskbar uses this id. Must match electron-builder appId or Windows shows the Electron icon.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.lumo.personal-dashboard');
+}
+
 let mainWindow = null;
 
 /**
@@ -121,7 +126,9 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#3e5679',
-    title: 'Personal Dashboard',
+    title: 'Daybrief',
+    // Dev taskbar icon. Packaged exe embeds the same build/icon.ico.
+    icon: path.join(__dirname, '..', '..', 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

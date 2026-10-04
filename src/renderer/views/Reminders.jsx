@@ -150,6 +150,8 @@ export default function RemindersView({
   const [dateTo, setDateTo] = useState('');
   const [sortDir, setSortDir] = useState('desc');
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  // Edit-mode delete: null | { step: 'confirm'|'scope', id, name, due, recurrence }
+  const [editDelete, setEditDelete] = useState(null);
 
   async function load() {
     setRows(await window.api.listReminders());
@@ -329,6 +331,42 @@ export default function RemindersView({
     await window.api.deleteReminder(id);
     await load();
     await refresh();
+  }
+
+  /** Open the first delete confirm. Scope uses the saved recurrence, not unsaved checkboxes. */
+  function openEditDelete(rem) {
+    const local = toLocalInput(rem.datetime);
+    setEditDelete({
+      step: 'confirm',
+      id: rem.id,
+      name: rem.title,
+      due: local ? local.slice(0, 10) : '',
+      recurrence: knownRecurrence(rem.recurrence) || '',
+    });
+  }
+
+  async function finishEditDelete(work) {
+    setEditError('');
+    try {
+      await work();
+      setEditingId(null);
+      setEditDelete(null);
+      await load();
+      await refresh();
+    } catch (err) {
+      setEditError(err?.message || String(err));
+      setEditDelete(null);
+    }
+  }
+
+  /** Dialog 1 confirm: one-shot deletes now; repeating reminders open the scope dialog. */
+  function confirmEditDelete() {
+    if (!editDelete) return;
+    if (editDelete.recurrence) {
+      setEditDelete({ ...editDelete, step: 'scope' });
+      return;
+    }
+    finishEditDelete(() => window.api.deleteReminder(editDelete.id));
   }
 
   const filtered = useMemo(() => {
@@ -662,6 +700,9 @@ export default function RemindersView({
                   />
                 </label>
                 <div className="item-row__actions">
+                  <button type="button" className="danger" onClick={() => openEditDelete(r)}>
+                    Delete
+                  </button>
                   <button type="submit" className="btn-primary">
                     Save
                   </button>
@@ -737,6 +778,36 @@ export default function RemindersView({
         )}
       </ul>
 
+      <ConfirmDialog
+        open={editDelete?.step === 'confirm'}
+        title="Delete this reminder?"
+        message={
+          editDelete?.recurrence
+            ? `Confirm delete of ${editDelete.name}.`
+            : `Removes ${editDelete?.name || 'this reminder'}. This cannot be undone.`
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={confirmEditDelete}
+        onCancel={() => setEditDelete(null)}
+      />
+      <ConfirmDialog
+        open={editDelete?.step === 'scope'}
+        title="Delete recurring reminder?"
+        message={
+          editDelete
+            ? `${editDelete.name} repeats (${editDelete.recurrence}). Due ${editDelete.due}. Delete only this due date, or the whole series?`
+            : ''
+        }
+        secondaryLabel="Delete Instance"
+        confirmLabel="Delete All"
+        danger
+        onSecondary={() =>
+          finishEditDelete(() => window.api.skipReminderOccurrence(editDelete.id))
+        }
+        onConfirm={() => finishEditDelete(() => window.api.deleteReminder(editDelete.id))}
+        onCancel={() => setEditDelete(null)}
+      />
       <ConfirmDialog
         open={bulkDeleteOpen}
         title={`Delete ${selectedVisibleCount} reminder${selectedVisibleCount === 1 ? '' : 's'}?`}

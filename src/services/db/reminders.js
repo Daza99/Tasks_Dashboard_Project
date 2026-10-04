@@ -431,6 +431,76 @@ function completeReminder(id) {
   }
 }
 
+/** Next wall-clock for a repeating reminder. Same steps as completeReminder. */
+function nextRepeatingDatetime(from, recurrence) {
+  if (recurrence === 'monthly') return addMonthsDate(from, 1);
+  if (recurrence === 'quarterly') return addMonthsDate(from, 3);
+  if (recurrence === 'yearly') return addMonthsDate(from, 12);
+  if (recurrence === 'weekly') return addDays(from, 7);
+  if (recurrence === 'fortnight') return addDays(from, 14);
+  return addDays(from, 1);
+}
+
+/**
+ * Drop the current cycle of a repeating reminder and move datetime forward.
+ * Does not complete the row.
+ * @param {number} id
+ * @returns {object} updated reminder
+ */
+function skipReminderOccurrence(id) {
+  try {
+    const cur = getDb().prepare('SELECT * FROM reminders WHERE id = ?').get(id);
+    if (!cur) throw new Error('Reminder not found');
+    if (Number(cur.locked) === 1 || hasTag('reminder', id, 'locked')) {
+      throw new Error('Reminder is locked');
+    }
+    if (!RECURRENCES.includes(cur.recurrence)) {
+      throw new Error('Cannot skip a one-shot reminder');
+    }
+    if (!cur.datetime || String(cur.datetime).startsWith('9999')) {
+      throw new Error('Cannot skip an open reminder');
+    }
+
+    const prevDate = dateKeyFromIso(cur.datetime);
+    const from = new Date(cur.datetime);
+    const nextDt = nextRepeatingDatetime(from, cur.recurrence);
+    const next = nextDt.toISOString();
+    let nextNudge = cur.nudge_datetime;
+    let nextAlerted = cur.nudge_alerted;
+    if (cur.nudge_mode === 'day_before') {
+      nextNudge = addDays(new Date(next), -1).toISOString();
+      nextAlerted = 0;
+    } else if (cur.nudge_mode === 'custom' && cur.nudge_datetime) {
+      const delta = nextDt.getTime() - from.getTime();
+      const shifted = new Date(new Date(cur.nudge_datetime).getTime() + delta);
+      if (!Number.isNaN(shifted.getTime())) {
+        nextNudge = shifted.toISOString();
+        nextAlerted = 0;
+      }
+    }
+
+    getDb()
+      .prepare(
+        `UPDATE reminders SET datetime = ?, dismissed = 0, snooze_until = NULL,
+           nudge_datetime = ?, nudge_alerted = ?
+         WHERE id = ?`
+      )
+      .run(next, nextNudge, nextAlerted, id);
+    replaceTags('reminder', id, STATE_TAGS, 'rem_pending');
+
+    const row = getReminder(id);
+    require('./calendar-sync').syncReminderForDates(
+      row,
+      [dateKeyFromIso(row.datetime), prevDate],
+      { keepPast: false }
+    );
+    return row;
+  } catch (err) {
+    logError('skipReminderOccurrence', err);
+    throw err;
+  }
+}
+
 /** Popup dismissed → rem_grace (or complete path handled separately). */
 function dismissReminder(id) {
   try {
@@ -706,6 +776,7 @@ module.exports = {
   listReminders,
   updateReminder,
   completeReminder,
+  skipReminderOccurrence,
   uncompleteReminder,
   dismissReminder,
   ignoreReminder,

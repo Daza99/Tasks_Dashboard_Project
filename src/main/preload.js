@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('api', {
   createReminder: (data) => ipcRenderer.invoke('reminders:create', data),
   updateReminder: (id, fields) => ipcRenderer.invoke('reminders:update', id, fields),
   completeReminder: (id) => ipcRenderer.invoke('reminders:complete', id),
+  skipReminderOccurrence: (id) => ipcRenderer.invoke('reminders:skipOccurrence', id),
   dismissReminder: (id) => ipcRenderer.invoke('reminders:dismiss', id),
   deleteReminder: (id) => ipcRenderer.invoke('reminders:delete', id),
   deleteReminders: (ids) => ipcRenderer.invoke('reminders:deleteMany', ids),
@@ -108,6 +109,7 @@ contextBridge.exposeInMainWorld('api', {
   createBill: (data) => ipcRenderer.invoke('bills:create', data),
   updateBill: (id, fields) => ipcRenderer.invoke('bills:update', id, fields),
   markBillPaid: (id, opts) => ipcRenderer.invoke('bills:markPaid', id, opts),
+  skipBillOccurrence: (id) => ipcRenderer.invoke('bills:skipOccurrence', id),
   getBillAmountStats: (name) => ipcRenderer.invoke('bills:amountStats', name),
   listBillPayments: (opts) => ipcRenderer.invoke('bills:listPayments', opts),
   listBillPaymentsForDueMonth: (year, month) =>

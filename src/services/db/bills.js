@@ -584,6 +584,42 @@ function markPaid(id, opts = {}) {
 }
 
 /**
+ * Drop the current cycle of a recurring bill and move due_date forward.
+ * Does not write bill_payments — this is a skip, not a payment.
+ * @param {number} id
+ * @returns {object} updated bill
+ */
+function skipBillOccurrence(id) {
+  try {
+    const cur = getDb().prepare('SELECT * FROM bills WHERE id = ?').get(id);
+    if (!cur) throw new Error('Bill not found');
+    if (!cur.recurrence) throw new Error('Cannot skip a once bill');
+
+    const offset = clampOffset(cur.date_offset_days);
+    const billingDay = cur.billing_day || billingDayFromDue(cur.due_date);
+    const next = advanceDue(cur.due_date, cur.recurrence, billingDay);
+    if (!next) throw new Error('No next due date');
+
+    const nudge = nextNudgeFields(cur, next, offset);
+    getDb()
+      .prepare(
+        `UPDATE bills SET paid_status = 'pending', due_date = ?,
+         alerted_before = 0, alerted_due = 0, snooze_until = NULL,
+         nudge_datetime = ?, nudge_mode = ?, nudge_alerted = ?
+         WHERE id = ?`
+      )
+      .run(next, nudge.nudge_datetime, nudge.nudge_mode, nudge.nudge_alerted, id);
+
+    const row = getBill(id);
+    require('./calendar-sync').syncBill(row);
+    return row;
+  } catch (err) {
+    logError('skipBillOccurrence', err);
+    throw err;
+  }
+}
+
+/**
  * Payment count + average for a bill name (case-insensitive trim).
  * @param {string} name
  * @returns {{ count: number, average: number|null, canAverage: boolean }}
@@ -1197,6 +1233,7 @@ module.exports = {
   listBills,
   updateBill,
   markPaid,
+  skipBillOccurrence,
   getBillAmountStats,
   listBillPayments,
   listBillPaymentsForDueMonth,

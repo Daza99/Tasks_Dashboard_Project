@@ -239,6 +239,8 @@ export default function BillsView({
   const [monthFilter, setMonthFilter] = useState('this'); // all | last | this
   const [cyclePayments, setCyclePayments] = useState([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  // Edit-mode delete: null | { step: 'confirm'|'scope', id, name, due, recurrence }
+  const [editDelete, setEditDelete] = useState(null);
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptFor, setPromptFor] = useState('create'); // create | edit
   const [manageOpen, setManageOpen] = useState(false);
@@ -651,6 +653,41 @@ export default function BillsView({
     await window.api.deleteBill(id);
     await load();
     await refresh();
+  }
+
+  /** Open the first delete confirm. Scope uses the saved recurrence, not unsaved form edits. */
+  function openEditDelete(bill) {
+    setEditDelete({
+      step: 'confirm',
+      id: bill.id,
+      name: bill.name,
+      due: bill.due_date,
+      recurrence: bill.recurrence || '',
+    });
+  }
+
+  async function finishEditDelete(work) {
+    setError('');
+    try {
+      await work();
+      setEditingId(null);
+      setEditDelete(null);
+      await load();
+      await refresh();
+    } catch (err) {
+      setError(err?.message || String(err));
+      setEditDelete(null);
+    }
+  }
+
+  /** Dialog 1 confirm: once bills delete now; recurring bills open the scope dialog. */
+  function confirmEditDelete() {
+    if (!editDelete) return;
+    if (editDelete.recurrence) {
+      setEditDelete({ ...editDelete, step: 'scope' });
+      return;
+    }
+    finishEditDelete(() => window.api.deleteBill(editDelete.id));
   }
 
   async function removePayment(id) {
@@ -1461,11 +1498,16 @@ export default function BillsView({
                       compact
                     />
                   </div>
-                  <div className="item-row__actions">
+                  <div className="item-row__actions bill-edit-actions">
                     <button type="submit">Save</button>
-                    <button type="button" onClick={() => setEditingId(null)}>
-                      Cancel
-                    </button>
+                    <div className="bill-edit-actions__stack">
+                      <button type="button" className="danger" onClick={() => openEditDelete(b)}>
+                        Delete
+                      </button>
+                      <button type="button" onClick={() => setEditingId(null)}>
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 </form>
               ) : (
@@ -1585,6 +1627,36 @@ export default function BillsView({
         </ul>
       )}
 
+      <ConfirmDialog
+        open={editDelete?.step === 'confirm'}
+        title="Delete this bill?"
+        message={
+          editDelete?.recurrence
+            ? `Confirm delete of ${editDelete.name}.`
+            : `Removes ${editDelete?.name || 'this bill'}. This cannot be undone.`
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={confirmEditDelete}
+        onCancel={() => setEditDelete(null)}
+      />
+      <ConfirmDialog
+        open={editDelete?.step === 'scope'}
+        title="Delete recurring bill?"
+        message={
+          editDelete
+            ? `${editDelete.name} repeats (${editDelete.recurrence}). Due ${editDelete.due}. Delete only this due date, or the whole series?`
+            : ''
+        }
+        secondaryLabel="Delete Instance"
+        confirmLabel="Delete All"
+        danger
+        onSecondary={() =>
+          finishEditDelete(() => window.api.skipBillOccurrence(editDelete.id))
+        }
+        onConfirm={() => finishEditDelete(() => window.api.deleteBill(editDelete.id))}
+        onCancel={() => setEditDelete(null)}
+      />
       <ConfirmDialog
         open={bulkDeleteOpen}
         title={

@@ -1291,6 +1291,15 @@ html[data-theme-base='light'] .nav-tab--reminders.nav-tab--selected {
   gap: 6px;
   justify-content: flex-end;
 }
+/* Edit-mode Delete sits directly above Cancel */
+.bill-edit-actions {
+  align-items: flex-end;
+}
+.bill-edit-actions__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 .item-row__actions button {
   background: var(--button-bg);
   border: 1px solid var(--panel-border);

@@ -34,6 +34,7 @@ const {
   getReminder,
   updateReminder,
   completeReminder,
+  skipReminderOccurrence,
   dismissReminder,
   deleteReminder,
   deleteReminders,
@@ -61,6 +62,7 @@ const {
   getBill,
   updateBill,
   markPaid,
+  skipBillOccurrence,
   getBillAmountStats,
   listBillPayments,
   listBillPaymentsForDueMonth,
@@ -451,6 +453,13 @@ function registerIpcHandlers() {
     return row;
   });
   ipcMain.handle('reminders:complete', (_e, id) => completeReminder(id));
+  ipcMain.handle('reminders:skipOccurrence', (_e, id) => {
+    const row = skipReminderOccurrence(id);
+    const { clearFiredSession } = require('./scheduler');
+    clearFiredSession('reminder', id);
+    clearFiredSession('reminder_nudge', id);
+    return row;
+  });
   ipcMain.handle('reminders:dismiss', (_e, id) => dismissReminder(id));
   ipcMain.handle('reminders:delete', (_e, id) => deleteReminder(id));
   ipcMain.handle('reminders:deleteMany', (_e, ids) => deleteReminders(ids || []));
@@ -570,6 +579,15 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('bills:markPaid', (_e, id, opts) => {
     const row = markPaid(id, opts || {});
+    const { clearFiredSession } = require('./scheduler');
+    clearFiredSession('bill', id);
+    clearFiredSession('bill', `${id}:due`);
+    clearFiredSession('bill', `${id}:before`);
+    clearFiredSession('bill_nudge', id);
+    return row;
+  });
+  ipcMain.handle('bills:skipOccurrence', (_e, id) => {
+    const row = skipBillOccurrence(id);
     const { clearFiredSession } = require('./scheduler');
     clearFiredSession('bill', id);
     clearFiredSession('bill', `${id}:due`);

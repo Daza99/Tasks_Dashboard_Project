@@ -939,6 +939,30 @@ function listBillsForWeekBrief(weekStartKey, weekEndKey) {
 }
 
 /**
+ * Unpaid bills whose watch date falls in [startKey, endKey] (yyyy-mm-dd, inclusive).
+ * Does not include overdue bills dated before startKey.
+ * @param {string} startKey
+ * @param {string} endKey
+ */
+function listBillsDueBetween(startKey, endKey) {
+  try {
+    const watch = watchSql();
+    return getDb()
+      .prepare(
+        `SELECT * FROM bills
+         WHERE paid_status IN ('pending', 'overdue')
+           AND ${watch} >= ? AND ${watch} <= ?
+         ORDER BY ${watch} ASC, name COLLATE NOCASE`
+      )
+      .all(startKey, endKey)
+      .map(enrich);
+  } catch (err) {
+    logError('listBillsDueBetween', err);
+    throw err;
+  }
+}
+
+/**
  * Pending/overdue bills needing lead or due-day popup (nudge is separate).
  * @returns {{ alertKind: 'before'|'due' }[]}
  */
@@ -1245,6 +1269,7 @@ module.exports = {
   markOverdueBills,
   listBillsForBrief,
   listBillsForWeekBrief,
+  listBillsDueBetween,
   listDueBillAlerts,
   listDueBillNudges,
   markBillAlerted,

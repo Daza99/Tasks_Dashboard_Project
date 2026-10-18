@@ -73,6 +73,19 @@ export default function LeftNav({ activeView, onNavigate }) {
             ▾
           </span>
         </button>
+        <button
+          type="button"
+          className={`nav-item${activeView === 'this-week' ? ' nav-item--active' : ''}`}
+          onClick={() => open('this-week')}
+        >
+          <span className="nav-item__label">
+            <span aria-hidden>●</span>
+            This Week
+          </span>
+          <span className="nav-item__chevron" aria-hidden>
+            ▾
+          </span>
+        </button>
       </div>
 
       <div className="nav-list">

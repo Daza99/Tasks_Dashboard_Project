@@ -2232,6 +2232,34 @@ html[data-theme-base='light'] .nav-tab--reminders.nav-tab--selected {
 .cal-chip-more:hover {
   color: var(--text-primary);
 }
+/* Hidden remainder includes a bill — stay red on hover (beats the muted hover above). */
+.cal-chip-more--hidden-bill,
+.cal-chip-more--hidden-bill:hover {
+  color: var(--danger);
+}
+/* Overflow preview. pointer-events off so leaving +X dismisses it. */
+.cal-more-tip {
+  position: fixed;
+  z-index: 75;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 220px;
+  max-height: 70vh;
+  overflow: hidden;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.cal-more-tip .cal-chip {
+  cursor: default;
+}
+.cal-more-tip .cal-entry-tip {
+  display: none;
+}
 .cal-select-bar {
   display: flex;
   align-items: center;

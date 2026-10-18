@@ -11,6 +11,7 @@ const HIT_CAP = 80;
 /** View id → provider ids. Compact uses ALL_PROVIDERS. */
 const VIEW_PROVIDERS = {
   today: ['task', 'reminder'],
+  'this-week': ['task', 'reminder', 'bill', 'habit'],
   tasks: ['task'],
   reminders: ['reminder'],
   bills: ['bill'],

@@ -34,6 +34,12 @@ Grey remainder + Tab complete is a **transparent input over an opaque `.tag-inpu
 
 Incident: [`dev-note-tag-ghost-autocomplete.md`](dev-note-tag-ghost-autocomplete.md).
 
+## Notes line breaks (do not re-break)
+
+Saved notes may contain Windows `\r\n`. `mdToEditHtml` must run `normalizeNewlines` **before** turning `\n` into `<br>`. A leftover `\r` is parsed as a second break under `white-space: pre-wrap`, so one saved line break paints as a blank line between sentences. Do not collapse every `\n\n` or double space to “fix” it. Keep the same helper in `basic-md.cjs` (print/export).
+
+Incident: [`dev-note-notes-crlf-double-break.md`](dev-note-notes-crlf-double-break.md).
+
 ## Dates
 
 Storage and display: `yyyy-mm-dd` only. Module hints that mention dates get `(date method: yyyy-mm-dd)`.

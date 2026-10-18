@@ -233,6 +233,42 @@ function listHabitsDueToday() {
   }
 }
 
+/**
+ * Active habits due on at least one local day in [start, end] (inclusive).
+ * One row each. next_due_date is the first due on or after today.
+ * due_today is true when the habit is due on start's calendar day.
+ * @param {Date} start
+ * @param {Date} end
+ */
+function listHabitsDueInRange(start, end) {
+  try {
+    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const endMs = localDayMs(end);
+    return listHabits({ archived: false })
+      .filter((h) => {
+        let c = new Date(startDay);
+        while (localDayMs(c) <= endMs) {
+          if (isDueOn(h, c)) return true;
+          c = addDays(c, 1);
+        }
+        return false;
+      })
+      .map((h) => ({ ...h, due_today: isDueOn(h, startDay) }))
+      .sort((a, b) => {
+        const byDate = String(a.next_due_date || '').localeCompare(
+          String(b.next_due_date || '')
+        );
+        if (byDate) return byDate;
+        return String(a.name || '').localeCompare(String(b.name || ''), undefined, {
+          sensitivity: 'base',
+        });
+      });
+  } catch (err) {
+    logError('listHabitsDueInRange', err);
+    throw err;
+  }
+}
+
 function updateHabit(id, fields) {
   try {
     const cur = getDb().prepare('SELECT * FROM habits WHERE id = ?').get(id);
@@ -746,6 +782,7 @@ module.exports = {
   getHabit,
   listHabits,
   listHabitsDueToday,
+  listHabitsDueInRange,
   updateHabit,
   deleteHabit,
   deleteHabits,

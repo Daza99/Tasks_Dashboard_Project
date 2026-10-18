@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   format,
@@ -25,8 +25,34 @@ import { calendarEntryState, isBillPaid, isReminderDone } from '../../utils/cale
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { habitFillStyle } from '../../utils/habit-color.js';
+import {
+  compareCalendarEntries,
+  sortCalendarEntries,
+} from '../../utils/calendar-entry-priority.js';
 
 const CHIP_CAP = 3;
+const MORE_TIP_W = 220;
+const MORE_TIP_PAD = 8;
+
+/**
+ * Side of the pointer for the hidden-chip preview.
+ * Monday column always opens right; Sunday always left; other columns use the roomier side.
+ * @param {Date} day
+ * @param {number} clientX
+ * @returns {'left'|'right'}
+ */
+function moreTipSide(day, clientX) {
+  const col = (day.getDay() + 6) % 7;
+  if (col === 0) return 'right';
+  if (col === 6) return 'left';
+  const spaceRight = window.innerWidth - clientX;
+  const spaceLeft = clientX;
+  const need = MORE_TIP_W + MORE_TIP_PAD;
+  let side = spaceRight >= spaceLeft ? 'right' : 'left';
+  if (side === 'right' && spaceRight < need && spaceLeft >= need) side = 'left';
+  else if (side === 'left' && spaceLeft < need && spaceRight >= need) side = 'right';
+  return side;
+}
 
 const MONTH_NAMES = [
   'January',
@@ -165,6 +191,9 @@ export default function CalendarView({
   const [menu, setMenu] = useState(null); // { x, y, date } | { x, y, event }
   const menuRef = useRef(null);
   const dayListRef = useRef(null);
+  const moreTipRef = useRef(null);
+  // Hidden chips while the pointer is on +X. Cleared on leave.
+  const [moreTip, setMoreTip] = useState(null);
 
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
@@ -194,7 +223,10 @@ export default function CalendarView({
     [monthEvents, hideHabits, hideElapsed, hidePaidBills, hideCompletedReminders, todayKey]
   );
   const visibleDayEvents = useMemo(
-    () => dayEvents.filter((ev) => !isHiddenByCalendarFilter(ev, hideFlags)),
+    () =>
+      sortCalendarEntries(
+        dayEvents.filter((ev) => !isHiddenByCalendarFilter(ev, hideFlags))
+      ),
     [dayEvents, hideHabits, hideElapsed, hidePaidBills, hideCompletedReminders, todayKey]
   );
 
@@ -206,8 +238,31 @@ export default function CalendarView({
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(ev);
     }
+    for (const list of map.values()) list.sort(compareCalendarEntries);
     return map;
   }, [visibleMonthEvents]);
+
+  // Drop a stale preview when the month grid data changes under the pointer.
+  useEffect(() => {
+    setMoreTip(null);
+  }, [eventsByDay]);
+
+  // Re-clamp after every render so a style-prop reset cannot undo the fit.
+  useLayoutEffect(() => {
+    const el = moreTipRef.current;
+    if (!el || !moreTip) return;
+    const pad = MORE_TIP_PAD;
+    const rect = el.getBoundingClientRect();
+    let top = moreTip.y;
+    if (top + rect.height > window.innerHeight - pad) {
+      top = Math.max(pad, window.innerHeight - pad - rect.height);
+    }
+    let left = moreTip.side === 'right' ? moreTip.x + pad : moreTip.x - rect.width - pad;
+    const maxLeft = window.innerWidth - rect.width - pad;
+    left = Math.max(pad, Math.min(left, Math.max(pad, maxLeft)));
+    el.style.top = `${top}px`;
+    el.style.left = `${left}px`;
+  });
 
   const pickedEvents = useMemo(
     () => monthEvents.filter((ev) => picked.has(ev.id)),
@@ -569,11 +624,22 @@ export default function CalendarView({
     }
   }
 
+  function onMoreEnter(e, day, hidden) {
+    setMoreTip({
+      key: format(day, 'yyyy-MM-dd'),
+      items: hidden,
+      x: e.clientX,
+      y: e.clientY,
+      side: moreTipSide(day, e.clientX),
+    });
+  }
+
   function renderChips(day) {
     const key = format(day, 'yyyy-MM-dd');
     const list = eventsByDay.get(key) || [];
     const shown = list.slice(0, CHIP_CAP);
-    const extra = list.length - shown.length;
+    const hidden = list.slice(CHIP_CAP);
+    const hiddenBill = hidden.some((ev) => ev.source_type === 'bill');
     return (
       <>
         {shown.map((ev) => (
@@ -590,13 +656,15 @@ export default function CalendarView({
             <CalEntryLabel ev={ev} />
           </button>
         ))}
-        {extra > 0 && (
+        {hidden.length > 0 && (
           <button
             type="button"
-            className="cal-chip-more"
+            className={`cal-chip-more${hiddenBill ? ' cal-chip-more--hidden-bill' : ''}`}
             onClick={(e) => onMoreClick(e, day)}
+            onMouseEnter={(e) => onMoreEnter(e, day, hidden)}
+            onMouseLeave={() => setMoreTip(null)}
           >
-            +{extra}
+            +{hidden.length}
           </button>
         )}
       </>
@@ -862,6 +930,33 @@ export default function CalendarView({
                 </button>
               </>
             )}
+          </div>,
+          document.body
+        )}
+
+      {moreTip &&
+        createPortal(
+          <div
+            ref={moreTipRef}
+            className="cal-more-tip"
+            style={{
+              top: moreTip.y,
+              left:
+                moreTip.side === 'right'
+                  ? moreTip.x + MORE_TIP_PAD
+                  : moreTip.x - MORE_TIP_W - MORE_TIP_PAD,
+            }}
+            role="tooltip"
+          >
+            {moreTip.items.map((ev) => (
+              <div
+                key={ev.id}
+                className={`cal-chip${chipTypeClass(ev)}`}
+                style={ev.source_type === 'habit' ? habitFillStyle(ev.habit_color) : undefined}
+              >
+                <CalEntryLabel ev={ev} />
+              </div>
+            ))}
           </div>,
           document.body
         )}

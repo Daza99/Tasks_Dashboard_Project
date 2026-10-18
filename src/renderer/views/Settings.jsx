@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import SettingsGeneral from '../settings-tabs/SettingsGeneral';
 import SettingsTheme from '../settings-tabs/SettingsTheme';
 import SettingsWallpaper from '../settings-tabs/SettingsWallpaper';
@@ -17,9 +17,19 @@ const TABS = [
 
 const WIDE_TABS = new Set(['theme', 'guide']);
 
-/** Settings host with General / Data / Hotkeys / Theme / Wallpaper / Guide tabs. */
-export default function SettingsView() {
-  const [tab, setTab] = useState('general');
+/**
+ * Settings host with General / Data / Hotkeys / Theme / Wallpaper / Guide tabs.
+ * @param {{ initialTab?: string|null, onInitialTabConsumed?: () => void }} props
+ */
+export default function SettingsView({ initialTab = null, onInitialTabConsumed }) {
+  const [tab, setTab] = useState(initialTab || 'general');
+
+  // Help → Guide, including when Settings is already open on another tab.
+  useEffect(() => {
+    if (!initialTab) return;
+    setTab(initialTab);
+    onInitialTabConsumed?.();
+  }, [initialTab, onInitialTabConsumed]);
 
   return (
     <div className={`settings${WIDE_TABS.has(tab) ? ' settings--wide' : ''}`}>

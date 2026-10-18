@@ -103,10 +103,12 @@ export default function LayoutShell({
           <div
             ref={focusHostRef}
             className={`center-panel glass-panel focus-host${
-              activeView === 'today' ? ' focus-host--today' : ''
+              activeView === 'today' || activeView === 'this-week'
+                ? ' focus-host--today'
+                : ''
             }`}
           >
-            {activeView !== 'today' && (
+            {activeView !== 'today' && activeView !== 'this-week' && (
               <button
                 type="button"
                 className="btn-focus-back"

@@ -49,7 +49,19 @@ function applyAppMenu() {
       { role: 'editMenu' },
       { role: 'viewMenu' },
       { role: 'windowMenu' },
-      { role: 'help' },
+      {
+        label: 'Help',
+        submenu: [
+          {
+            label: 'Guide',
+            click: () => {
+              const win = mainWindow;
+              if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+              win.webContents.send('app:open-guide');
+            },
+          },
+        ],
+      },
       {
         label: `${formatDashboardVersion(app.getVersion())} (${getFlavor() === 'desktop' ? 'Desktop' : 'Portable'})`,
         enabled: false,

@@ -27,6 +27,7 @@ const EMPTY_FILTERS = {
 const PLACEHOLDER = {
   compact: 'Search all…',
   today: 'Search tasks & reminders…',
+  'this-week': 'Search this week…',
   tasks: 'Search tasks…',
   reminders: 'Search reminders…',
   bills: 'Search bills…',
@@ -82,6 +83,7 @@ export default function SearchBar({ activeView, onEditRequest }) {
     }
     const map = {
       today: ['task', 'reminder'],
+      'this-week': ['task', 'reminder', 'bill', 'habit'],
       tasks: ['task'],
       reminders: ['reminder'],
       bills: ['bill'],
@@ -98,7 +100,7 @@ export default function SearchBar({ activeView, onEditRequest }) {
   }, [isCompact, activeView, filters.module]);
 
   const show = {
-    module: isCompact || activeView === 'today',
+    module: isCompact || activeView === 'today' || activeView === 'this-week',
     repeat: providerIds.some((id) => id === 'habit' || id === 'bill' || id === 'reminder'),
     status: providerIds.some((id) => id === 'task' || id === 'reminder' || id === 'habit'),
     locked: providerIds.some((id) => id === 'task' || id === 'reminder'),
@@ -230,7 +232,7 @@ export default function SearchBar({ activeView, onEditRequest }) {
           />
           <SearchResults
             hits={hits}
-            grouped={isCompact || activeView === 'today'}
+            grouped={isCompact || activeView === 'today' || activeView === 'this-week'}
             hint={hint}
             onPick={pick}
           />

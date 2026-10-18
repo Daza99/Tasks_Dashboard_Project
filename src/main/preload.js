@@ -256,4 +256,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('app:open-item', listener);
     return () => ipcRenderer.removeListener('app:open-item', listener);
   },
+
+  /** Help → Guide opens Settings on the Guide tab. */
+  onOpenGuide: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('app:open-guide', listener);
+    return () => ipcRenderer.removeListener('app:open-guide', listener);
+  },
 });

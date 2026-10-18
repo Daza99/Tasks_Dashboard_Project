@@ -27,6 +27,12 @@ Ghost suffix lives **behind** the input. Opaque fill on `.tag-input__field` hide
 
 Incident: [`docs/dev-note-tag-ghost-autocomplete.md`](docs/dev-note-tag-ghost-autocomplete.md).
 
+## Notes line breaks (do not re-break)
+
+`normalizeNewlines` must run before `\n` becomes `<br>` in `mdToEditHtml`. A leftover `\r` from Windows `\r\n` paints as a second break (`white-space: pre-wrap`). Do not collapse every blank line or double space. Mirror the helper in `basic-md.cjs`.
+
+Incident: [`docs/dev-note-notes-crlf-double-break.md`](docs/dev-note-notes-crlf-double-break.md).
+
 ## Dates / layout
 
 Dates: `yyyy-mm-dd`. Compact vs Focus as in `.cursorrules`. No decorative corner brackets.

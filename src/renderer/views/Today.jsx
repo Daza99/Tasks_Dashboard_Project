@@ -18,6 +18,18 @@ function fmtWhen(iso) {
   }
 }
 
+/** Week rows need the day; storage order is yyyy-mm-dd. */
+function fmtWhenDated(iso) {
+  if (!iso || iso.startsWith('9999')) return 'Open';
+  try {
+    const d = typeof iso === 'string' ? parseISO(iso) : new Date(iso);
+    if (!isValid(d)) return iso;
+    return format(d, 'yyyy-MM-dd · h:mm a');
+  } catch {
+    return iso;
+  }
+}
+
 /** Task due time, or overdue if the due datetime is before local midnight. */
 function fmtTaskWhen(iso) {
   if (!iso || iso.startsWith('9999')) return 'Open';
@@ -32,25 +44,29 @@ function fmtTaskWhen(iso) {
 }
 
 /**
- * Focus landing: items due today (tasks, reminders, bills, habits) plus overdue tasks.
+ * Focus landing. mode "today" = due today; mode "week" = next 7 days from today.
  * Type: Outfit title + Habits, Sitka Tasks, Source Serif 4 Reminders, IBM Plex Mono Bills.
  * @param {{
+ *   mode?: 'today' | 'week',
  *   onEditRequest?: (type: string, id: number) => void,
  *   onNavigate?: (viewId: string) => void
  * }} props
  */
-export default function TodayView({ onEditRequest, onNavigate }) {
+export default function TodayView({ mode = 'today', onEditRequest, onNavigate }) {
   const { brief, loading, error, refresh } = useBrief();
   const { enterCompact } = useLayout();
   const { methodHint } = useDateFormat();
   const [payingId, setPayingId] = useState(null);
   const [payActual, setPayActual] = useState('');
   const [payMode, setPayMode] = useState('paid');
+  const isWeek = mode === 'week';
+  const when = isWeek ? fmtWhenDated : fmtWhen;
+  const emptyLabel = isWeek ? 'None in the next 7 days.' : 'None today.';
 
-  const tasks = brief?.tasksToday || [];
-  const habits = brief?.habitsToday || [];
-  const reminders = brief?.remindersToday || [];
-  const bills = brief?.billsDueToday || [];
+  const tasks = (isWeek ? brief?.tasksNext7 : brief?.tasksToday) || [];
+  const habits = (isWeek ? brief?.habitsNext7 : brief?.habitsToday) || [];
+  const reminders = (isWeek ? brief?.remindersNext7 : brief?.remindersToday) || [];
+  const bills = (isWeek ? brief?.billsDueNext7 : brief?.billsDueToday) || [];
 
   async function completeTask(id) {
     await window.api.completeTask(id);
@@ -96,7 +112,7 @@ export default function TodayView({ onEditRequest, onNavigate }) {
   return (
     <div className="today-view">
       <div className="today-view__head">
-        <h1 className="today-view__title">Today</h1>
+        <h1 className="today-view__title">{isWeek ? 'This Week' : 'Today'}</h1>
         <button
           type="button"
           className="btn-focus-back today-view__back"
@@ -108,7 +124,9 @@ export default function TodayView({ onEditRequest, onNavigate }) {
         </button>
       </div>
       <p className="today-view__meta">
-        Due today only (date method: {methodHint})
+        {isWeek
+          ? 'Next 7 days from today (date method: yyyy-mm-dd)'
+          : `Due today only (date method: ${methodHint})`}
       </p>
 
       {loading && !brief && <p className="today-view__meta">Loading…</p>}
@@ -135,7 +153,9 @@ export default function TodayView({ onEditRequest, onNavigate }) {
               >
                 <div className="today-view__main">
                   <span className="today-view__name">{t.title}</span>
-                  <span className="today-view__when">{fmtTaskWhen(t.due_datetime)}</span>
+                  <span className="today-view__when">
+                    {isWeek ? when(t.due_datetime) : fmtTaskWhen(t.due_datetime)}
+                  </span>
                 </div>
                 <div className="today-view__actions">
                   <button type="button" onClick={() => completeTask(t.id)}>
@@ -152,7 +172,7 @@ export default function TodayView({ onEditRequest, onNavigate }) {
             ))}
           </ul>
         ) : (
-          <p className="today-view__meta">None today.</p>
+          <p className="today-view__meta">{emptyLabel}</p>
         )}
       </section>
 
@@ -168,7 +188,9 @@ export default function TodayView({ onEditRequest, onNavigate }) {
             {habits.map((h) => (
               <li
                 key={h.id}
-                className={`today-view__row${h.completed_today ? ' today-view__row--done' : ''}`}
+                className={`today-view__row${
+                  h.completed_today && (!isWeek || h.due_today) ? ' today-view__row--done' : ''
+                }`}
                 onDoubleClick={rowDblClick(() => onEditRequest?.('habit', h.id))}
               >
                 <div className="today-view__main">
@@ -176,21 +198,32 @@ export default function TodayView({ onEditRequest, onNavigate }) {
                     <HabitColorDot color={h.color} />
                     {h.name}
                   </span>
-                  {h.streak > 0 && (
-                    <span className="today-view__when">{h.streak} streak</span>
+                  {isWeek ? (
+                    <span className="today-view__when">
+                      {h.next_due_date}
+                      {h.streak > 0 ? ` · ${h.streak} streak` : ''}
+                    </span>
+                  ) : (
+                    h.streak > 0 && (
+                      <span className="today-view__when">{h.streak} streak</span>
+                    )
                   )}
                 </div>
                 <div className="today-view__actions">
-                  <button
-                    type="button"
-                    disabled={h.completed_today}
-                    onClick={() => toggleHabit(h.id)}
-                  >
-                    {h.completed_today ? 'Completed' : 'Not Completed'}
-                  </button>
-                  <button type="button" onClick={() => toggleHabit(h.id)}>
-                    Undo
-                  </button>
+                  {(!isWeek || h.due_today) && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={h.completed_today}
+                        onClick={() => toggleHabit(h.id)}
+                      >
+                        {h.completed_today ? 'Completed' : 'Not Completed'}
+                      </button>
+                      <button type="button" onClick={() => toggleHabit(h.id)}>
+                        Undo
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => onEditRequest?.('habit', h.id)}
@@ -202,7 +235,7 @@ export default function TodayView({ onEditRequest, onNavigate }) {
             ))}
           </ul>
         ) : (
-          <p className="today-view__meta">None today.</p>
+          <p className="today-view__meta">{emptyLabel}</p>
         )}
       </section>
 
@@ -223,7 +256,7 @@ export default function TodayView({ onEditRequest, onNavigate }) {
               >
                 <div className="today-view__main">
                   <span className="today-view__name">{r.title}</span>
-                  <span className="today-view__when">{fmtWhen(r.datetime)}</span>
+                  <span className="today-view__when">{when(r.datetime)}</span>
                 </div>
                 <div className="today-view__actions">
                   <button type="button" onClick={() => completeRem(r.id)}>
@@ -240,7 +273,7 @@ export default function TodayView({ onEditRequest, onNavigate }) {
             ))}
           </ul>
         ) : (
-          <p className="today-view__meta">None today.</p>
+          <p className="today-view__meta">{emptyLabel}</p>
         )}
       </section>
 
@@ -265,7 +298,9 @@ export default function TodayView({ onEditRequest, onNavigate }) {
                     {b.amount_mode === 'estimate' && ' estimate'}
                     {b.amount_mode === 'average' && ' avg'}
                   </span>
-                  <span className="today-view__when">due today</span>
+                  <span className="today-view__when">
+                    {isWeek ? `due ${b.watch_date}` : 'due today'}
+                  </span>
                 </div>
                 <div className="today-view__actions">
                   {payingId === b.id ? (
@@ -296,7 +331,7 @@ export default function TodayView({ onEditRequest, onNavigate }) {
             ))}
           </ul>
         ) : (
-          <p className="today-view__meta">None today.</p>
+          <p className="today-view__meta">{emptyLabel}</p>
         )}
       </section>
     </div>

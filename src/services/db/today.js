@@ -4,8 +4,8 @@
 const { getDb } = require('../../main/database');
 const { getItemTagNames } = require('./tags');
 const { startOfDay, endOfDay, addDays } = require('./reminders');
-const { listHabitsDueToday, dateKey } = require('./habits');
-const { listBillsForBrief, listBillsForWeekBrief } = require('./bills');
+const { listHabitsDueToday, listHabitsDueInRange, dateKey } = require('./habits');
+const { listBillsForBrief, listBillsForWeekBrief, listBillsDueBetween } = require('./bills');
 const { getMoneySnapshot } = require('./transactions');
 
 function enrichTask(row) {
@@ -41,6 +41,13 @@ function getTodayBrief() {
   const weekEndIso = weekEnd.toISOString();
   const weekStartKey = dateKey(weekStart);
   const weekEndKey = dateKey(weekEnd);
+  // Next 7 calendar days from today (today included). Separate from Mon–Sun brief.
+  const horizonStart = startOfDay();
+  const horizonEnd = endOfDay(addDays(horizonStart, 6));
+  const horizonStartIso = horizonStart.toISOString();
+  const horizonEndIso = horizonEnd.toISOString();
+  const horizonStartKey = dateKey(horizonStart);
+  const horizonEndKey = dateKey(horizonEnd);
 
   const tasksThisWeek = db
     .prepare(
@@ -108,6 +115,37 @@ function getTodayBrief() {
     .all(todayStart, todayEnd)
     .map(enrichRem);
 
+  const tasksNext7 = db
+    .prepare(
+      `SELECT * FROM tasks t
+       WHERE t.archived = 0 AND t.completed_at IS NULL
+         AND (t.container IS NULL OR t.container = 'active')
+         AND t.due_datetime IS NOT NULL
+         AND datetime(t.due_datetime) >= datetime(?)
+         AND datetime(t.due_datetime) <= datetime(?)
+         AND NOT EXISTS (
+           SELECT 1 FROM item_tags it
+           JOIN tags g ON g.id = it.tag_id AND g.name = 'todo_expired'
+           WHERE it.item_id = t.id AND it.item_type = 'task'
+         )
+       ORDER BY datetime(t.due_datetime) ASC, COALESCE(t.priority, 3) ASC`
+    )
+    .all(horizonStartIso, horizonEndIso)
+    .map(enrichTask);
+
+  const remindersNext7 = db
+    .prepare(
+      `SELECT * FROM reminders
+       WHERE archived = 0 AND completed_at IS NULL
+         AND (container IS NULL OR container = 'active')
+         AND datetime < '9999-01-01'
+         AND datetime(datetime) >= datetime(?)
+         AND datetime(datetime) <= datetime(?)
+       ORDER BY datetime ASC`
+    )
+    .all(horizonStartIso, horizonEndIso)
+    .map(enrichRem);
+
   const expiredTasks = db
     .prepare(
       `SELECT DISTINCT t.* FROM tasks t
@@ -148,17 +186,23 @@ function getTodayBrief() {
     weekStartKey,
     weekEndKey
   );
+  const billsDueNext7 = listBillsDueBetween(horizonStartKey, horizonEndKey);
+  const habitsNext7 = listHabitsDueInRange(horizonStart, horizonEnd);
   const { moneyToday, moneyMtd } = getMoneySnapshot();
 
   return {
     tasksThisWeek,
     tasksToday,
+    tasksNext7,
     remindersThisWeek,
     remindersToday,
+    remindersNext7,
     expiredItems,
     habitsToday: listHabitsDueToday(),
+    habitsNext7,
     billsDueToday,
     billsDueThisWeek,
+    billsDueNext7,
     billsOverdue,
     moneyToday,
     moneyMtd,

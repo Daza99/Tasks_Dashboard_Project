@@ -67,7 +67,7 @@ export const USER_GUIDE_SECTIONS = [
       'Click a linked chip → that module (completed reminder → Completed). Only manual events edit inline.',
       'Remove from Calendar unticks Add to Calendar on the source — whole series drops, not one day. Delete linked item deletes the source (locked items skipped).',
       'Hide All Habits vs Hide Elapsed Habits are mutually exclusive view filters. Hide Paid Bills and Hide Completed Reminders are independent view filters (unpaid bills and open reminders stay). Persist vs reset for all four is Settings → General.',
-      'Grid shows 3 chips + “+N”. Ctrl+click multi-select. Habit check-in from the day list uses that day, not necessarily today. Bills/habits show no clock time.',
+      'Grid shows 3 chips + “+X”. Hidden chips follow bills, then reminders, then habits, then tasks, then anything else. The day list uses that same order. Hover “+X” to see the hidden chips; it closes when the pointer leaves. “+X” is red when a bill is still hidden. Ctrl+click multi-select. Habit check-in from the day list uses that day, not necessarily today. Bills/habits show no clock time.',
     ],
   },
   {

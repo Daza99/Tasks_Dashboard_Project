@@ -39,6 +39,7 @@ function AppInner() {
   const [activeView, setActiveView] = useState('today');
   const [editRequest, setEditRequest] = useState(null); // { type, id, completed?, occurrenceDate? }
   const [createSeed, setCreateSeed] = useState(null); // { type, date } yyyy-MM-dd
+  const [settingsTab, setSettingsTab] = useState(null); // one-shot tab, e.g. Help → Guide
 
   /** Brief Edit / notif VIEW → Focus on module with item open for edit. */
   const requestEdit = useCallback((type, id, opts) => {
@@ -70,6 +71,18 @@ function AppInner() {
       enterFocus();
     });
   }, [requestEdit, enterFocus]);
+
+  const clearSettingsTab = useCallback(() => setSettingsTab(null), []);
+
+  // Help → Guide. Settings only renders in Focus.
+  useEffect(() => {
+    if (!window.api?.onOpenGuide) return undefined;
+    return window.api.onOpenGuide(() => {
+      setSettingsTab('guide');
+      setActiveView('settings');
+      enterFocus();
+    });
+  }, [enterFocus]);
 
   if (error) {
     return (
@@ -104,11 +117,19 @@ function AppInner() {
   }
 
   let focusContent = <StubView viewId={activeView || 'module'} />;
-  if (activeView === 'today') {
+  if (activeView === 'today' || activeView === 'this-week') {
     focusContent = (
-      <TodayView onEditRequest={requestEdit} onNavigate={setActiveView} />
+      <TodayView
+        mode={activeView === 'this-week' ? 'week' : 'today'}
+        onEditRequest={requestEdit}
+        onNavigate={setActiveView}
+      />
     );
-  } else if (activeView === 'settings') focusContent = <SettingsView />;
+  } else if (activeView === 'settings') {
+    focusContent = (
+      <SettingsView initialTab={settingsTab} onInitialTabConsumed={clearSettingsTab} />
+    );
+  }
   else if (activeView === 'tasks') {
     focusContent = (
       <TasksView

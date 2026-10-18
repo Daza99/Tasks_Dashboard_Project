@@ -9,6 +9,11 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;');
 }
 
+/** CRLF and lone CR → LF. A leftover CR is parsed as a second line break. */
+function normalizeNewlines(src) {
+  return String(src || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
 /** Parse #rgb / #rrggbb / rgb() to lowercase #rrggbb, or null. */
 function rgbToHex(c) {
   if (!c) return null;
@@ -100,7 +105,7 @@ function inline(s) {
  * @returns {string} HTML
  */
 export function renderBasicMd(src) {
-  const lines = String(src || '').split('\n');
+  const lines = normalizeNewlines(src).split('\n');
   const out = [];
   let listKind = null; // 'ul' | 'ol'
 
@@ -163,7 +168,7 @@ export function renderBasicMd(src) {
  * @returns {string}
  */
 export function mdToEditHtml(src) {
-  return escapeHtml(String(src || ''))
+  return escapeHtml(normalizeNewlines(src))
     .replace(
       hlMarkRe(),
       '<span data-md-hl="#$1" style="background-color:#$1">$2</span>'
@@ -226,7 +231,7 @@ export function editHtmlToMd(root) {
   ) {
     return '';
   }
-  return serializeNodes(root.childNodes);
+  return normalizeNewlines(serializeNodes(root.childNodes));
 }
 
 /** Strip MD / color / highlight marks for .txt export. */

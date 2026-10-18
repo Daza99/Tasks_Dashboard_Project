@@ -9,6 +9,11 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;');
 }
 
+/** CRLF and lone CR → LF. A leftover CR is parsed as a second line break. */
+function normalizeNewlines(src) {
+  return String(src || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
 function colorMarkRe() {
   return /\{#([0-9a-fA-F]{6})\}(.*?)\{\/\}/gs;
 }
@@ -57,7 +62,7 @@ function inline(s) {
 }
 
 function renderBasicMd(src) {
-  const lines = String(src || '').split('\n');
+  const lines = normalizeNewlines(src).split('\n');
   const out = [];
   let listKind = null;
 

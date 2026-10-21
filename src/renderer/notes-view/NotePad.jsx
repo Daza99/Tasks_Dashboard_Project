@@ -10,6 +10,7 @@ import {
   nextMarker,
 } from '../../utils/bullet-lines.js';
 import { registerDocFlusher } from '../lists-view/docFlush.js';
+import ColorPalettePopover from '../components/ColorPalettePopover';
 
 const FONTS = [
   { id: 'outfit', label: 'Outfit', css: '"Outfit", "Segoe UI", sans-serif' },
@@ -238,6 +239,8 @@ export default function NotePad({ note, onSaved, popout = false }) {
   const [bgColor, setBgColor] = useState(style.bgColor || '#ffffff');
   const [highlightColor, setHighlightColor] = useState(style.highlightColor || DEFAULT_HL);
   const [hlArmed, setHlArmed] = useState(false);
+  const [hlOpen, setHlOpen] = useState(false);
+  const [bgOpen, setBgOpen] = useState(false);
   const [headingOpen, setHeadingOpen] = useState(false);
   const [swatchOverride, setSwatchOverride] = useState(null);
   const [savingFlash, setSavingFlash] = useState(false);
@@ -247,6 +250,8 @@ export default function NotePad({ note, onSaved, popout = false }) {
   const dirty = useRef(false);
   const ceRef = useRef(null);
   const headingWrapRef = useRef(null);
+  const hlChipRef = useRef(null);
+  const bgChipRef = useRef(null);
   const saveFlashTimer = useRef(null);
   const seenId = useRef(note.id);
   const pending = useRef({
@@ -294,6 +299,8 @@ export default function NotePad({ note, onSaved, popout = false }) {
     setHighlightColor(style.highlightColor || DEFAULT_HL);
     setPreview(false);
     setHlArmed(false);
+    setHlOpen(false);
+    setBgOpen(false);
     setHeadingOpen(false);
     setSwatchOverride(null);
     setLinkHover(false);
@@ -446,10 +453,6 @@ export default function NotePad({ note, onSaved, popout = false }) {
     }
     setSwatchOverride(null);
     bump({ fontColor: hex });
-  }
-
-  function onHighlightSwatch(e) {
-    bump({ highlightColor: e.target.value });
   }
 
   /** Apply or clear hiliteColor on the current selection. */
@@ -633,10 +636,30 @@ export default function NotePad({ note, onSaved, popout = false }) {
           </label>
           <label className="list-pad__field list-pad__field--swatch">
             <span className="list-pad__caption">BG Color</span>
-            <input
-              type="color"
+            <button
+              ref={bgChipRef}
+              type="button"
+              className="list-pad__color-chip"
+              title="BG Color"
+              aria-label="BG Color"
+              aria-expanded={bgOpen}
+              aria-haspopup="dialog"
+              style={{ backgroundColor: bgColor }}
+              onMouseDown={keepSelection}
+              onClick={() => {
+                if (!bgOpen) setBgOpen(true);
+              }}
+            />
+            <ColorPalettePopover
+              open={bgOpen}
+              anchorRef={bgChipRef}
+              label="BG Color"
               value={bgColor}
-              onChange={(e) => bump({ bgColor: e.target.value })}
+              deferCommit
+              showCancel
+              onChange={(hex) => bump({ bgColor: hex })}
+              onCommit={() => setBgOpen(false)}
+              onCancel={() => setBgOpen(false)}
             />
           </label>
         </div>
@@ -714,14 +737,31 @@ export default function NotePad({ note, onSaved, popout = false }) {
             >
               HL
             </button>
-            <label className="list-pad__field list-pad__field--swatch" title="Highlight color">
-              <input
-                type="color"
-                value={highlightColor}
-                onMouseDown={keepSelection}
-                onChange={onHighlightSwatch}
-              />
-            </label>
+            <button
+              ref={hlChipRef}
+              type="button"
+              className="list-pad__color-chip"
+              title="Highlight color"
+              aria-label="Highlight color"
+              aria-expanded={hlOpen}
+              aria-haspopup="dialog"
+              style={{ backgroundColor: highlightColor }}
+              onMouseDown={keepSelection}
+              onClick={() => {
+                if (!hlOpen) setHlOpen(true);
+              }}
+            />
+            <ColorPalettePopover
+              open={hlOpen}
+              anchorRef={hlChipRef}
+              label="Highlight"
+              value={highlightColor}
+              deferCommit
+              showCancel
+              onChange={(hex) => bump({ highlightColor: hex })}
+              onCommit={() => setHlOpen(false)}
+              onCancel={() => setHlOpen(false)}
+            />
           </div>
           <div className="list-pad__save-col">
             <span

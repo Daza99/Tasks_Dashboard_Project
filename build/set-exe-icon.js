@@ -1,7 +1,8 @@
 /**
  * electron-builder skips rcedit when signAndEditExecutable is false, so the
- * exe keeps the Electron icon. The NSIS setup file is branded separately.
- * Stamp build/icon.ico onto the packed exe before the installer is built.
+ * exe keeps the Electron icon and Electron's file version. The NSIS setup
+ * file is branded separately. Stamp build/icon.ico and the package version
+ * onto the packed exe before the installer is built.
  * @param {import('app-builder-lib').AfterPackContext} context
  */
 module.exports = async function setExeIcon(context) {
@@ -12,12 +13,29 @@ module.exports = async function setExeIcon(context) {
 
   const exe = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`);
   const ico = path.join(context.packager.projectDir, 'build', 'icon.ico');
+  const version = toWindowsVersion(context.packager.appInfo.version);
   const rcedit = findRcedit();
-  const result = spawnSync(rcedit, [exe, '--set-icon', ico], { stdio: 'inherit' });
+  const result = spawnSync(rcedit, [
+    exe,
+    '--set-icon', ico,
+    '--set-file-version', version,
+    '--set-product-version', version,
+  ], { stdio: 'inherit' });
   if (result.status !== 0) {
-    throw new Error(`rcedit --set-icon failed (${result.status})`);
+    throw new Error(`rcedit failed (${result.status})`);
   }
 };
+
+/**
+ * Windows VERSIONINFO needs four numeric parts. 1.0.12 → 1.0.12.0.
+ * @param {string} semver
+ * @returns {string}
+ */
+function toWindowsVersion(semver) {
+  const parts = String(semver || '0.0.0').split('.').slice(0, 4);
+  while (parts.length < 4) parts.push('0');
+  return parts.map((part) => String(parseInt(part, 10) || 0)).join('.');
+}
 
 /** Newest rcedit-x64.exe from the electron-builder winCodeSign cache. */
 function findRcedit() {

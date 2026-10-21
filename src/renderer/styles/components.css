@@ -3211,6 +3211,22 @@ html[data-theme-base='dark'] .edit-form input[type='datetime-local']::-webkit-ca
   background: transparent;
   cursor: pointer;
 }
+/* Same box as the native swatch; fill is the committed color. */
+.list-pad__color-chip {
+  box-sizing: border-box;
+  width: 36px;
+  height: 26px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  flex-shrink: 0;
+  font-size: 0;
+  line-height: 0;
+}
 /* Swatches sit center-bottom under captions; extra air after Font size */
 .list-pad__swatches {
   display: flex;

@@ -7,27 +7,58 @@ import { useDateFormat } from '../hooks/useDateFormat';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { HabitColorDot } from '../components/HabitColorField';
 
-function fmtWhen(iso) {
-  if (!iso || iso.startsWith('9999')) return 'Open';
+/**
+ * Local calendar day. A bare yyyy-mm-dd stays that civil day.
+ * ISO timestamps use the local day so a UTC Z value does not shift the label.
+ * @param {string|Date|null|undefined} value
+ * @returns {Date|null}
+ */
+function localDay(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) return isValid(value) ? value : null;
+  const s = String(value);
+  if (s.startsWith('9999')) return null;
+  const key = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (key) {
+    const d = new Date(Number(key[1]), Number(key[2]) - 1, Number(key[3]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
   try {
-    const d = typeof iso === 'string' ? parseISO(iso) : new Date(iso);
-    if (!isValid(d)) return iso;
-    return format(d, 'h:mm a');
+    const d = parseISO(s);
+    return isValid(d) ? d : null;
   } catch {
-    return iso;
+    return null;
   }
 }
 
-/** Week rows need the day; storage order is yyyy-mm-dd. */
-function fmtWhenDated(iso) {
-  if (!iso || iso.startsWith('9999')) return 'Open';
-  try {
-    const d = typeof iso === 'string' ? parseISO(iso) : new Date(iso);
-    if (!isValid(d)) return iso;
-    return format(d, 'yyyy-MM-dd · h:mm a');
-  } catch {
-    return iso;
-  }
+/** 12-hour clock from stored Actual HH:mm. Blank when missing — no Note-time fallback. */
+function clockFromActual(hhmm) {
+  if (!hhmm || !/^\d{2}:\d{2}$/.test(String(hhmm))) return '';
+  const [hh, mm] = String(hhmm).split(':').map(Number);
+  if (hh > 23 || mm > 59) return '';
+  return format(new Date(2000, 0, 1, hh, mm), 'h:mm a');
+}
+
+/** Wall clock from a due ISO (tasks). */
+function clockFromIso(iso) {
+  const d = localDay(iso);
+  if (!d) return '';
+  return format(d, 'h:mm a');
+}
+
+/**
+ * This Week stamp: weekday + settings date, then an optional clock.
+ * @param {string|Date|null|undefined} value
+ * @param {string} timeLabel
+ * @param {(value: Date) => string} formatDate
+ */
+function weekStamp(value, timeLabel, formatDate) {
+  const d = localDay(value);
+  if (!d) return timeLabel || 'Open';
+  const date = formatDate(d);
+  if (!date) return timeLabel || 'Open';
+  const head = `${format(d, 'EEEE')} ${date}`;
+  return timeLabel ? `${head} · ${timeLabel}` : head;
 }
 
 /** Task due time, or overdue if the due datetime is before local midnight. */
@@ -55,12 +86,11 @@ function fmtTaskWhen(iso) {
 export default function TodayView({ mode = 'today', onEditRequest, onNavigate }) {
   const { brief, loading, error, refresh } = useBrief();
   const { enterCompact } = useLayout();
-  const { methodHint } = useDateFormat();
+  const { methodHint, formatDate } = useDateFormat();
   const [payingId, setPayingId] = useState(null);
   const [payActual, setPayActual] = useState('');
   const [payMode, setPayMode] = useState('paid');
   const isWeek = mode === 'week';
-  const when = isWeek ? fmtWhenDated : fmtWhen;
   const emptyLabel = isWeek ? 'None in the next 7 days.' : 'None today.';
 
   const tasks = (isWeek ? brief?.tasksNext7 : brief?.tasksToday) || [];
@@ -125,7 +155,7 @@ export default function TodayView({ mode = 'today', onEditRequest, onNavigate })
       </div>
       <p className="today-view__meta">
         {isWeek
-          ? 'Next 7 days from today (date method: yyyy-mm-dd)'
+          ? `Next 7 days from today (date method: ${methodHint})`
           : `Due today only (date method: ${methodHint})`}
       </p>
 
@@ -154,7 +184,9 @@ export default function TodayView({ mode = 'today', onEditRequest, onNavigate })
                 <div className="today-view__main">
                   <span className="today-view__name">{t.title}</span>
                   <span className="today-view__when">
-                    {isWeek ? when(t.due_datetime) : fmtTaskWhen(t.due_datetime)}
+                    {isWeek
+                      ? weekStamp(t.due_datetime, clockFromIso(t.due_datetime), formatDate)
+                      : fmtTaskWhen(t.due_datetime)}
                   </span>
                 </div>
                 <div className="today-view__actions">
@@ -200,7 +232,7 @@ export default function TodayView({ mode = 'today', onEditRequest, onNavigate })
                   </span>
                   {isWeek ? (
                     <span className="today-view__when">
-                      {h.next_due_date}
+                      {weekStamp(h.next_due_date, '', formatDate)}
                       {h.streak > 0 ? ` · ${h.streak} streak` : ''}
                     </span>
                   ) : (
@@ -256,7 +288,11 @@ export default function TodayView({ mode = 'today', onEditRequest, onNavigate })
               >
                 <div className="today-view__main">
                   <span className="today-view__name">{r.title}</span>
-                  <span className="today-view__when">{when(r.datetime)}</span>
+                  <span className="today-view__when">
+                    {isWeek
+                      ? weekStamp(r.datetime, clockFromActual(r.actual_time), formatDate)
+                      : clockFromActual(r.actual_time)}
+                  </span>
                 </div>
                 <div className="today-view__actions">
                   <button type="button" onClick={() => completeRem(r.id)}>
@@ -299,7 +335,9 @@ export default function TodayView({ mode = 'today', onEditRequest, onNavigate })
                     {b.amount_mode === 'average' && ' avg'}
                   </span>
                   <span className="today-view__when">
-                    {isWeek ? `due ${b.watch_date}` : 'due today'}
+                    {isWeek
+                      ? `due ${weekStamp(b.watch_date, '', formatDate)}`
+                      : 'due today'}
                   </span>
                 </div>
                 <div className="today-view__actions">

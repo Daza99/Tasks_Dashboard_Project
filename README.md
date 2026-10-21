@@ -56,6 +56,10 @@ Patch on v1.09. Packaged as semver **1.0.10**.
 
 Patch on v1.10. Packaged as semver **1.0.11**.
 
+## v1.12
+
+Patch on v1.11. Packaged as semver **1.0.12**.
+
 ## Portable build
 
 ```bash
@@ -64,7 +68,7 @@ npm run dist:portable
 
 (`dist:dir` is an alias.) Output: `release/portable/win-unpacked/`. Copy that **entire** folder to a USB stick (NTFS or exFAT — not FAT32; SQLite WAL locking fails on FAT32).
 
-First run creates `data/` beside the exe: `dashboard.db`, Chromium userData (`data/chromium/`), plus `wallpapers/`, `sounds/`, `exports/`, `themes/`, `backups/`. Nothing is written to `%APPDATA%`. Menubar: **V1.011 (Portable)**.
+First run creates `data/` beside the exe: `dashboard.db`, Chromium userData (`data/chromium/`), plus `wallpapers/`, `sounds/`, `exports/`, `themes/`, `backups/`. Nothing is written to `%APPDATA%`. Menubar: **V1.012 (Portable)**.
 
 ## Desktop install
 
@@ -72,7 +76,7 @@ First run creates `data/` beside the exe: `dashboard.db`, Chromium userData (`da
 npm run dist:desktop
 ```
 
-Output: `release/desktop/Daybrief Setup 1.0.11.exe` (per-user NSIS, no admin). Data default: `%APPDATA%\personal-dashboard\data`. Chromium cache stays in AppData. Settings → Data can move the data folder (copy + relaunch; old folder is left in place). Menubar: **V1.011 (Desktop)**.
+Output: `release/desktop/Daybrief Setup 1.0.12.exe` (per-user NSIS, no admin). Data default: `%APPDATA%\personal-dashboard\data`. Chromium cache stays in AppData. Settings → Data can move the data folder (copy + relaunch; old folder is left in place). Menubar: **V1.012 (Desktop)**.
 
 To preview the data-folder picker in dev (PowerShell): `$env:DASHBOARD_FLAVOR='desktop'; npm run dev`.
 

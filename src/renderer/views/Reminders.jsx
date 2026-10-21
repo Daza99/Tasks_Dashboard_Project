@@ -597,6 +597,15 @@ export default function RemindersView({
                       className={editScope === s ? 'active' : ''}
                       onClick={() => {
                         setEditScope(s);
+                        // Today/Tomorrow rewrite the date; keep the Note-time clock.
+                        if (s === 'today' || s === 'tomorrow') {
+                          const day =
+                            s === 'today'
+                              ? todayKey()
+                              : format(addDays(new Date(), 1), 'yyyy-MM-dd');
+                          const clock = editDue.length >= 16 ? editDue.slice(11, 16) : '09:00';
+                          setEditDue(`${day}T${clock}`);
+                        }
                         if (s === 'open') {
                           setEditRecurrence(null);
                           setEditNudge(false);

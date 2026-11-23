@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { addDays, format } from 'date-fns';
+import { addDays, format, isValid, parseISO } from 'date-fns';
 import { useBrief } from '../context/BriefContext';
 import TagInput from '../components/TagInput';
 import TagSearchInput from '../components/TagSearchInput';
@@ -20,61 +20,177 @@ import { NudgePreview, NudgeRow, todayKey } from '../components/NudgeRow';
 import NudgeCustomDialog from '../components/NudgeCustomDialog';
 import HabitCategoryManageDialog from '../components/HabitCategoryManageDialog';
 import { DEFAULT_PRIORITY } from '../../utils/priority.js';
+import { useDateFormat } from '../hooks/useDateFormat';
 import { useScrollEditIntoView } from '../hooks/useScrollEditIntoView';
 import { useSelectedCard } from '../hooks/useSelectedCard';
 import { useVisibleSelection } from '../hooks/useVisibleSelection';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import { matchesEntitySearch } from '../../utils/entity-search.js';
 
-const FREQS = ['daily', '3day', 'weekly', 'fortnightly', 'monthly'];
-const FILTER_OPTS = ['all', 'daily', '3day', 'weekly', 'fortnightly', 'monthly'];
+const SCOPES = ['today', 'tomorrow', 'dated'];
+/** Fortnight stays stored as fortnightly. Quarterly tooltip matches bills (3 months). */
+const HABIT_FREQS = [
+  { id: 'daily', label: 'Daily' },
+  { id: '3day', label: '3 Day' },
+  { id: 'weekly', label: 'Weekly' },
+  { id: 'fortnightly', label: 'Fortnight' },
+  { id: 'quarterly', label: 'Quarterly', title: '3 Months' },
+  { id: 'monthly', label: 'Monthly' },
+];
+const FILTER_OPTS = ['all', ...HABIT_FREQS.map((f) => f.id)];
 const CAT_NEW = '__new__';
 const CAT_NONE = '';
 const DEFAULT_NUDGE_TIME = '09:00';
 
-/** Stored freq → UI label (3day is two words). */
+/** Stored / legacy freq → a tick-box id. */
+function uiFrequency(f) {
+  if (f === 'weekdays') return 'weekly';
+  if (f === 'custom') return 'monthly';
+  if (f === 'fortnight') return 'fortnightly';
+  return HABIT_FREQS.some((x) => x.id === f) ? f : 'daily';
+}
+
+/** Stored freq → UI label. */
 function freqLabel(f) {
   if (f === 'all') return 'All';
-  if (f === '3day') return '3 Day';
+  if (f === 'weekdays') return 'Weekly';
+  if (f === 'custom') return 'Monthly';
+  if (f === 'fortnight') return 'Fortnight';
+  const hit = HABIT_FREQS.find((x) => x.id === f);
+  if (hit) return hit.label;
+  if (!f) return '';
   return f.charAt(0).toUpperCase() + f.slice(1);
 }
 
-/** Local due check for create/edit nudge preview (mirrors habits.js isDueOn). */
-function localDueOn(freq, createdAt, d) {
-  if (freq === 'daily') return true;
-  if (freq === '3day' || freq === 'fortnightly') {
-    const start = createdAt ? new Date(createdAt) : d;
-    const startMid = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    const dMid = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const diff = Math.round((dMid - startMid) / 86400000);
-    const step = freq === 'fortnightly' ? 14 : 3;
-    return diff >= 0 && diff % step === 0;
+/** Local midnight for a yyyy-mm-dd anchor. Invalid values fall back to today. */
+function parseAnchor(anchor) {
+  if (anchor && /^\d{4}-\d{2}-\d{2}$/.test(anchor)) {
+    const [y, m, d] = anchor.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    if (dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d) return dt;
   }
-  if (freq === 'weekly') {
-    const day = d.getDay();
-    return day >= 1 && day <= 5;
-  }
-  if (freq === 'monthly') {
-    const created = createdAt ? new Date(createdAt) : d;
-    const dom = created.getDate();
-    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    return d.getDate() === Math.min(dom, last);
-  }
-  return true;
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate());
 }
 
-/** Next due yyyy-MM-dd on or after today. */
-function nextDueKey(freq, createdAt) {
+/** yyyy-mm-dd for the Today / Tomorrow / Dated buttons. */
+function anchorForScope(scope, dated) {
+  if (scope === 'today') return todayKey();
+  if (scope === 'tomorrow') return format(addDays(new Date(), 1), 'yyyy-MM-dd');
+  return dated && /^\d{4}-\d{2}-\d{2}$/.test(dated) ? dated : todayKey();
+}
+
+/** today / tomorrow when the anchor is that day, otherwise dated. */
+function scopeFromAnchor(anchor) {
+  if (!anchor || anchor === todayKey()) return 'today';
+  if (anchor === format(addDays(new Date(), 1), 'yyyy-MM-dd')) return 'tomorrow';
+  return 'dated';
+}
+
+/** List label: today, tomorrow, or the stored yyyy-mm-dd. */
+function anchorScopeLabel(anchor) {
+  if (!anchor) return '';
+  const scope = scopeFromAnchor(anchor);
+  return scope === 'dated' ? anchor : scope;
+}
+
+/** Row start date: stored anchor, else created local day. */
+function rowAnchor(h) {
+  if (h?.anchor_date && /^\d{4}-\d{2}-\d{2}$/.test(h.anchor_date)) return h.anchor_date;
+  if (h?.created_at) {
+    const created = new Date(h.created_at);
+    if (!Number.isNaN(created.getTime())) return format(created, 'yyyy-MM-dd');
+  }
+  return todayKey();
+}
+
+/**
+ * Nudge-preview due check. Mirrors habits.js isDueOn:
+ * count forward from the anchor. Weekly is +7 days, not Mon–Fri.
+ */
+function localDueOn(freq, anchor, d) {
+  const start = parseAnchor(anchor);
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.floor(
+    (Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()) -
+      Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) /
+      86400000
+  );
+  if (diff < 0) return false;
+  const f =
+    freq === 'weekdays'
+      ? 'weekly'
+      : freq === 'custom'
+        ? 'monthly'
+        : freq === 'fortnight'
+          ? 'fortnightly'
+          : freq;
+  if (f === 'daily') return true;
+  if (f === '3day') return diff % 3 === 0;
+  if (f === 'weekly') return diff % 7 === 0;
+  if (f === 'fortnightly') return diff % 14 === 0;
+  if (f === 'monthly' || f === 'quarterly') {
+    const step = f === 'quarterly' ? 3 : 1;
+    const months =
+      (day.getFullYear() - start.getFullYear()) * 12 + (day.getMonth() - start.getMonth());
+    if (months < 0 || months % step !== 0) return false;
+    const last = new Date(day.getFullYear(), day.getMonth() + 1, 0).getDate();
+    return day.getDate() === Math.min(start.getDate(), last);
+  }
+  return false;
+}
+
+/** ISO from a local yyyy-MM-dd and HH:mm. */
+function localToIso(date, time) {
+  const base = parseISO(`${date}T${time || DEFAULT_NUDGE_TIME}:00`);
+  return isValid(base) ? base.toISOString() : null;
+}
+
+/** Next due yyyy-MM-dd on or after today (or the anchor, if that is later). */
+function nextDueKey(freq, anchor) {
   let c = new Date();
   c = new Date(c.getFullYear(), c.getMonth(), c.getDate());
-  const start = createdAt ? new Date(createdAt) : c;
-  const startMid = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  if (c < startMid) c = startMid;
+  const start = parseAnchor(anchor);
+  if (c < start) c = new Date(start);
   for (let i = 0; i < 400; i += 1) {
-    if (localDueOn(freq, createdAt, c)) return format(c, 'yyyy-MM-dd');
+    if (localDueOn(freq, anchor, c)) return format(c, 'yyyy-MM-dd');
     c = addDays(c, 1);
   }
   return format(c, 'yyyy-MM-dd');
+}
+
+/** Exclusive frequency tick boxes. The active box stays on. */
+function HabitFreqChecks({ value, onChange }) {
+  return HABIT_FREQS.map((opt) => (
+    <label key={opt.id} className="cal-appt-check" title={opt.title}>
+      <input
+        type="checkbox"
+        checked={value === opt.id}
+        onChange={() => {
+          if (value !== opt.id) onChange(opt.id);
+        }}
+      />
+      {opt.label}
+    </label>
+  ));
+}
+
+/** Today / Tomorrow / Dated. No Open — a habit always has a start date. */
+function HabitScopeToggle({ value, onChange }) {
+  return (
+    <div className="kind-toggle" role="group" aria-label="Start date">
+      {SCOPES.map((s) => (
+        <button
+          key={s}
+          type="button"
+          className={value === s ? 'active' : ''}
+          onClick={() => onChange(s)}
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /** Parse tags for create/update — drop system names from user field. */
@@ -98,13 +214,17 @@ export default function HabitsView({
   onSeedConsumed,
 }) {
   const { refresh } = useBrief();
+  const { methodHint } = useDateFormat();
   const [mode, setMode] = useState('edit'); // edit | archive
   const [rows, setRows] = useState([]);
   const [name, setName] = useState('');
   const [frequency, setFrequency] = useState('daily');
+  const [scope, setScope] = useState('today');
+  const [startDate, setStartDate] = useState(() => todayKey());
   const [nudgeOn, setNudgeOn] = useState(false);
   const [nudgeMode, setNudgeMode] = useState('custom');
   const [nudgeTime, setNudgeTime] = useState(DEFAULT_NUDGE_TIME);
+  const [customDate, setCustomDate] = useState(() => todayKey());
   const [tagsInput, setTagsInput] = useState('');
   const [priority, setPriority] = useState(DEFAULT_PRIORITY);
   const [details, setDetails] = useState('');
@@ -118,9 +238,12 @@ export default function HabitsView({
   const { selectedId, setSelectedId, listRef } = useSelectedCard();
   const [editName, setEditName] = useState('');
   const [editFreq, setEditFreq] = useState('daily');
+  const [editScope, setEditScope] = useState('today');
+  const [editStart, setEditStart] = useState(() => todayKey());
   const [editNudgeOn, setEditNudgeOn] = useState(false);
   const [editNudgeMode, setEditNudgeMode] = useState('custom');
   const [editNudgeTime, setEditNudgeTime] = useState(DEFAULT_NUDGE_TIME);
+  const [editCustomDate, setEditCustomDate] = useState(() => todayKey());
   const [editTags, setEditTags] = useState('');
   const [editPriority, setEditPriority] = useState(DEFAULT_PRIORITY);
   const [editDetails, setEditDetails] = useState('');
@@ -154,9 +277,10 @@ export default function HabitsView({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when archive mode flips
   }, [mode]);
 
-  const createDue = nextDueKey(frequency);
-  const editingRow = rows.find((x) => x.id === editingId);
-  const editDue = nextDueKey(editFreq, editingRow?.created_at);
+  const createAnchor = anchorForScope(scope, startDate);
+  const createDue = nextDueKey(frequency, createAnchor);
+  const editAnchor = anchorForScope(editScope, editStart);
+  const editDue = nextDueKey(editFreq, editAnchor);
 
   // Due today cannot use Day Before (would be yesterday).
   useEffect(() => {
@@ -182,11 +306,14 @@ export default function HabitsView({
     onEditConsumed?.();
   }, [editId, rows]);
 
-  // Calendar RMB: land on create with Add to Calendar ticked (no due field to seed).
+  // Calendar RMB: land on create, Dated to that day, Add to Calendar ticked.
   useEffect(() => {
     if (!seedDate) return;
     setMode('edit');
     setShowOnCalendar(true);
+    setScope('dated');
+    setStartDate(seedDate);
+    setCustomDate(nextDueKey(frequency, seedDate));
     onSeedConsumed?.();
   }, [seedDate]);
 
@@ -220,12 +347,17 @@ export default function HabitsView({
       await window.api.createHabit({
         name,
         frequency,
+        anchor_date: createAnchor,
         nudge_time: nudgeOn ? nudgeTime || DEFAULT_NUDGE_TIME : null,
         nudge_mode: nudgeOn
           ? nudgeMode === 'day_before'
             ? 'day_before'
             : 'custom'
           : null,
+        nudge_datetime:
+          nudgeOn && nudgeMode === 'custom' && scope === 'dated'
+            ? localToIso(customDate, nudgeTime || DEFAULT_NUDGE_TIME)
+            : null,
         tags: parseTagsInput(tagsInput),
         priority,
         description: details.trim() || null,
@@ -255,10 +387,21 @@ export default function HabitsView({
     setEditingId(h.id);
     setSelectedId(h.id);
     setEditName(h.name);
-    setEditFreq(h.frequency);
+    setEditFreq(uiFrequency(h.frequency));
+    const anchor = rowAnchor(h);
+    setEditScope(scopeFromAnchor(anchor));
+    setEditStart(anchor);
     setEditNudgeOn(Boolean(h.nudge_time));
     setEditNudgeMode(h.nudge_mode === 'day_before' ? 'day_before' : 'custom');
     setEditNudgeTime(h.nudge_time || DEFAULT_NUDGE_TIME);
+    if (h.nudge_datetime) {
+      const d = parseISO(h.nudge_datetime);
+      setEditCustomDate(
+        isValid(d) ? format(d, 'yyyy-MM-dd') : nextDueKey(uiFrequency(h.frequency), anchor)
+      );
+    } else {
+      setEditCustomDate(nextDueKey(uiFrequency(h.frequency), anchor));
+    }
     setEditTags(userTagsDisplay(h.tags));
     setEditPriority(h.priority ?? DEFAULT_PRIORITY);
     setEditDetails(h.description || '');
@@ -273,12 +416,17 @@ export default function HabitsView({
       await window.api.updateHabit(editingId, {
         name: editName,
         frequency: editFreq,
+        anchor_date: editAnchor,
         nudge_time: editNudgeOn ? editNudgeTime || DEFAULT_NUDGE_TIME : null,
         nudge_mode: editNudgeOn
           ? editNudgeMode === 'day_before'
             ? 'day_before'
             : 'custom'
           : null,
+        nudge_datetime:
+          editNudgeOn && editNudgeMode === 'custom' && editScope === 'dated'
+            ? localToIso(editCustomDate, editNudgeTime || DEFAULT_NUDGE_TIME)
+            : null,
         tags: parseTagsInput(editTags),
         priority: editPriority,
         description: editDetails.trim() || null,
@@ -477,7 +625,7 @@ export default function HabitsView({
       <p className="module-view__hint">
         {isArchive
           ? 'Shelved habits. Activate restores them to the active list.'
-          : 'Daily / 3 Day / weekly / fortnightly / monthly check-in. Optional nudge fires a #nudge popup.'}
+          : 'Today / Tomorrow / Dated start. Tick Daily, 3 Day, Weekly, Fortnight, Quarterly, or Monthly. Optional nudge fires a #nudge popup. (date method: yyyy-mm-dd)'}
       </p>
 
       {!isArchive && (
@@ -488,18 +636,30 @@ export default function HabitsView({
             onChange={(e) => setName(e.target.value)}
             placeholder="Habit name"
           />
-          <div className="kind-toggle" role="group" aria-label="Frequency">
-            {FREQS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                className={frequency === f ? 'active' : ''}
-                onClick={() => setFrequency(f)}
-              >
-                {freqLabel(f)}
-              </button>
-            ))}
-          </div>
+          <HabitScopeToggle
+            value={scope}
+            onChange={(s) => {
+              setScope(s);
+              if (s === 'today') setStartDate(todayKey());
+              else if (s === 'tomorrow') setStartDate(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
+              // Dated nudge date tracks the next due, including when that due is still today.
+              if (s === 'dated') setCustomDate(nextDueKey(frequency, startDate));
+            }}
+          />
+          {scope === 'dated' && (
+            <input
+              className="habit-dated-input"
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                const next = e.target.value;
+                setStartDate(next);
+                setCustomDate(nextDueKey(frequency, next));
+              }}
+              aria-label="Start date"
+              required
+            />
+          )}
           {categoryRow(category, 'create', 'Habit category', 'Category Edit (choose one below)')}
           <NudgeRow
             nudge={nudgeOn}
@@ -534,7 +694,7 @@ export default function HabitsView({
             mode={nudgeMode}
             dueDate={createDue}
             dueTime={nudgeTime || DEFAULT_NUDGE_TIME}
-            customDate={createDue}
+            customDate={scope === 'dated' ? customDate : createDue}
             customTime={nudgeTime || DEFAULT_NUDGE_TIME}
           />
           <label className="edit-label">
@@ -549,6 +709,13 @@ export default function HabitsView({
           <div className="reminder-meta-row reminder-meta-row--habit-color reminder-meta-row--details-fill">
             <div className="reminder-meta-row__left">
               <PrioritySelect id="habit-priority" value={priority} onChange={setPriority} />
+              <HabitFreqChecks
+                value={frequency}
+                onChange={(f) => {
+                  setFrequency(f);
+                  if (scope === 'dated') setCustomDate(nextDueKey(f, startDate));
+                }}
+              />
               <label className="cal-appt-check">
                 <input
                   type="checkbox"
@@ -587,7 +754,9 @@ export default function HabitsView({
       />
 
       <ul className="module-list" ref={listRef}>
-        {filtered.map((h) => (
+        {filtered.map((h) => {
+          const dueToday = h.next_due_date === todayKey();
+          return (
           <li
             key={h.id}
             ref={editingId === h.id ? editRowRef : null}
@@ -603,18 +772,35 @@ export default function HabitsView({
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                 />
-                <div className="kind-toggle">
-                  {FREQS.map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      className={editFreq === f ? 'active' : ''}
-                      onClick={() => setEditFreq(f)}
-                    >
-                      {freqLabel(f)}
-                    </button>
-                  ))}
-                </div>
+                <HabitScopeToggle
+                  value={editScope}
+                  onChange={(s) => {
+                    setEditScope(s);
+                    let start = editStart;
+                    if (s === 'today') {
+                      start = todayKey();
+                      setEditStart(start);
+                    } else if (s === 'tomorrow') {
+                      start = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+                      setEditStart(start);
+                    }
+                    if (s === 'dated') setEditCustomDate(nextDueKey(editFreq, start));
+                  }}
+                />
+                {editScope === 'dated' && (
+                  <input
+                    className="habit-dated-input"
+                    type="date"
+                    value={editStart}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setEditStart(next);
+                      setEditCustomDate(nextDueKey(editFreq, next));
+                    }}
+                    aria-label="Start date"
+                    required
+                  />
+                )}
                 {categoryRow(
                   editCategory,
                   'edit',
@@ -654,7 +840,7 @@ export default function HabitsView({
                   mode={editNudgeMode}
                   dueDate={editDue}
                   dueTime={editNudgeTime || DEFAULT_NUDGE_TIME}
-                  customDate={editDue}
+                  customDate={editScope === 'dated' ? editCustomDate : editDue}
                   customTime={editNudgeTime || DEFAULT_NUDGE_TIME}
                 />
                 <label className="edit-label">
@@ -672,6 +858,13 @@ export default function HabitsView({
                       id={`edit-habit-priority-${h.id}`}
                       value={editPriority}
                       onChange={setEditPriority}
+                    />
+                    <HabitFreqChecks
+                      value={editFreq}
+                      onChange={(f) => {
+                        setEditFreq(f);
+                        if (editScope === 'dated') setEditCustomDate(nextDueKey(f, editStart));
+                      }}
                     />
                     <label className="cal-appt-check">
                       <input
@@ -732,7 +925,9 @@ export default function HabitsView({
                         <HabitColorDot color={h.color} /> {h.name}
                       </strong>
                       <div className="module-list__meta">
-                        {freqLabel(h.frequency)}
+                        {anchorScopeLabel(rowAnchor(h))}
+                        {` · ${freqLabel(h.frequency)}`}
+                        {h.next_due_date ? ` · next ${h.next_due_date}` : ''}
                         {h.category ? ` · ${h.category}` : ''}
                         {h.nudge_time
                           ? ` · nudge${h.nudge_mode === 'day_before' ? ' day before' : ''} ${h.nudge_time}`
@@ -767,12 +962,18 @@ export default function HabitsView({
                       <>
                         <button
                           type="button"
-                          disabled={h.completed_today}
+                          disabled={!dueToday || h.completed_today}
+                          title={dueToday ? undefined : `Next due ${h.next_due_date || ''}`}
                           onClick={() => toggle(h.id)}
                         >
                           {h.completed_today ? 'Completed' : 'Not Completed'}
                         </button>
-                        <button type="button" onClick={() => toggle(h.id)}>
+                        <button
+                          type="button"
+                          disabled={!dueToday}
+                          title={dueToday ? undefined : `Next due ${h.next_due_date || ''}`}
+                          onClick={() => toggle(h.id)}
+                        >
                           Undo
                         </button>
                         <button
@@ -800,7 +1001,8 @@ export default function HabitsView({
               </>
             )}
           </li>
-        ))}
+          );
+        })}
         {!filtered.length && (
           <p className="stub-empty">
             {isArchive
@@ -839,19 +1041,27 @@ export default function HabitsView({
       />
       <NudgeCustomDialog
         open={Boolean(customOpen)}
-        timeOnly
+        timeOnly={(customOpen === 'edit' ? editScope : scope) !== 'dated'}
         dueDate={customOpen === 'edit' ? editDue : createDue}
         time={customOpen === 'edit' ? editNudgeTime : nudgeTime}
-        prompt="Time of day for the check-in ping."
-        onSave={(_date, clock) => {
+        initialDate={customOpen === 'edit' ? editCustomDate : customDate}
+        prompt={
+          (customOpen === 'edit' ? editScope : scope) === 'dated'
+            ? `When to ping before the next due (date method: ${methodHint}).`
+            : 'Time of day for the check-in ping.'
+        }
+        onSave={(date, clock) => {
+          const dated = (customOpen === 'edit' ? editScope : scope) === 'dated';
           if (customOpen === 'edit') {
             setEditNudgeOn(true);
             setEditNudgeMode('custom');
             setEditNudgeTime(clock);
+            if (dated) setEditCustomDate(date);
           } else {
             setNudgeOn(true);
             setNudgeMode('custom');
             setNudgeTime(clock);
+            if (dated) setCustomDate(date);
           }
           setCustomOpen(null);
         }}

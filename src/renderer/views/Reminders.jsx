@@ -88,6 +88,10 @@ function createDueDate(scope, date) {
   return date;
 }
 
+/** Hover on Open, and the details card while Open is selected. */
+const OPEN_SCOPE_HINT =
+  'No date to pick. No due, no popup, and no repeat — it stays in the list until you set a date.';
+
 /** ISO from local date + HH:mm. */
 function localToIso(date, time) {
   const base = parseISO(`${date}T${time || '09:00'}:00`);
@@ -174,6 +178,7 @@ export default function RemindersView({
     if (!seedDate) return;
     setScope('dated');
     setDate(seedDate);
+    setCustomDate(seedDate);
     setAppointment(true);
     onSeedConsumed?.();
   }, [seedDate]);
@@ -433,8 +438,13 @@ export default function RemindersView({
               key={s}
               type="button"
               className={scope === s ? 'active' : ''}
+              title={s === 'open' ? OPEN_SCOPE_HINT : undefined}
               onClick={() => {
                 setScope(s);
+                // Nudge popup date tracks the reminder date, including when it is still today.
+                if (s === 'today' || s === 'tomorrow' || s === 'dated') {
+                  setCustomDate(createDueDate(s, date));
+                }
                 if (s === 'open') {
                   setRecurrence(null);
                   setNudge(false);
@@ -452,7 +462,15 @@ export default function RemindersView({
             <div className="reminder-meta-row__left">
               <div className="settings-row reminder-times">
                 {scope === 'dated' && (
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setDate(next);
+                      setCustomDate(next);
+                    }}
+                  />
                 )}
                 <label className="reminder-time">
                   Note-time
@@ -522,7 +540,11 @@ export default function RemindersView({
               />
             </div>
           )}
-          <DetailsInline value={details} onChange={setDetails} />
+          <DetailsInline
+            value={details}
+            onChange={setDetails}
+            hint={scope === 'open' ? OPEN_SCOPE_HINT : undefined}
+          />
         </div>
         <label className="edit-label">
           Tags (optional)
@@ -595,6 +617,7 @@ export default function RemindersView({
                       key={s}
                       type="button"
                       className={editScope === s ? 'active' : ''}
+                      title={s === 'open' ? OPEN_SCOPE_HINT : undefined}
                       onClick={() => {
                         setEditScope(s);
                         // Today/Tomorrow rewrite the date; keep the Note-time clock.
@@ -605,6 +628,7 @@ export default function RemindersView({
                               : format(addDays(new Date(), 1), 'yyyy-MM-dd');
                           const clock = editDue.length >= 16 ? editDue.slice(11, 16) : '09:00';
                           setEditDue(`${day}T${clock}`);
+                          setEditCustomDate(day);
                         }
                         if (s === 'open') {
                           setEditRecurrence(null);
@@ -627,7 +651,14 @@ export default function RemindersView({
                           <input
                             type="datetime-local"
                             value={editDue}
-                            onChange={(e) => setEditDue(e.target.value)}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              const prevDate = editDue.slice(0, 10);
+                              const nextDate = next.slice(0, 10);
+                              setEditDue(next);
+                              // Clock-only edits keep a saved nudge date.
+                              if (nextDate && nextDate !== prevDate) setEditCustomDate(nextDate);
+                            }}
                             required
                           />
                         </label>
@@ -697,7 +728,11 @@ export default function RemindersView({
                       />
                     </div>
                   )}
-                  <DetailsInline value={editDetails} onChange={setEditDetails} />
+                  <DetailsInline
+                    value={editDetails}
+                    onChange={setEditDetails}
+                    hint={editScope === 'open' ? OPEN_SCOPE_HINT : undefined}
+                  />
                 </div>
                 <label className="edit-label">
                   Tags

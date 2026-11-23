@@ -16,8 +16,33 @@ import {
 import { invalidateTagCatalog } from '../hooks/useTagCatalog';
 import { rowDblClick } from '../../utils/row-dblclick.js';
 import DetailsPreview from '../components/DetailsPreview';
+import { todayKey } from '../components/NudgeRow';
 
 const PAGE = 10;
+
+/** Stored habit frequency → list label. */
+function habitFreqLabel(f) {
+  if (f === '3day') return '3 Day';
+  if (f === 'fortnightly' || f === 'fortnight') return 'Fortnight';
+  if (f === 'quarterly') return 'Quarterly';
+  if (f === 'weekly' || f === 'weekdays') return 'Weekly';
+  if (f === 'monthly' || f === 'custom') return 'Monthly';
+  if (f === 'daily') return 'Daily';
+  return f || null;
+}
+
+/** today / tomorrow, or the stored yyyy-mm-dd start. */
+function habitAnchorLabel(anchor) {
+  if (!anchor || !/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return null;
+  if (anchor === todayKey()) return 'today';
+  const n = new Date();
+  const tomorrow = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1);
+  const key = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(
+    tomorrow.getDate()
+  ).padStart(2, '0')}`;
+  if (anchor === key) return 'tomorrow';
+  return anchor;
+}
 
 const SORT_OPTS = [
   { value: 'all', label: 'ALL' },
@@ -622,11 +647,9 @@ function TagAttachedRow({
       </>
     );
     meta = [
-      item.frequency === '3day'
-        ? '3 Day'
-        : item.frequency === 'fortnightly'
-          ? 'Fortnightly'
-          : item.frequency,
+      habitAnchorLabel(item.anchor_date),
+      habitFreqLabel(item.frequency),
+      item.next_due_date ? `next ${item.next_due_date}` : null,
       item.nudge_time ? `nudge ${item.nudge_time}` : null,
       `streak ${item.streak || 0}`,
       item.completed_today ? 'done today' : null,
@@ -704,13 +727,24 @@ function TagAttachedRow({
             <>
               <button
                 type="button"
-                disabled={item.completed_today}
+                disabled={item.next_due_date !== todayKey() || item.completed_today}
+                title={
+                  item.next_due_date === todayKey()
+                    ? undefined
+                    : `Next due ${item.next_due_date || ''}`
+                }
                 onClick={() => onToggleHabit(tagName, item.id)}
               >
                 {item.completed_today ? 'Completed' : 'Not Completed'}
               </button>
               <button
                 type="button"
+                disabled={item.next_due_date !== todayKey()}
+                title={
+                  item.next_due_date === todayKey()
+                    ? undefined
+                    : `Next due ${item.next_due_date || ''}`
+                }
                 onClick={() => onToggleHabit(tagName, item.id)}
               >
                 Undo

@@ -29,7 +29,7 @@ Quick Add examples:
 - `remind call mom at 5pm` → today reminder
 - `remind dentist tomorrow` → tomorrow reminder
 - `$12.50 coffee` / `spent 12.50 groceries lunch` → transaction
-- `habit stretch daily` / `habit gym weekdays` → habit
+- `habit stretch daily` / `habit gym weekly` / `habit review quarterly` → habit
 
 
 ## v1.08

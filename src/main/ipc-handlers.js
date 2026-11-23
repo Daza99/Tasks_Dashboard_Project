@@ -470,7 +470,11 @@ function registerIpcHandlers() {
   ipcMain.handle('habits:create', (_e, data) => createHabit(data));
   ipcMain.handle('habits:update', (_e, id, fields) => {
     const row = updateHabit(id, fields);
-    if (fields?.nudge_time !== undefined || fields?.nudge_mode !== undefined) {
+    if (
+      fields?.nudge_time !== undefined ||
+      fields?.nudge_mode !== undefined ||
+      fields?.nudge_datetime !== undefined
+    ) {
       const { clearFiredSession } = require('./scheduler');
       clearFiredSession('habit', id);
     }

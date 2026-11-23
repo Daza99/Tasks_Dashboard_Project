@@ -64,9 +64,10 @@ export const USER_GUIDE_SECTIONS = [
     title: 'Calendar',
     bullets: [
       'Chips are a view of Tasks/Reminders/Habits/Bills + manual events, synced for the month on screen.',
+      'Today (left of the month picker) returns the grid and the highlighted day to the current date.',
       'Click a linked chip → that module (completed reminder → Completed). Only manual events edit inline.',
       'Remove from Calendar unticks Add to Calendar on the source — whole series drops, not one day. Delete linked item deletes the source (locked items skipped).',
-      'Hide All Habits vs Hide Elapsed Habits are mutually exclusive view filters. Hide Paid Bills and Hide Completed Reminders are independent view filters (unpaid bills and open reminders stay). Persist vs reset for all four is Settings → General.',
+      'Hide All Habits vs Hide Elapsed Habits are mutually exclusive view filters. Hide Paid Bills, Hide All Bills, Hide Completed Reminders, and Hide All Reminders are independent view filters (sources stay on the calendar; unticking reveals them). Persist vs reset for all six is Settings → General.',
       'Grid shows 3 chips + “+X”. Hidden chips follow bills, then reminders, then habits, then tasks, then anything else. The day list uses that same order. Hover “+X” to see the hidden chips; it closes when the pointer leaves. “+X” is red when a bill is still hidden. Ctrl+click multi-select. Habit check-in from the day list uses that day, not necessarily today. Bills/habits show no clock time.',
     ],
   },
@@ -74,10 +75,10 @@ export const USER_GUIDE_SECTIONS = [
     id: 'guide-habits',
     title: 'Habits',
     bullets: [
-      'Weekly = Mon–Fri. 3-day / fortnightly count from created date. Monthly = created day-of-month (clamped).',
-      'Check-ins are per calendar day. Streak for 3-day/fortnightly is consecutive due days, not consecutive calendar days.',
+      'Start date: Today / Tomorrow / Dated (date method: yyyy-mm-dd). Tick one of Daily, 3 Day, Weekly (+7 days), Fortnight (+14), Quarterly (3 months), Monthly. The series counts forward from that date. Weekly is not Mon–Fri.',
+      'Check-in only on a due day. Streak for anything other than Daily is consecutive due days, not consecutive calendar days.',
       'Archive (#archived) hides from list, nudges, and calendar — not the Cleanup Archive trash. No lock on habits.',
-      'Nudge: custom = due days at that time if not checked in; day-before = today if tomorrow is due. Once per day.',
+      'Nudge: Today/Tomorrow custom is a clock on due days if not checked in. Dated custom picks a date through the next due (defaults to that due) and repeats on the same gap. Day-before = today if tomorrow is due. Once per day.',
     ],
   },
   {

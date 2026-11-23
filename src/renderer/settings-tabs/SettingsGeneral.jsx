@@ -218,7 +218,7 @@ export default function SettingsGeneral() {
         <legend>Calendar filters</legend>
         <p className="module-view__hint">
           Whether Hide Elapsed Habits, Hide All Habits Entries, Hide Paid Bills,
-          and Hide Completed Reminders survive a restart.
+          Hide All Bills, Hide Completed Reminders, and Hide All Reminders survive a restart.
         </p>
         <label>
           <input

@@ -168,6 +168,108 @@ export default function TodayView({ mode = 'today', onEditRequest, onNavigate })
 
       <section className="today-view__section">
         <div className="today-view__section-head">
+          <h2 className="today-view__h today-view__h--mono">Bills</h2>
+          <button type="button" onClick={() => onNavigate?.('bills')}>
+            Add
+          </button>
+        </div>
+        {bills.length ? (
+          <ul className="today-view__list">
+            {bills.map((b) => (
+              <li
+                key={b.id}
+                className="today-view__row"
+                onDoubleClick={rowDblClick(() => onEditRequest?.('bill', b.id))}
+              >
+                <div className="today-view__main">
+                  <span className="today-view__name">
+                    {b.name} · ${Number(b.amount).toFixed(2)}
+                    {b.amount_mode === 'estimate' && ' estimate'}
+                    {b.amount_mode === 'average' && ' avg'}
+                  </span>
+                  <span className="today-view__when">
+                    {isWeek
+                      ? `due ${weekStamp(b.watch_date, '', formatDate)}`
+                      : 'due today'}
+                  </span>
+                </div>
+                <div className="today-view__actions">
+                  {payingId === b.id ? (
+                    <BillPayConfirm
+                      value={payActual}
+                      onChange={setPayActual}
+                      onConfirm={() => payBill(b, payActual, payMode)}
+                      onCancel={() => setPayingId(null)}
+                    />
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => payBill(b, undefined, 'paid')}>
+                        Paid
+                      </button>
+                      <button type="button" onClick={() => payBill(b, undefined, 'late')}>
+                        Paid Late
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onEditRequest?.('bill', b.id)}
+                  >
+                    Edit
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="today-view__meta">{emptyLabel}</p>
+        )}
+      </section>
+
+      <section className="today-view__section">
+        <div className="today-view__section-head">
+          <h2 className="today-view__h today-view__h--serif">Reminders</h2>
+          <button type="button" onClick={() => onNavigate?.('reminders')}>
+            Add
+          </button>
+        </div>
+        {reminders.length ? (
+          <ul className="today-view__list">
+            {reminders.map((r) => (
+              <li
+                key={r.id}
+                className="today-view__row"
+                onDoubleClick={rowDblClick(() => onEditRequest?.('reminder', r.id))}
+              >
+                <div className="today-view__main">
+                  <span className="today-view__name">{r.title}</span>
+                  <span className="today-view__when">
+                    {isWeek
+                      ? weekStamp(r.datetime, clockFromActual(r.actual_time), formatDate)
+                      : clockFromActual(r.actual_time)}
+                  </span>
+                </div>
+                <div className="today-view__actions">
+                  <button type="button" onClick={() => completeRem(r.id)}>
+                    Done
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onEditRequest?.('reminder', r.id)}
+                  >
+                    Edit
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="today-view__meta">{emptyLabel}</p>
+        )}
+      </section>
+
+      <section className="today-view__section">
+        <div className="today-view__section-head">
           <h2 className="today-view__h today-view__h--sitka">Tasks</h2>
           <button type="button" onClick={() => onNavigate?.('tasks')}>
             Add
@@ -259,108 +361,6 @@ export default function TodayView({ mode = 'today', onEditRequest, onNavigate })
                   <button
                     type="button"
                     onClick={() => onEditRequest?.('habit', h.id)}
-                  >
-                    Edit
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="today-view__meta">{emptyLabel}</p>
-        )}
-      </section>
-
-      <section className="today-view__section">
-        <div className="today-view__section-head">
-          <h2 className="today-view__h today-view__h--serif">Reminders</h2>
-          <button type="button" onClick={() => onNavigate?.('reminders')}>
-            Add
-          </button>
-        </div>
-        {reminders.length ? (
-          <ul className="today-view__list">
-            {reminders.map((r) => (
-              <li
-                key={r.id}
-                className="today-view__row"
-                onDoubleClick={rowDblClick(() => onEditRequest?.('reminder', r.id))}
-              >
-                <div className="today-view__main">
-                  <span className="today-view__name">{r.title}</span>
-                  <span className="today-view__when">
-                    {isWeek
-                      ? weekStamp(r.datetime, clockFromActual(r.actual_time), formatDate)
-                      : clockFromActual(r.actual_time)}
-                  </span>
-                </div>
-                <div className="today-view__actions">
-                  <button type="button" onClick={() => completeRem(r.id)}>
-                    Done
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onEditRequest?.('reminder', r.id)}
-                  >
-                    Edit
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="today-view__meta">{emptyLabel}</p>
-        )}
-      </section>
-
-      <section className="today-view__section">
-        <div className="today-view__section-head">
-          <h2 className="today-view__h today-view__h--mono">Bills</h2>
-          <button type="button" onClick={() => onNavigate?.('bills')}>
-            Add
-          </button>
-        </div>
-        {bills.length ? (
-          <ul className="today-view__list">
-            {bills.map((b) => (
-              <li
-                key={b.id}
-                className="today-view__row"
-                onDoubleClick={rowDblClick(() => onEditRequest?.('bill', b.id))}
-              >
-                <div className="today-view__main">
-                  <span className="today-view__name">
-                    {b.name} · ${Number(b.amount).toFixed(2)}
-                    {b.amount_mode === 'estimate' && ' estimate'}
-                    {b.amount_mode === 'average' && ' avg'}
-                  </span>
-                  <span className="today-view__when">
-                    {isWeek
-                      ? `due ${weekStamp(b.watch_date, '', formatDate)}`
-                      : 'due today'}
-                  </span>
-                </div>
-                <div className="today-view__actions">
-                  {payingId === b.id ? (
-                    <BillPayConfirm
-                      value={payActual}
-                      onChange={setPayActual}
-                      onConfirm={() => payBill(b, payActual, payMode)}
-                      onCancel={() => setPayingId(null)}
-                    />
-                  ) : (
-                    <>
-                      <button type="button" onClick={() => payBill(b, undefined, 'paid')}>
-                        Paid
-                      </button>
-                      <button type="button" onClick={() => payBill(b, undefined, 'late')}>
-                        Paid Late
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => onEditRequest?.('bill', b.id)}
                   >
                     Edit
                   </button>

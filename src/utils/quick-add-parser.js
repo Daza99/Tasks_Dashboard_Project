@@ -72,11 +72,18 @@ function parseQuickAdd(input) {
     };
   }
 
-  // Habit: habit stretch  |  habit meditate weekly
+  // Habit: habit stretch  |  habit meditate weekly  |  habit review quarterly
+  // Weekly is +7 days from today (createHabit default anchor), not Mon–Fri.
   if (/^habit\b/i.test(cleaned)) {
     let body = cleaned.replace(/^habit\s+/i, '').trim();
     let frequency = 'daily';
-    if (/\bweekdays?\b/i.test(body) || /\bweekly\b/i.test(body)) {
+    if (/\bquarterly\b/i.test(body)) {
+      frequency = 'quarterly';
+      body = body.replace(/\bquarterly\b/i, '').trim();
+    } else if (/\b3\s*-?\s*days?\b/i.test(body) || /\b3day\b/i.test(body)) {
+      frequency = '3day';
+      body = body.replace(/\b3\s*-?\s*days?\b/i, '').replace(/\b3day\b/i, '').trim();
+    } else if (/\bweekdays?\b/i.test(body) || /\bweekly\b/i.test(body)) {
       frequency = 'weekly';
       body = body.replace(/\bweekdays?\b/i, '').replace(/\bweekly\b/i, '').trim();
     } else if (/\bfortnightly\b/i.test(body) || /\bfortnight\b/i.test(body)) {

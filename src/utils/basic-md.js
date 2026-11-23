@@ -56,6 +56,18 @@ function hlMarkRe() {
   return /\{hl:#([0-9a-fA-F]{6})\}(.*?)\{\/hl\}/gs;
 }
 
+function uMarkRe() {
+  return /\{u\}(.*?)\{\/u\}/gs;
+}
+
+/** True when the element is an underline (`<u>` or inline text-decoration). */
+function nodeUnderline(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (el.tagName === 'U') return true;
+  const deco = `${el.style?.textDecorationLine || ''} ${el.style?.textDecoration || ''}`;
+  return deco.toLowerCase().includes('underline');
+}
+
 /** Split trailing sentence punctuation off a URL match. */
 function splitUrlPunct(raw) {
   const m = String(raw).match(/^(.*?)([.,;:!?)\]\}]*)$/);
@@ -80,7 +92,7 @@ function autolinkHttp(html) {
   );
 }
 
-/** Wrap escaped text with highlight then color, then inline MD. */
+/** Wrap escaped text with highlight, color, underline, then inline MD. */
 function inline(s) {
   const formatted = escapeHtml(s)
     .replace(
@@ -88,6 +100,7 @@ function inline(s) {
       '<span style="background-color:#$1">$2</span>'
     )
     .replace(colorMarkRe(), '<span style="color:#$1">$2</span>')
+    .replace(uMarkRe(), '<u>$1</u>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -100,7 +113,7 @@ function inline(s) {
 }
 
 /**
- * Render basic MD: # / ## / ###, color, highlight, strike, bold, italic, ul/ol, code, links.
+ * Render basic MD: # / ## / ###, color, highlight, underline, strike, bold, italic, ul/ol, code, links.
  * @param {string} src
  * @returns {string} HTML
  */
@@ -163,7 +176,7 @@ export function renderBasicMd(src) {
 }
 
 /**
- * Markdown → contenteditable HTML. Color/highlight marks become spans.
+ * Markdown → contenteditable HTML. Color/highlight/underline marks become spans or <u>.
  * @param {string} src
  * @returns {string}
  */
@@ -177,6 +190,7 @@ export function mdToEditHtml(src) {
       colorMarkRe(),
       '<span data-md-color="#$1" style="color:#$1">$2</span>'
     )
+    .replace(uMarkRe(), '<u>$1</u>')
     .replace(/\n/g, '<br>');
 }
 
@@ -210,6 +224,12 @@ function serializeNode(node, afterSibling) {
       .map((part) => `{hl:${hl}}${part}{/hl}`)
       .join('\n');
   }
+  if (nodeUnderline(node)) {
+    out = out
+      .split('\n')
+      .map((part) => `{u}${part}{/u}`)
+      .join('\n');
+  }
   if (tag === 'DIV' || tag === 'P') {
     return (afterSibling ? '\n' : '') + out;
   }
@@ -217,7 +237,7 @@ function serializeNode(node, afterSibling) {
 }
 
 /**
- * Contenteditable root → markdown with color + highlight marks.
+ * Contenteditable root → markdown with color, highlight, and underline marks.
  * @param {ParentNode} root
  * @returns {string}
  */
@@ -234,11 +254,13 @@ export function editHtmlToMd(root) {
   return normalizeNewlines(serializeNodes(root.childNodes));
 }
 
-/** Strip MD / color / highlight marks for .txt export. */
+/** Strip MD / color / highlight / underline marks for .txt export. */
 export function mdToPlainText(src) {
   return String(src || '')
     .replace(/\{hl:#[0-9a-fA-F]{6}\}/g, '')
     .replace(/\{\/hl\}/g, '')
+    .replace(/\{u\}/g, '')
+    .replace(/\{\/u\}/g, '')
     .replace(/\{#[0-9a-fA-F]{6}\}/g, '')
     .replace(/\{\/\}/g, '')
     .replace(/`([^`]+)`/g, '$1')

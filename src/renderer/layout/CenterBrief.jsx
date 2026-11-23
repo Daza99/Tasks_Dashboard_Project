@@ -34,7 +34,7 @@ function SectionHead({ label, action }) {
 }
 
 /**
- * Live Compact This Week brief: tasks, reminders, bills, habits, money.
+ * Live Compact This Week brief: bills, reminders, tasks, habits, money, expired.
  * @param {{ onEditRequest?: (type: string, id: number) => void, onNavigate?: (id: string) => void }} props
  */
 export default function CenterBrief({ onEditRequest, onNavigate }) {
@@ -212,6 +212,62 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
           </p>
         )}
 
+        {(brief?.billsOverdue?.length > 0 || brief?.billsDueThisWeek?.length > 0) && (
+          <div>
+            <p className="section-label">Bills</p>
+            <ul className="reminder-list">
+              {(brief?.billsOverdue || []).map((b) => (
+                <li
+                  key={`o-${b.id}`}
+                  className="reminder-item glass-inset item-row item-row--expired"
+                  onDoubleClick={rowDblClick(() => onEditRequest?.('bill', b.id))}
+                >
+                  <div className="item-row__main">
+                    <span>{billCaption(b)}</span>
+                    <span className="reminder-item__when">overdue {b.due_date}</span>
+                  </div>
+                  {billActions(b)}
+                </li>
+              ))}
+              {(brief?.billsDueThisWeek || []).map((b) => (
+                <li
+                  key={`d-${b.id}`}
+                  className="reminder-item glass-inset item-row"
+                  onDoubleClick={rowDblClick(() => onEditRequest?.('bill', b.id))}
+                >
+                  <div className="item-row__main">
+                    <span>{billCaption(b)}</span>
+                    <span className="reminder-item__when">due {b.due_date}</span>
+                  </div>
+                  {billActions(b)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div>
+          <SectionHead label="Reminders" action={newBtn('reminders', 'New')} />
+          <ul className="reminder-list">
+            {(brief?.remindersThisWeek || []).map((r) => (
+              <li
+                key={r.id}
+                className="reminder-item glass-inset item-row"
+                onDoubleClick={rowDblClick(() => onEditRequest?.('reminder', r.id))}
+              >
+                <div className="item-row__main">
+                  <span>{r.title}</span>
+                  <span className="reminder-item__when">{fmtWhen(r.datetime)}</span>
+                </div>
+                {remActions(r)}
+              </li>
+            ))}
+            {!brief?.remindersThisWeek?.length && (
+              <p className="stub-empty">None this week.</p>
+            )}
+          </ul>
+        </div>
+
         <div>
           <SectionHead label="Tasks" />
           {!brief?.tasksThisWeek?.length && (
@@ -250,62 +306,6 @@ export default function CenterBrief({ onEditRequest, onNavigate }) {
           mtd={brief?.moneyMtd}
           onOpen={() => openModule('spending')}
         />
-
-        <div>
-          <SectionHead label="Reminders" action={newBtn('reminders', 'New')} />
-          <ul className="reminder-list">
-            {(brief?.remindersThisWeek || []).map((r) => (
-              <li
-                key={r.id}
-                className="reminder-item glass-inset item-row"
-                onDoubleClick={rowDblClick(() => onEditRequest?.('reminder', r.id))}
-              >
-                <div className="item-row__main">
-                  <span>{r.title}</span>
-                  <span className="reminder-item__when">{fmtWhen(r.datetime)}</span>
-                </div>
-                {remActions(r)}
-              </li>
-            ))}
-            {!brief?.remindersThisWeek?.length && (
-              <p className="stub-empty">None this week.</p>
-            )}
-          </ul>
-        </div>
-
-        {(brief?.billsOverdue?.length > 0 || brief?.billsDueThisWeek?.length > 0) && (
-          <div>
-            <p className="section-label">Bills</p>
-            <ul className="reminder-list">
-              {(brief?.billsOverdue || []).map((b) => (
-                <li
-                  key={`o-${b.id}`}
-                  className="reminder-item glass-inset item-row item-row--expired"
-                  onDoubleClick={rowDblClick(() => onEditRequest?.('bill', b.id))}
-                >
-                  <div className="item-row__main">
-                    <span>{billCaption(b)}</span>
-                    <span className="reminder-item__when">overdue {b.due_date}</span>
-                  </div>
-                  {billActions(b)}
-                </li>
-              ))}
-              {(brief?.billsDueThisWeek || []).map((b) => (
-                <li
-                  key={`d-${b.id}`}
-                  className="reminder-item glass-inset item-row"
-                  onDoubleClick={rowDblClick(() => onEditRequest?.('bill', b.id))}
-                >
-                  <div className="item-row__main">
-                    <span>{billCaption(b)}</span>
-                    <span className="reminder-item__when">due {b.due_date}</span>
-                  </div>
-                  {billActions(b)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
 
         <div>
           <button

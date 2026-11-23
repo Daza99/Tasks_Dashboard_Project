@@ -6,11 +6,13 @@ const DEFAULT_WORD_LIMIT = 300;
 
 /**
  * Inline notes field. Persists with the parent Create / Save.
+ * `hint`, when set, is shown after the placeholder and the textarea placeholder is cleared.
  * @param {{
  *   value: string,
  *   onChange: (text: string) => void,
  *   ariaLabel?: string,
  *   placeholder?: string,
+ *   hint?: string,
  *   compact?: boolean,
  *   wordLimit?: number,
  *   continueBullets?: boolean,
@@ -21,6 +23,7 @@ export default function DetailsInline({
   onChange,
   ariaLabel = 'Details',
   placeholder = 'Details (optional)',
+  hint,
   compact = false,
   wordLimit = DEFAULT_WORD_LIMIT,
   continueBullets = false,
@@ -53,6 +56,11 @@ export default function DetailsInline({
 
   return (
     <div className={`details-inline${compact ? ' details-inline--compact' : ''}`}>
+      {hint ? (
+        <p className="details-inline__hint">
+          {placeholder}. {hint}
+        </p>
+      ) : null}
       <textarea
         ref={taRef}
         className="details-inline__textarea"
@@ -60,7 +68,7 @@ export default function DetailsInline({
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         rows={compact ? 3 : 4}
-        placeholder={placeholder}
+        placeholder={hint ? '' : placeholder}
         aria-label={ariaLabel}
       />
       <div className="details-inline__bar">

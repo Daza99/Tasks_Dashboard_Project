@@ -37,14 +37,6 @@ function isOpenDatetime(iso) {
   return !iso || String(iso).startsWith(OPEN_SENTINEL);
 }
 
-/** Due day in year/month (0-indexed month) from habit created_at DOM. */
-function monthlyHabitDate(habit, year, monthIndex) {
-  const created = habit.created_at ? new Date(habit.created_at) : new Date();
-  const dom = Number.isNaN(created.getTime()) ? 1 : created.getDate();
-  const last = new Date(year, monthIndex + 1, 0).getDate();
-  return dateKey(new Date(year, monthIndex, Math.min(dom, last)));
-}
-
 /** yyyy-mm-dd keys in a calendar month. */
 function daysInMonth(year, monthIndex) {
   const last = new Date(year, monthIndex + 1, 0).getDate();
@@ -55,23 +47,9 @@ function daysInMonth(year, monthIndex) {
   return out;
 }
 
-/** Occurrence dates for a habit in the viewed month. */
+/** Occurrence dates for a habit in the viewed month. All frequencies use isDueOn. */
 function habitOccurrenceDates(habit, year, monthIndex) {
-  const freq = habit.frequency || 'daily';
-  if (freq === 'monthly' || freq === 'custom') {
-    return [monthlyHabitDate(habit, year, monthIndex)];
-  }
-  const days = daysInMonth(year, monthIndex);
-  if (freq === 'weekly' || freq === 'weekdays') {
-    return days.filter((k) => {
-      const [y, m, d] = k.split('-').map(Number);
-      const dow = new Date(y, m - 1, d).getDay();
-      return dow >= 1 && dow <= 5;
-    });
-  }
-  if (freq === 'daily') return days;
-  // 3day, fortnightly, and any other interval → isDueOn
-  return days.filter((k) => {
+  return daysInMonth(year, monthIndex).filter((k) => {
     const [y, m, d] = k.split('-').map(Number);
     return isDueOn(habit, new Date(y, m - 1, d));
   });
@@ -766,5 +744,4 @@ module.exports = {
   syncMonth,
   syncOnAppStart,
   removeSelection,
-  monthlyHabitDate,
 };

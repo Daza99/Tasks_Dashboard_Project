@@ -38,9 +38,11 @@ CREATE TABLE IF NOT EXISTS habits (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     frequency TEXT NOT NULL,
+    anchor_date TEXT, -- yyyy-mm-dd first due day
     color TEXT,
     nudge_time TEXT,
     nudge_mode TEXT,
+    nudge_datetime TEXT, -- dated custom nudge; null keeps the due-day clock
     snooze_until DATETIME,
     last_nudge_date DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

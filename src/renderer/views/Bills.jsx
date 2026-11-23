@@ -338,6 +338,7 @@ export default function BillsView({
     if (!seedDate) return;
     setMode('edit');
     setDue(seedDate);
+    setCustomDate(addDaysKey(seedDate, offsetDays));
     setShowOnCalendar(true);
     onSeedConsumed?.();
   }, [seedDate]);
@@ -625,6 +626,8 @@ export default function BillsView({
     try {
       await window.api.markBillPaid(b.id, opts);
       setPayingId(null);
+      // Close the editor so Save cannot write the pre-payment due date back.
+      if (editingId === b.id) setEditingId(null);
       invalidateTagCatalog();
       await load();
       await refresh();
@@ -641,6 +644,7 @@ export default function BillsView({
     if (!b) return;
     try {
       await window.api.markBillPaid(b.id, opts);
+      if (editingId === b.id) setEditingId(null);
       invalidateTagCatalog();
       await load();
       await refresh();
@@ -968,7 +972,17 @@ export default function BillsView({
               />
               Calc Average
             </label>
-            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} required />
+            <input
+              type="date"
+              value={due}
+              onChange={(e) => {
+                const next = e.target.value;
+                setDue(next);
+                // Custom nudge date tracks the watch date, including when it is still today.
+                setCustomDate(addDaysKey(next, offsetDays));
+              }}
+              required
+            />
             {createWatch !== due && (
               <span className="bill-watch-hint">
                 Shows as {formatDateKey(createWatch, dateFormat)}
@@ -1029,7 +1043,11 @@ export default function BillsView({
                 min="-14"
                 max="14"
                 value={offsetDays}
-                onChange={(e) => setOffsetDays(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setOffsetDays(next);
+                  setCustomDate(addDaysKey(due, next));
+                }}
                 aria-label="Adjust dates by X days"
               />
             </label>
@@ -1323,7 +1341,13 @@ export default function BillsView({
                     <input
                       type="date"
                       value={edit.due_date}
-                      onChange={(e) => setEdit({ ...edit, due_date: e.target.value })}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setEdit({ ...edit, due_date: next });
+                        setEditCustomDate(
+                          addDaysKey(next, Number(edit.date_offset_days) || 0)
+                        );
+                      }}
                       required
                     />
                     {editWatch !== (edit.due_date || '') && (
@@ -1396,9 +1420,11 @@ export default function BillsView({
                         min="-14"
                         max="14"
                         value={edit.date_offset_days ?? 0}
-                        onChange={(e) =>
-                          setEdit({ ...edit, date_offset_days: e.target.value })
-                        }
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setEdit({ ...edit, date_offset_days: next });
+                          setEditCustomDate(addDaysKey(edit.due_date || todayKey(), next));
+                        }}
                         aria-label="Adjust dates by X days"
                       />
                     </label>
@@ -1499,6 +1525,42 @@ export default function BillsView({
                     />
                   </div>
                   <div className="item-row__actions bill-edit-actions">
+                    {b.paid_status !== 'paid' && !b.displayPaid && payingId === b.id && (
+                      <BillPayConfirm
+                        value={payActual}
+                        onChange={setPayActual}
+                        onConfirm={() => paid(b, payActual, payMode)}
+                        onCancel={() => setPayingId(null)}
+                      />
+                    )}
+                    {b.paid_status !== 'paid' && !b.displayPaid && payingId !== b.id && (
+                      <>
+                        <button
+                          type="button"
+                          className="bill-edit-pay"
+                          onClick={() => paid(b, undefined, 'paid')}
+                        >
+                          Paid
+                        </button>
+                        <button
+                          type="button"
+                          className="bill-edit-pay"
+                          onClick={() => paid(b, undefined, 'late')}
+                        >
+                          Paid Late
+                        </button>
+                        {b.recurrence ? (
+                          <button
+                            type="button"
+                            className="bill-edit-pay"
+                            title={PAID_DATE_TITLE}
+                            onClick={() => paid(b, undefined, 'change')}
+                          >
+                            Paid + date
+                          </button>
+                        ) : null}
+                      </>
+                    )}
                     <button type="submit">Save</button>
                     <div className="bill-edit-actions__stack">
                       <button type="button" className="danger" onClick={() => openEditDelete(b)}>

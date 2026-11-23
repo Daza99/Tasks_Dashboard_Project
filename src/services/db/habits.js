@@ -16,9 +16,9 @@ const { clampPriority, DEFAULT_PRIORITY } = require('../../utils/priority.cjs');
 const { uniqueTitleFor } = require('../../utils/unique-title.cjs');
 const { normalizeHex } = require('../../utils/habit-color.cjs');
 
-const FREQUENCIES = ['daily', '3day', 'weekly', 'fortnightly', 'monthly'];
+const FREQUENCIES = ['daily', '3day', 'weekly', 'fortnightly', 'quarterly', 'monthly'];
 const FREQ_ERROR =
-  'frequency must be daily, 3day, weekly, fortnightly, or monthly';
+  'frequency must be daily, 3day, weekly, fortnightly, quarterly, or monthly';
 /** System-managed habit tags — UI / exports. */
 const HABIT_SYSTEM_TAGS = new Set(['nudge', 'archived']);
 
@@ -56,31 +56,69 @@ function createdLocalDate(habit, d = new Date()) {
   return new Date(created.getFullYear(), created.getMonth(), created.getDate());
 }
 
-/** True if habit is due on the given local date. */
+/** Stored aliases → canonical frequency id. */
+function canonicalFrequency(freq) {
+  if (freq === 'weekdays') return 'weekly';
+  if (freq === 'custom') return 'monthly';
+  if (freq === 'fortnight') return 'fortnightly';
+  return freq || 'daily';
+}
+
+/** yyyy-mm-dd or null when the value is not a real calendar day. */
+function parseDateKey(value) {
+  const s = value == null ? '' : String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return s;
+}
+
+/** First due day. Explicit anchor, else the created local date. */
+function anchorLocalDate(habit, d = new Date()) {
+  const key = parseDateKey(habit.anchor_date);
+  if (key) {
+    const [y, m, day] = key.split('-').map(Number);
+    return new Date(y, m - 1, day);
+  }
+  return createdLocalDate(habit, d);
+}
+
+/**
+ * Persist a start date. Invalid or missing values use `fallback` (default today).
+ * @param {unknown} value
+ * @param {string} [fallback]
+ */
+function normalizeAnchorDate(value, fallback = dateKey()) {
+  return parseDateKey(value) || fallback;
+}
+
+/** Day-of-month step from `start` (1 = monthly, 3 = quarterly). Short months clamp. */
+function monthStepDue(start, day, step) {
+  const months =
+    (day.getFullYear() - start.getFullYear()) * 12 + (day.getMonth() - start.getMonth());
+  if (months < 0 || months % step !== 0) return false;
+  const last = new Date(day.getFullYear(), day.getMonth() + 1, 0).getDate();
+  return day.getDate() === Math.min(start.getDate(), last);
+}
+
+/**
+ * True if habit is due on the given local date.
+ * Every frequency counts forward from anchor_date. Weekly is +7 days, not Mon–Fri.
+ */
 function isDueOn(habit, d = new Date()) {
-  const freq = habit.frequency || 'daily';
+  const freq = canonicalFrequency(habit.frequency);
+  const start = anchorLocalDate(habit, d);
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.floor((localDayMs(day) - localDayMs(start)) / 86400000);
+  if (diff < 0) return false;
   if (freq === 'daily') return true;
-  // every 3 / 14 calendar days from created_at’s local date
-  if (freq === '3day' || freq === 'fortnightly') {
-    const start = createdLocalDate(habit, d);
-    const step = freq === 'fortnightly' ? 14 : 3;
-    const diff = Math.floor((localDayMs(d) - localDayMs(start)) / 86400000);
-    return diff >= 0 && diff % step === 0;
-  }
-  // weekly ≈ former weekdays (Mon–Fri)
-  if (freq === 'weekly' || freq === 'weekdays') {
-    const day = d.getDay();
-    return day >= 1 && day <= 5;
-  }
-  // monthly: anniversary of created_at day-of-month (clamp short months)
-  if (freq === 'monthly' || freq === 'custom') {
-    const created = habit.created_at ? new Date(habit.created_at) : null;
-    const dom =
-      created && !Number.isNaN(created.getTime()) ? created.getDate() : 1;
-    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    return d.getDate() === Math.min(dom, last);
-  }
-  return true;
+  if (freq === '3day') return diff % 3 === 0;
+  if (freq === 'weekly') return diff % 7 === 0;
+  if (freq === 'fortnightly') return diff % 14 === 0;
+  if (freq === 'monthly') return monthStepDue(start, day, 1);
+  if (freq === 'quarterly') return monthStepDue(start, day, 3);
+  return false;
 }
 
 /** HH:mm or null. */
@@ -94,6 +132,71 @@ function normalizeNudgeMode(mode, nudgeTime) {
   return mode === 'day_before' ? 'day_before' : 'custom';
 }
 
+/** Dated custom nudge instant, or null for the due-day clock. */
+function normalizeNudgeDatetime(value, nudgeTime, mode) {
+  if (!nudgeTime || mode !== 'custom') return null;
+  if (value == null || value === '') return null;
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return null;
+  return at.toISOString();
+}
+
+/**
+ * Next dated-custom instant: same lead time before the following due.
+ * Gap 0 lands on that due at the same clock.
+ * @param {object} habit
+ * @returns {string|null}
+ */
+function shiftHabitNudgeDatetime(habit) {
+  const at = new Date(habit.nudge_datetime);
+  if (Number.isNaN(at.getTime())) return null;
+  const nudgeDay = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+  const target = nextDueDate(habit, nudgeDay);
+  const gapDays = Math.max(
+    0,
+    Math.round((localDayMs(target) - localDayMs(nudgeDay)) / 86400000)
+  );
+  const following = nextDueDate(habit, addDays(target, 1));
+  const nextAt = addDays(following, -gapDays);
+  nextAt.setHours(at.getHours(), at.getMinutes(), 0, 0);
+  return nextAt.toISOString();
+}
+
+/**
+ * A dated nudge already shown, whose day has ended, moves to the next cycle.
+ * Same-day rows stay put so snooze can refire the original instant.
+ */
+function rollAcknowledgedHabitNudges() {
+  const today = dateKey();
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT * FROM habits
+       WHERE nudge_datetime IS NOT NULL
+         AND nudge_mode = 'custom'
+         AND last_nudge_date IS NOT NULL`
+    )
+    .all();
+  const save = db.prepare('UPDATE habits SET nudge_datetime = ? WHERE id = ?');
+  for (const habit of rows) {
+    const origin = new Date(habit.nudge_datetime);
+    if (Number.isNaN(origin.getTime())) continue;
+    const originDay = dateKey(origin);
+    if (!(originDay < today && habit.last_nudge_date >= originDay)) continue;
+    let current = habit.nudge_datetime;
+    let guard = 0;
+    while (guard < 48) {
+      const at = new Date(current);
+      if (Number.isNaN(at.getTime()) || dateKey(at) >= today) break;
+      const shifted = shiftHabitNudgeDatetime({ ...habit, nudge_datetime: current });
+      if (!shifted || shifted === current) break;
+      current = shifted;
+      guard += 1;
+    }
+    if (current !== habit.nudge_datetime) save.run(current, habit.id);
+  }
+}
+
 /** Trimmed category or null (Uncategorized). */
 function normalizeCategory(value) {
   if (value == null) return null;
@@ -101,9 +204,9 @@ function normalizeCategory(value) {
   return trimmed || null;
 }
 
-/** Previous due local date strictly before `d`, or null before created_at. */
+/** Previous due local date strictly before `d`, or null before the anchor. */
 function prevDueDate(habit, d) {
-  const start = createdLocalDate(habit, d);
+  const start = anchorLocalDate(habit, d);
   let c = addDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), -1);
   while (localDayMs(c) >= localDayMs(start) && !isDueOn(habit, c)) {
     c = addDays(c, -1);
@@ -113,7 +216,7 @@ function prevDueDate(habit, d) {
 
 /** Next due local Date on or after `d` (inclusive if due that day). */
 function nextDueDate(habit, d = new Date()) {
-  const start = createdLocalDate(habit, d);
+  const start = anchorLocalDate(habit, d);
   let c = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   if (localDayMs(c) < localDayMs(start)) c = new Date(start);
   for (let i = 0; i < 400; i += 1) {
@@ -147,14 +250,16 @@ function enrich(row, { date = dateKey() } = {}) {
 
 /**
  * Create habit.
- * @param {{ name: string, frequency?: string, color?: string|null, nudge_time?: string|null, nudge_mode?: string|null, category?: string|null, tags?: string[]|string, description?: string|null, priority?: number, show_on_calendar?: boolean|number }} data
+ * @param {{ name: string, frequency?: string, anchor_date?: string|null, color?: string|null, nudge_time?: string|null, nudge_mode?: string|null, nudge_datetime?: string|null, category?: string|null, tags?: string[]|string, description?: string|null, priority?: number, show_on_calendar?: boolean|number }} data
  */
 function createHabit({
   name,
   frequency = 'daily',
+  anchor_date = null,
   color = null,
   nudge_time = null,
   nudge_mode = null,
+  nudge_datetime = null,
   category = null,
   tags = undefined,
   description = null,
@@ -163,11 +268,15 @@ function createHabit({
 }) {
   try {
     const habitName = uniqueTitleFor('habit', name);
-    if (!FREQUENCIES.includes(frequency)) {
+    const freq = canonicalFrequency(frequency);
+    if (!FREQUENCIES.includes(freq)) {
       throw new Error(FREQ_ERROR);
     }
+    // Quick add omits the start date — first due day is today.
+    const anchor = normalizeAnchorDate(anchor_date);
     const nudge = normalizeNudgeTime(nudge_time);
     const mode = normalizeNudgeMode(nudge_mode, nudge);
+    const nudgeAt = normalizeNudgeDatetime(nudge_datetime, nudge, mode);
     const cat = normalizeCategory(category);
     if (cat) createHabitCategory(cat);
     const details = description != null ? String(description).trim() || null : null;
@@ -176,11 +285,11 @@ function createHabit({
     const colorHex = normalizeHex(color); // invalid/empty → theme orange fallback
     const info = getDb()
       .prepare(
-        `INSERT INTO habits (name, frequency, color, nudge_time, nudge_mode, category,
-           description, priority, show_on_calendar)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO habits (name, frequency, anchor_date, color, nudge_time, nudge_mode,
+           nudge_datetime, category, description, priority, show_on_calendar)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(habitName, frequency, colorHex, nudge, mode, cat, details, prio, onCal);
+      .run(habitName, freq, anchor, colorHex, nudge, mode, nudgeAt, cat, details, prio, onCal);
     const id = Number(info.lastInsertRowid);
     syncNudgeTag(id, nudge);
     if (tags !== undefined) syncUserTags(id, tags);
@@ -277,11 +386,17 @@ function updateHabit(id, fields) {
       fields.name !== undefined
         ? uniqueTitleFor('habit', fields.name, id)
         : cur.name;
-    const frequency =
-      fields.frequency !== undefined ? fields.frequency : cur.frequency;
+    const frequency = canonicalFrequency(
+      fields.frequency !== undefined ? fields.frequency : cur.frequency
+    );
     if (!FREQUENCIES.includes(frequency)) {
       throw new Error(FREQ_ERROR);
     }
+    const prevAnchor = parseDateKey(cur.anchor_date) || dateKey(createdLocalDate(cur));
+    const anchor =
+      fields.anchor_date !== undefined
+        ? normalizeAnchorDate(fields.anchor_date, prevAnchor)
+        : prevAnchor;
     const color =
       fields.color !== undefined ? normalizeHex(fields.color) : cur.color;
     let nudge = cur.nudge_time;
@@ -295,6 +410,16 @@ function updateHabit(id, fields) {
       mode = normalizeNudgeMode(rawMode, nudge);
     } else {
       mode = normalizeNudgeMode(cur.nudge_mode, nudge);
+    }
+    let nudgeAt = cur.nudge_datetime || null;
+    if (
+      fields.nudge_datetime !== undefined ||
+      fields.nudge_time !== undefined ||
+      fields.nudge_mode !== undefined
+    ) {
+      const raw =
+        fields.nudge_datetime !== undefined ? fields.nudge_datetime : cur.nudge_datetime;
+      nudgeAt = normalizeNudgeDatetime(raw, nudge, mode);
     }
     let category = cur.category;
     if (fields.category !== undefined) {
@@ -319,24 +444,34 @@ function updateHabit(id, fields) {
           : 0;
     getDb()
       .prepare(
-        `UPDATE habits SET name = ?, frequency = ?, color = ?, nudge_time = ?,
-         nudge_mode = ?, category = ?, description = ?, priority = ?, show_on_calendar = ?
+        `UPDATE habits SET name = ?, frequency = ?, anchor_date = ?, color = ?, nudge_time = ?,
+         nudge_mode = ?, nudge_datetime = ?, category = ?, description = ?, priority = ?,
+         show_on_calendar = ?
          WHERE id = ?`
       )
       .run(
         name,
         frequency,
+        anchor,
         color,
         nudge,
         mode,
+        nudgeAt,
         category,
         description,
         priority,
         show_on_calendar,
         id
       );
-    // Reschedule nudge if time or mode changed
-    if (fields.nudge_time !== undefined || fields.nudge_mode !== undefined) {
+    // Reschedule when the ping or the due series changed, so an old Mon–Fri fire doesn't stick.
+    const scheduleChanged =
+      frequency !== canonicalFrequency(cur.frequency) || anchor !== prevAnchor;
+    if (
+      fields.nudge_time !== undefined ||
+      fields.nudge_mode !== undefined ||
+      fields.nudge_datetime !== undefined ||
+      scheduleChanged
+    ) {
       getDb()
         .prepare(
           'UPDATE habits SET last_nudge_date = NULL, snooze_until = NULL WHERE id = ?'
@@ -508,9 +643,9 @@ function getStreak(habitId) {
       .all(habitId);
     if (!logs.length) return 0;
     const done = new Set(logs.map((l) => l.date));
-    // 3-day / fortnightly: consecutive due occurrences, not every calendar day
-    if (habit.frequency === '3day' || habit.frequency === 'fortnightly') {
-      const startMs = localDayMs(createdLocalDate(habit));
+    const startMs = localDayMs(anchorLocalDate(habit));
+    // Anything other than daily: consecutive due days, not consecutive calendar days.
+    if (canonicalFrequency(habit.frequency) !== 'daily') {
       const today = new Date();
       let due = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       while (localDayMs(due) >= startMs && !isDueOn(habit, due)) {
@@ -529,12 +664,12 @@ function getStreak(habitId) {
       return streak;
     }
     let cursor = new Date();
-    // If today not done, start from yesterday
+    // If today not done, start from yesterday. Stop at the anchor.
     if (!done.has(dateKey(cursor))) {
       cursor = addDays(cursor, -1);
     }
     let streak = 0;
-    while (done.has(dateKey(cursor))) {
+    while (localDayMs(cursor) >= startMs && done.has(dateKey(cursor))) {
       streak += 1;
       cursor = addDays(cursor, -1);
     }
@@ -545,9 +680,18 @@ function getStreak(habitId) {
   }
 }
 
+/** Checked in today — skip a nudge that lands on a due day. */
+function checkedInToday(habitId, today) {
+  const log = getDb()
+    .prepare('SELECT completed FROM habit_logs WHERE habit_id = ? AND date = ?')
+    .get(habitId, today);
+  return Boolean(log?.completed);
+}
+
 /** Habits whose nudge_time has arrived today and not yet nudged/completed. */
 function listDueNudges() {
   try {
+    rollAcknowledgedHabitNudges();
     const now = new Date();
     const today = dateKey(now);
     const tomorrow = addDays(
@@ -567,17 +711,22 @@ function listDueNudges() {
       .all(today);
     return rows
       .filter((h) => !hasTag('habit', h.id, 'archived'))
-      .filter((h) => h.nudge_time <= nowHm)
+      .filter((h) => {
+        // Dated custom uses the saved instant. The due-day clock uses HH:mm.
+        if (!h.nudge_datetime) return h.nudge_time <= nowHm;
+        const at = new Date(h.nudge_datetime);
+        return !Number.isNaN(at.getTime()) && at.getTime() <= Date.now();
+      })
       .filter((h) => {
         const mode = h.nudge_mode === 'day_before' ? 'day_before' : 'custom';
         if (mode === 'day_before') return isDueOn(h, tomorrow);
+        // Dated custom: the saved instant, including a day before the due day.
+        if (h.nudge_datetime) {
+          if (!isDueOn(h, now)) return true;
+          return !checkedInToday(h.id, today);
+        }
         if (!isDueOn(h, now)) return false;
-        const log = getDb()
-          .prepare(
-            'SELECT completed FROM habit_logs WHERE habit_id = ? AND date = ?'
-          )
-          .get(h.id, today);
-        return !log?.completed;
+        return !checkedInToday(h.id, today);
       })
       .map((h) => ({
         ...h,

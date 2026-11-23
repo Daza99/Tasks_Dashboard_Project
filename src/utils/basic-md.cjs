@@ -22,6 +22,10 @@ function hlMarkRe() {
   return /\{hl:#([0-9a-fA-F]{6})\}(.*?)\{\/hl\}/gs;
 }
 
+function uMarkRe() {
+  return /\{u\}(.*?)\{\/u\}/gs;
+}
+
 /** Split trailing sentence punctuation off a URL match. */
 function splitUrlPunct(raw) {
   const m = String(raw).match(/^(.*?)([.,;:!?)\]\}]*)$/);
@@ -50,6 +54,7 @@ function inline(s) {
   const formatted = escapeHtml(s)
     .replace(hlMarkRe(), '<span style="background-color:#$1">$2</span>')
     .replace(colorMarkRe(), '<span style="color:#$1">$2</span>')
+    .replace(uMarkRe(), '<u>$1</u>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -123,6 +128,8 @@ function mdToPlainText(src) {
   return String(src || '')
     .replace(/\{hl:#[0-9a-fA-F]{6}\}/g, '')
     .replace(/\{\/hl\}/g, '')
+    .replace(/\{u\}/g, '')
+    .replace(/\{\/u\}/g, '')
     .replace(/\{#[0-9a-fA-F]{6}\}/g, '')
     .replace(/\{\/\}/g, '')
     .replace(/`([^`]+)`/g, '$1')

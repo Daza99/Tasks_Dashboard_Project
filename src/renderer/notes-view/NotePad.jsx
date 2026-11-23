@@ -78,6 +78,16 @@ function selectionIn(el) {
   return el.contains(sel.anchorNode);
 }
 
+/** True when the active selection inside el is underlined. */
+function selectionUnderlined(el) {
+  if (!selectionIn(el)) return false;
+  try {
+    return document.queryCommandState('underline');
+  } catch {
+    return false;
+  }
+}
+
 function closestBlock(node, root) {
   let n = node && node.nodeType === 3 ? node.parentElement : node;
   while (n && n !== root) {
@@ -239,6 +249,7 @@ export default function NotePad({ note, onSaved, popout = false }) {
   const [bgColor, setBgColor] = useState(style.bgColor || '#ffffff');
   const [highlightColor, setHighlightColor] = useState(style.highlightColor || DEFAULT_HL);
   const [hlArmed, setHlArmed] = useState(false);
+  const [ulOn, setUlOn] = useState(false);
   const [hlOpen, setHlOpen] = useState(false);
   const [bgOpen, setBgOpen] = useState(false);
   const [headingOpen, setHeadingOpen] = useState(false);
@@ -299,6 +310,7 @@ export default function NotePad({ note, onSaved, popout = false }) {
     setHighlightColor(style.highlightColor || DEFAULT_HL);
     setPreview(false);
     setHlArmed(false);
+    setUlOn(false);
     setHlOpen(false);
     setBgOpen(false);
     setHeadingOpen(false);
@@ -325,7 +337,13 @@ export default function NotePad({ note, onSaved, popout = false }) {
   useEffect(() => {
     if (preview) return undefined;
     function onSel() {
-      if (!selectionIn(ceRef.current)) setSwatchOverride(null);
+      const el = ceRef.current;
+      if (!selectionIn(el)) {
+        setSwatchOverride(null);
+        setUlOn(false);
+        return;
+      }
+      setUlOn(selectionUnderlined(el));
     }
     document.addEventListener('selectionchange', onSel);
     return () => document.removeEventListener('selectionchange', onSel);
@@ -420,6 +438,21 @@ export default function NotePad({ note, onSaved, popout = false }) {
       document.execCommand('insertText', false, marker + text + marker);
     }
     syncFromCe();
+  }
+
+  /**
+   * Toggle underline on the current selection only.
+   * A collapsed caret must not call execCommand — that arms sticky typing underline.
+   */
+  function onUnderline() {
+    if (preview) return;
+    const el = ceRef.current;
+    if (!el || !selectionIn(el)) return;
+    el.focus();
+    document.execCommand('styleWithCSS', false, false);
+    document.execCommand('underline');
+    syncFromCe();
+    setUlOn(selectionUnderlined(el));
   }
 
   /** Prefix selection (or caret) with ATX heading; caret lands in the text slot. */
@@ -724,6 +757,17 @@ export default function NotePad({ note, onSaved, popout = false }) {
           >
             S
           </button>
+          <button
+            type="button"
+            className={`list-pad__fmt list-pad__fmt--underline${ulOn ? ' list-pad__fmt--hl-on' : ''}`}
+            title="Underline"
+            aria-pressed={ulOn}
+            disabled={preview}
+            onMouseDown={keepSelection}
+            onClick={onUnderline}
+          >
+            U
+          </button>
           <div className="list-pad__hl">
             <button
               type="button"
@@ -860,6 +904,7 @@ export default function NotePad({ note, onSaved, popout = false }) {
             if (next) {
               setHlArmed(false);
               setHeadingOpen(false);
+              setUlOn(false);
             }
             setPreview(next);
           }}

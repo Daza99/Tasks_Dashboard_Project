@@ -1291,9 +1291,10 @@ html[data-theme-base='light'] .nav-tab--reminders.nav-tab--selected {
   gap: 6px;
   justify-content: flex-end;
 }
-/* Edit-mode Delete sits directly above Cancel */
+/* Edit-mode Delete sits directly above Cancel. Pay chips sit left of Save. */
 .bill-edit-actions {
   align-items: flex-end;
+  flex-wrap: wrap;
 }
 .bill-edit-actions__stack {
   display: flex;
@@ -1838,6 +1839,21 @@ html[data-theme-base='light'] .nav-tab--reminders.nav-tab--selected {
   color: var(--button-text);
   border-color: var(--button-text);
   filter: brightness(1.12);
+}
+/* Pay chips on the green edit card. --button-text is the same green as the wash. */
+html[data-theme-base='dark'] .edit-form .bill-edit-actions button.bill-edit-pay,
+html[data-theme-base='dark'] .edit-form .bill-edit-actions .bill-pay-confirm button {
+  background: #f3f7f4;
+  color: #111;
+  border-color: rgba(0, 0, 0, 0.35);
+  filter: none;
+}
+html[data-theme-base='light'] .edit-form .bill-edit-actions button.bill-edit-pay,
+html[data-theme-base='light'] .edit-form .bill-edit-actions .bill-pay-confirm button {
+  background: #0c4a28;
+  color: #f4fff6;
+  border-color: rgba(0, 0, 0, 0.25);
+  filter: none;
 }
 .create-form .item-row__actions button.btn-light {
   color: #111;
@@ -2559,6 +2575,12 @@ html[data-theme-base='light'] .module-list__item.cal-day-card.cal-chip--reminder
   position: relative;
   min-height: 88px;
 }
+.details-inline__hint {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
 .details-inline--compact {
   min-height: 64px;
 }
@@ -2633,6 +2655,24 @@ html[data-theme-base='dark'] .create-form input[type='datetime-local']::-webkit-
 html[data-theme-base='dark'] .edit-form input[type='datetime-local']::-webkit-calendar-picker-indicator {
   filter: invert(1) brightness(0.85);
   opacity: 0.9;
+}
+
+/* Dated start: hug yyyy-mm-dd + picker. Column flex was stretching the glyph to the far edge. */
+.create-form .habit-dated-input,
+.edit-form .habit-dated-input {
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 10.5rem;
+  field-sizing: content;
+  flex: 0 0 auto;
+}
+.create-form .habit-dated-input::-webkit-datetime-edit,
+.edit-form .habit-dated-input::-webkit-datetime-edit {
+  padding: 0;
+}
+.create-form .habit-dated-input::-webkit-calendar-picker-indicator,
+.edit-form .habit-dated-input::-webkit-calendar-picker-indicator {
+  margin: 0 0 0 4px;
 }
 
 .nav-list__label {
@@ -3148,19 +3188,43 @@ html[data-theme-base='dark'] .edit-form input[type='datetime-local']::-webkit-ca
 .todo-check__item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
+  flex-shrink: 0;
   color: var(--text-primary);
   cursor: pointer;
 }
 .todo-check__item input {
   flex-shrink: 0;
 }
-.todo-check__row--done .todo-check__item span {
+.todo-check__title,
+.todo-check__edit {
+  flex: 1;
+  min-width: 0;
+}
+.todo-check__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.todo-check__edit {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: var(--text-primary);
+  font: inherit;
+  outline: none;
+}
+.todo-check__row--done .todo-check__title {
   text-decoration: line-through;
   color: var(--text-muted);
 }
-.todo-check__row .btn-light {
+.todo-check__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.todo-check__row .btn-light,
+.todo-check__row .btn-primary {
   flex-shrink: 0;
   padding: 4px 10px;
   font-size: 12px;
@@ -3286,6 +3350,11 @@ html[data-theme-base='dark'] .edit-form input[type='datetime-local']::-webkit-ca
   background: currentColor;
   transform: translateY(-50%);
   pointer-events: none;
+}
+.list-pad__fmt--underline {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1.5px;
 }
 .list-pad__hl {
   display: flex;

@@ -42,7 +42,9 @@ const DEFAULT_SETTINGS = {
   calendar_hide_elapsed_habits: 'false',
   calendar_hide_habits_persist: 'false',
   calendar_hide_paid_bills: 'false',
+  calendar_hide_bills: 'false',
   calendar_hide_completed_reminders: 'false',
+  calendar_hide_reminders: 'false',
   habit_saved_colors: '[]',
   Debut_mode: '1',
   show_tags_always: 'false',
@@ -208,6 +210,16 @@ function initDatabase() {
   }
 }
 
+/** Local yyyy-mm-dd from a SQLite timestamp. Same midnight rule as habits createdLocalDate. */
+function anchorKeyFromCreated(createdAt) {
+  const created = createdAt ? new Date(createdAt) : new Date();
+  const d = Number.isNaN(created.getTime()) ? new Date() : created;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /** Additive columns for DBs created before Phase 3 schema extensions. */
 function migrateSchema() {
   const habitCols = db.prepare('PRAGMA table_info(habits)').all().map((c) => c.name);
@@ -221,7 +233,25 @@ function migrateSchema() {
   addHabit('priority', 'priority INTEGER DEFAULT 3');
   addHabit('show_on_calendar', 'show_on_calendar INTEGER DEFAULT 0');
   addHabit('nudge_mode', 'nudge_mode TEXT');
+  addHabit('nudge_datetime', 'nudge_datetime TEXT');
   addHabit('category', 'category TEXT');
+  addHabit('anchor_date', 'anchor_date TEXT');
+  // First due day. Weekly (+7) then lands on the created weekday, not Mon–Fri.
+  const missingAnchors = db
+    .prepare(
+      `SELECT id, created_at FROM habits
+       WHERE anchor_date IS NULL OR trim(anchor_date) = ''`
+    )
+    .all();
+  if (missingAnchors.length) {
+    const setAnchor = db.prepare('UPDATE habits SET anchor_date = ? WHERE id = ?');
+    const fill = db.transaction((rows) => {
+      for (const row of rows) {
+        setAnchor.run(anchorKeyFromCreated(row.created_at), row.id);
+      }
+    });
+    fill(missingAnchors);
+  }
   db.prepare(
     `UPDATE habits SET nudge_mode = 'custom'
      WHERE nudge_time IS NOT NULL AND (nudge_mode IS NULL OR nudge_mode = '')`
